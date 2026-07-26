@@ -1,0 +1,58 @@
+# KLECT — strict analysis.
+# Generated files (`*.g.dart`) are excluded because they are produced by
+# `node packages/tokens/build.mjs` and must never be hand-edited to satisfy a lint.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "build/**"
+    - ".dart_tool/**"
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    # A dangling TODO is a bug in this repo, not a note.
+    todo: warning
+    missing_required_param: error
+    missing_return: error
+    body_might_complete_normally_nullable: error
+
+linter:
+  rules:
+    # Required by AGENTS.md / the build brief.
+    - prefer_const_constructors
+    - require_trailing_commas
+    - avoid_print
+    - unawaited_futures
+
+    # Correctness
+    - always_declare_return_types
+    - avoid_dynamic_calls
+    - avoid_empty_else
+    - avoid_slow_async_io
+    - avoid_type_to_string
+    - cancel_subscriptions
+    - close_sinks
+    - collection_methods_unrelated_type
+    - comment_references
+    - control_flow_in_finally
+    - empty_statements
+    - no_adjacent_strings_in_list
+    - no_duplicate_case_values
+    - throw_in_finally
+    - unnecessary_statements
+    - use_build_context_synchronously
+
+    # Consistency
+    - directives_ordering
+    - omit_local_variable_types
+    - prefer_const_constructors_in_immutables
+    - prefer_const_declarations
+    - prefer_const_literals_to_create_immutables
+    - prefer_final_locals
+    - prefer_single_quotes
+    - sort_child_properties_last
+    - unnecessary_parenthesis
+    - use_super_parameters

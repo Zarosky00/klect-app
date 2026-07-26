@@ -1,0 +1,289 @@
+/*
+ * KLECT — global base layer.
+ * Values come from tokens only. See `theme.css` for the Tailwind mapping.
+ */
+
+@import './theme.css';
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    border-color: var(--k-border-subtle);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+    background-color: var(--k-bg-base);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: var(--k-bg-base);
+    color: var(--k-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--k-text-body-size);
+    line-height: var(--k-text-body-lh);
+    font-weight: var(--k-text-body-weight);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 0;
+    font-weight: inherit;
+    font-size: inherit;
+  }
+
+  p,
+  figure,
+  blockquote,
+  dl,
+  dd {
+    margin: 0;
+  }
+
+  ul,
+  ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  img,
+  svg,
+  video,
+  canvas {
+    display: block;
+    max-width: 100%;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  /* Focus is never invisible. Keyboard users get the brass ring everywhere. */
+  :focus-visible {
+    outline: var(--k-stroke-focus) solid var(--k-border-focus);
+    outline-offset: var(--k-space-0-5);
+  }
+
+  ::selection {
+    background-color: var(--k-accent-subtle);
+    color: var(--k-text-primary);
+  }
+
+  ::placeholder {
+    color: var(--k-text-tertiary);
+    opacity: 1;
+  }
+
+  /* Quiet scrollbars — chrome should not compete with photography. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--k-border-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: var(--k-space-2);
+    height: var(--k-space-2);
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--k-border-strong);
+    border-radius: var(--k-radius-full);
+  }
+}
+
+@layer components {
+  /* Skip link — first tab stop on every page. */
+  .k-skip-link {
+    position: fixed;
+    top: var(--k-space-2);
+    left: var(--k-space-2);
+    z-index: var(--k-z-toast);
+    padding: var(--k-space-2) var(--k-space-4);
+    border-radius: var(--k-radius-sm);
+    background-color: var(--k-accent-default);
+    color: var(--k-text-onAccent);
+    font-size: var(--k-text-label-size);
+    font-weight: var(--k-text-label-weight);
+    transform: translateY(calc(-1 * (100% + var(--k-space-4))));
+    transition: transform var(--k-dur-fast) var(--k-ease-standard);
+  }
+
+  .k-skip-link:focus-visible {
+    transform: translateY(0);
+  }
+
+  .k-spin {
+    animation: k-spin var(--k-dur-deliberate) var(--k-ease-linear) infinite;
+  }
+
+  /* Tap feedback. The scale factor is supplied by `pressScale` in
+     src/design/motion.ts so the number lives in exactly one place. */
+  .k-pressable {
+    transition: transform var(--k-dur-instant) var(--k-ease-standard);
+  }
+
+  .k-pressable:active {
+    transform: scale(var(--k-press-scale, 1));
+  }
+
+  /* Reduced motion: remove the travel, keep the confirmation. */
+  @media (prefers-reduced-motion: reduce) {
+    .k-pressable:active {
+      transform: none;
+      opacity: var(--k-opacity-pressed);
+    }
+  }
+
+  /* Count roll — the digit travels vertically, the number never fades. */
+  .k-count-roll {
+    display: inline-flex;
+    overflow: hidden;
+    line-height: 1;
+    height: 1em;
+    align-items: center;
+  }
+
+  .k-count-roll > span {
+    display: inline-block;
+  }
+
+  .k-roll-up {
+    animation: k-digit-roll-up var(--k-dur-base) var(--k-ease-emphasized) both;
+  }
+
+  .k-roll-down {
+    animation: k-digit-roll-down var(--k-dur-base) var(--k-ease-emphasized) both;
+  }
+
+  /* Like/save burst — overshoot, then settle. Capped well under 480ms. */
+  .k-burst {
+    animation: k-burst var(--k-dur-slow) var(--k-ease-overshoot) both;
+  }
+
+  /* Shimmer runs between skeleton.base and skeleton.shimmer, both tokens. */
+  .k-shimmer {
+    background-color: var(--k-skeleton-base);
+    background-image: linear-gradient(
+      90deg,
+      var(--k-skeleton-base) 0%,
+      var(--k-skeleton-shimmer) 50%,
+      var(--k-skeleton-base) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer calc(var(--k-dur-deliberate) * 3) var(--k-ease-linear) infinite;
+  }
+
+  .k-toast-enter {
+    animation: k-toast-in var(--k-dur-medium) var(--k-ease-emphasized) both;
+  }
+
+  /* Masonry column count comes straight from tokens.g.css. */
+  .k-masonry {
+    column-count: var(--k-masonry-cols);
+    column-gap: var(--k-masonry-gutter);
+  }
+
+  .k-masonry > * {
+    break-inside: avoid;
+    margin-bottom: var(--k-masonry-gutter);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes k-digit-roll-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes k-digit-roll-down {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes k-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--k-space-3));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes k-burst {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(var(--k-burst-scale, 1.25));
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes k-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

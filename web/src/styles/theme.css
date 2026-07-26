@@ -1,0 +1,275 @@
+/*
+ * KLECT — Tailwind theme.
+ *
+ * NOT A SOURCE OF DESIGN VALUES. Every entry below is a pointer at a custom
+ * property emitted by `tokens.g.css`, which is generated from
+ * `packages/tokens/tokens.json`. If you need a new value, add it to the token
+ * source and regenerate — never type a hex, px, ms or cubic-bezier here.
+ *
+ * `@theme inline` matters: it makes the generated utilities emit
+ * `var(--k-...)` at the point of use instead of copying the value, so flipping
+ * `data-theme` re-themes the entire app with no JS and no re-render.
+ */
+
+@import 'tailwindcss';
+@import './tokens.g.css';
+@config '../../tailwind.config.ts';
+
+@theme inline {
+  /* ── surface ─────────────────────────────────────────────────────────── */
+  --color-base: var(--k-bg-base);
+  --color-sunken: var(--k-bg-sunken);
+  --color-surface-1: var(--k-surface-1);
+  --color-surface-2: var(--k-surface-2);
+  --color-surface-3: var(--k-surface-3);
+  --color-surface-4: var(--k-surface-4);
+  --color-scrim: var(--k-surface-scrim);
+  --color-glass: var(--k-surface-glass);
+
+  /* ── line ────────────────────────────────────────────────────────────── */
+  --color-line-subtle: var(--k-border-subtle);
+  --color-line: var(--k-border-default);
+  --color-line-strong: var(--k-border-strong);
+  --color-focus: var(--k-border-focus);
+
+  /* ── ink ─────────────────────────────────────────────────────────────── */
+  --color-ink: var(--k-text-primary);
+  --color-ink-2: var(--k-text-secondary);
+  --color-ink-3: var(--k-text-tertiary);
+  --color-ink-disabled: var(--k-text-disabled);
+  --color-ink-inverse: var(--k-text-inverse);
+  --color-ink-on-accent: var(--k-text-onAccent);
+
+  /* ── accent (brass — the user's own intent) ──────────────────────────── */
+  --color-accent: var(--k-accent-default);
+  --color-accent-hover: var(--k-accent-hover);
+  --color-accent-press: var(--k-accent-press);
+  --color-accent-subtle: var(--k-accent-subtle);
+  --color-accent-ring: var(--k-accent-ring);
+
+  /* ── semantic action colours (never swapped) ─────────────────────────── */
+  --color-like: var(--k-action-like);
+  --color-like-subtle: var(--k-action-likeSubtle);
+  --color-save: var(--k-action-save);
+  --color-save-subtle: var(--k-action-saveSubtle);
+  --color-repost: var(--k-action-repost);
+  --color-repost-subtle: var(--k-action-repostSubtle);
+  --color-comment: var(--k-action-comment);
+  --color-comment-subtle: var(--k-action-commentSubtle);
+  --color-share: var(--k-action-share);
+
+  /* ── status ──────────────────────────────────────────────────────────── */
+  --color-success: var(--k-semantic-success);
+  --color-warning: var(--k-semantic-warning);
+  --color-danger: var(--k-semantic-danger);
+  --color-danger-subtle: var(--k-semantic-dangerSubtle);
+  --color-info: var(--k-semantic-info);
+
+  /* ── taste match ramp ────────────────────────────────────────────────── */
+  --color-match-low: var(--k-match-low);
+  --color-match-mid: var(--k-match-mid);
+  --color-match-high: var(--k-match-high);
+  --color-match-peak: var(--k-match-peak);
+
+  /* ── skeleton ────────────────────────────────────────────────────────── */
+  --color-skeleton: var(--k-skeleton-base);
+  --color-skeleton-shimmer: var(--k-skeleton-shimmer);
+
+  /* ── spacing ─────────────────────────────────────────────────────────────
+     The entire ramp is `n × space-1`. One token defines the grid; `p-4` is
+     `calc(var(--k-space-1) * 4)` = the token `space.4`. */
+  --spacing: var(--k-space-1);
+
+  /* ── radius ──────────────────────────────────────────────────────────── */
+  --radius-none: var(--k-radius-none);
+  --radius-xs: var(--k-radius-xs);
+  --radius-sm: var(--k-radius-sm);
+  --radius-md: var(--k-radius-md);
+  --radius-lg: var(--k-radius-lg);
+  --radius-xl: var(--k-radius-xl);
+  --radius-2xl: var(--k-radius-2xl);
+  --radius-3xl: var(--k-radius-3xl);
+
+  /* ── type ────────────────────────────────────────────────────────────────
+     next/font supplies the loaded family; the token names it. */
+  --font-sans: var(--font-inter), var(--k-font-sans), system-ui, -apple-system,
+    'Segoe UI', Roboto, sans-serif;
+  --font-display: var(--font-instrument-serif), var(--k-font-display), Georgia,
+    'Times New Roman', serif;
+  --font-mono: var(--k-font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-display1: var(--k-text-display1-size);
+  --text-display1--line-height: var(--k-text-display1-lh);
+  --text-display1--font-weight: var(--k-text-display1-weight);
+  --text-display1--letter-spacing: var(--k-text-display1-tracking);
+
+  --text-display2: var(--k-text-display2-size);
+  --text-display2--line-height: var(--k-text-display2-lh);
+  --text-display2--font-weight: var(--k-text-display2-weight);
+  --text-display2--letter-spacing: var(--k-text-display2-tracking);
+
+  --text-display3: var(--k-text-display3-size);
+  --text-display3--line-height: var(--k-text-display3-lh);
+  --text-display3--font-weight: var(--k-text-display3-weight);
+  --text-display3--letter-spacing: var(--k-text-display3-tracking);
+
+  --text-title1: var(--k-text-title1-size);
+  --text-title1--line-height: var(--k-text-title1-lh);
+  --text-title1--font-weight: var(--k-text-title1-weight);
+  --text-title1--letter-spacing: var(--k-text-title1-tracking);
+
+  --text-title2: var(--k-text-title2-size);
+  --text-title2--line-height: var(--k-text-title2-lh);
+  --text-title2--font-weight: var(--k-text-title2-weight);
+  --text-title2--letter-spacing: var(--k-text-title2-tracking);
+
+  --text-title3: var(--k-text-title3-size);
+  --text-title3--line-height: var(--k-text-title3-lh);
+  --text-title3--font-weight: var(--k-text-title3-weight);
+  --text-title3--letter-spacing: var(--k-text-title3-tracking);
+
+  --text-body: var(--k-text-body-size);
+  --text-body--line-height: var(--k-text-body-lh);
+  --text-body--font-weight: var(--k-text-body-weight);
+  --text-body--letter-spacing: var(--k-text-body-tracking);
+
+  --text-body-strong: var(--k-text-bodyStrong-size);
+  --text-body-strong--line-height: var(--k-text-bodyStrong-lh);
+  --text-body-strong--font-weight: var(--k-text-bodyStrong-weight);
+  --text-body-strong--letter-spacing: var(--k-text-bodyStrong-tracking);
+
+  --text-callout: var(--k-text-callout-size);
+  --text-callout--line-height: var(--k-text-callout-lh);
+  --text-callout--font-weight: var(--k-text-callout-weight);
+  --text-callout--letter-spacing: var(--k-text-callout-tracking);
+
+  --text-label: var(--k-text-label-size);
+  --text-label--line-height: var(--k-text-label-lh);
+  --text-label--font-weight: var(--k-text-label-weight);
+  --text-label--letter-spacing: var(--k-text-label-tracking);
+
+  --text-caption: var(--k-text-caption-size);
+  --text-caption--line-height: var(--k-text-caption-lh);
+  --text-caption--font-weight: var(--k-text-caption-weight);
+  --text-caption--letter-spacing: var(--k-text-caption-tracking);
+
+  --text-micro: var(--k-text-micro-size);
+  --text-micro--line-height: var(--k-text-micro-lh);
+  --text-micro--font-weight: var(--k-text-micro-weight);
+  --text-micro--letter-spacing: var(--k-text-micro-tracking);
+
+  --text-count: var(--k-text-count-size);
+  --text-count--line-height: var(--k-text-count-lh);
+  --text-count--font-weight: var(--k-text-count-weight);
+  --text-count--letter-spacing: var(--k-text-count-tracking);
+
+  /* ── elevation ───────────────────────────────────────────────────────── */
+  --shadow-none: var(--k-shadow-none);
+  --shadow-low: var(--k-shadow-low);
+  --shadow-mid: var(--k-shadow-mid);
+  --shadow-high: var(--k-shadow-high);
+  --shadow-glow: var(--k-shadow-glow);
+
+  /* ── motion ──────────────────────────────────────────────────────────── */
+  --ease-standard: var(--k-ease-standard);
+  --ease-decelerate: var(--k-ease-decelerate);
+  --ease-accelerate: var(--k-ease-accelerate);
+  --ease-emphasized: var(--k-ease-emphasized);
+  --ease-overshoot: var(--k-ease-overshoot);
+  --ease-linear: var(--k-ease-linear);
+
+  /* ── blur ────────────────────────────────────────────────────────────── */
+  --blur-chrome: var(--k-blur-chrome);
+  --blur-sheet: var(--k-blur-sheet);
+  --blur-spoiler: var(--k-blur-spoiler);
+
+  /* ── border widths ───────────────────────────────────────────────────── */
+  --stroke-hairline: var(--k-stroke-hairline);
+  --stroke-thin: var(--k-stroke-thin);
+  --stroke-thick: var(--k-stroke-thick);
+
+  /* ── named animations ────────────────────────────────────────────────── */
+  --animate-shimmer: shimmer calc(var(--k-dur-deliberate) * 3) var(--k-ease-linear) infinite;
+}
+
+/* ── durations ──────────────────────────────────────────────────────────────
+   Tailwind's `duration-*` utility is numeric, so token durations get their own
+   named utilities. Use `dur-fast` rather than `duration-140`. */
+@utility dur-instant {
+  transition-duration: var(--k-dur-instant);
+}
+@utility dur-fast {
+  transition-duration: var(--k-dur-fast);
+}
+@utility dur-base {
+  transition-duration: var(--k-dur-base);
+}
+@utility dur-medium {
+  transition-duration: var(--k-dur-medium);
+}
+@utility dur-slow {
+  transition-duration: var(--k-dur-slow);
+}
+@utility dur-deliberate {
+  transition-duration: var(--k-dur-deliberate);
+}
+
+/* ── z-index ────────────────────────────────────────────────────────────── */
+@utility z-raised {
+  z-index: var(--k-z-raised);
+}
+@utility z-sticky {
+  z-index: var(--k-z-sticky);
+}
+@utility z-chrome {
+  z-index: var(--k-z-chrome);
+}
+@utility z-sheet {
+  z-index: var(--k-z-sheet);
+}
+@utility z-modal {
+  z-index: var(--k-z-modal);
+}
+@utility z-toast {
+  z-index: var(--k-z-toast);
+}
+@utility z-immersive {
+  z-index: var(--k-z-immersive);
+}
+
+/* ── layout helpers ─────────────────────────────────────────────────────── */
+@utility content-max {
+  max-width: var(--k-content-max);
+  margin-inline: auto;
+}
+@utility readable-max {
+  max-width: var(--k-readable-max);
+  margin-inline: auto;
+}
+@utility tap-min {
+  min-width: var(--k-tap-min);
+  min-height: var(--k-tap-min);
+}
+
+/* ── the focus ring — brass, 2px, never removed ─────────────────────────── */
+@utility focus-ring {
+  outline: none;
+
+  &:focus-visible {
+    outline: var(--k-stroke-focus) solid var(--k-border-focus);
+    outline-offset: var(--k-space-0-5);
+    border-radius: inherit;
+  }
+}
+
+/* ── frosted chrome ─────────────────────────────────────────────────────── */
+@utility glass {
+  background-color: var(--k-surface-glass);
+  backdrop-filter: blur(var(--k-blur-chrome)) saturate(1.4);
+}
+
+/* ── counts never change width while they animate ───────────────────────── */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}

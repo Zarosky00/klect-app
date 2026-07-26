@@ -1,0 +1,52 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next
+web/.next/
+web/out/
+web/next-env.d.ts
+
+# flutter / dart
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/ios/Flutter/Flutter.framework
+mobile/ios/Flutter/Flutter.podspec
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/debug/
+mobile/android/app/profile/
+mobile/android/app/release/
+*.iml
+
+# env / secrets — never commit these
+.env
+.env.*
+!.env.example
+**/service-account*.json
+firebase-service-account.json
+
+# build output
+dist/
+coverage/
+*.tsbuildinfo
+
+# release binaries — distributed as GitHub release assets, never in git
+web/public/downloads/
+*.apk
+
+# JVM crash dumps
+hs_err_pid*.log
+
+# editors / os
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
