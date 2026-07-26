@@ -19,7 +19,7 @@ import 'entity_share_sheet.dart';
 ///
 /// Everything the user can send lives behind one row. The two attachment
 /// affordances are icons, not a tray, because a tray is a wall of buttons —
-/// and the send control only takes the brass accent when there is something to
+/// and the send control only takes the oxblood accent when there is something to
 /// send, so the user's own intent is the only colour on the bar.
 class ChatComposer extends ConsumerStatefulWidget {
   /// Creates a composer.

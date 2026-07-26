@@ -83,7 +83,7 @@ class KlectColorsDark extends KlectColors {
   @override
   Color get borderStrong => const Color(0xFF3A4150);
   @override
-  Color get borderFocus => const Color(0xFFF0B429);
+  Color get borderFocus => const Color(0xFFBE4450);
   @override
   Color get textPrimary => const Color(0xFFF5F6F8);
   @override
@@ -95,25 +95,25 @@ class KlectColorsDark extends KlectColors {
   @override
   Color get textInverse => const Color(0xFF0A0B0E);
   @override
-  Color get textOnAccent => const Color(0xFF1A1204);
+  Color get textOnAccent => const Color(0xFFFFF6EC);
   @override
-  Color get accentDefault => const Color(0xFFF0B429);
+  Color get accentDefault => const Color(0xFFA6323F);
   @override
-  Color get accentHover => const Color(0xFFF7C34A);
+  Color get accentHover => const Color(0xFFBE4450);
   @override
-  Color get accentPress => const Color(0xFFD89C15);
+  Color get accentPress => const Color(0xFF8C2A35);
   @override
-  Color get accentSubtle => const Color(0x1FF0B429);
+  Color get accentSubtle => const Color(0x1FA6323F);
   @override
-  Color get accentRing => const Color(0x66F0B429);
+  Color get accentRing => const Color(0x66A6323F);
   @override
   Color get actionLike => const Color(0xFFFF4D6D);
   @override
   Color get actionLikeSubtle => const Color(0x1FFF4D6D);
   @override
-  Color get actionSave => const Color(0xFFF0B429);
+  Color get actionSave => const Color(0xFFA6323F);
   @override
-  Color get actionSaveSubtle => const Color(0x1FF0B429);
+  Color get actionSaveSubtle => const Color(0x1FA6323F);
   @override
   Color get actionRepost => const Color(0xFF2DD4A7);
   @override
@@ -141,7 +141,7 @@ class KlectColorsDark extends KlectColors {
   @override
   Color get matchHigh => const Color(0xFF2DD4A7);
   @override
-  Color get matchPeak => const Color(0xFFF0B429);
+  Color get matchPeak => const Color(0xFFBE4450);
   @override
   Color get skeletonBase => const Color(0xFF171A22);
   @override
@@ -175,7 +175,7 @@ class KlectColorsLight extends KlectColors {
   @override
   Color get borderStrong => const Color(0xFFC1C7D0);
   @override
-  Color get borderFocus => const Color(0xFF976C06);
+  Color get borderFocus => const Color(0xFF7C2531);
   @override
   Color get textPrimary => const Color(0xFF0F1116);
   @override
@@ -187,25 +187,25 @@ class KlectColorsLight extends KlectColors {
   @override
   Color get textInverse => const Color(0xFFFFFFFF);
   @override
-  Color get textOnAccent => const Color(0xFF1A1204);
+  Color get textOnAccent => const Color(0xFFFFF6EC);
   @override
-  Color get accentDefault => const Color(0xFF976C06);
+  Color get accentDefault => const Color(0xFF7C2531);
   @override
-  Color get accentHover => const Color(0xFF946A05);
+  Color get accentHover => const Color(0xFF6E1F2A);
   @override
-  Color get accentPress => const Color(0xFF785603);
+  Color get accentPress => const Color(0xFF591923);
   @override
-  Color get accentSubtle => const Color(0x14976C06);
+  Color get accentSubtle => const Color(0x147C2531);
   @override
-  Color get accentRing => const Color(0x59976C06);
+  Color get accentRing => const Color(0x597C2531);
   @override
   Color get actionLike => const Color(0xFFE01B47);
   @override
   Color get actionLikeSubtle => const Color(0x14E01B47);
   @override
-  Color get actionSave => const Color(0xFF976C06);
+  Color get actionSave => const Color(0xFF7C2531);
   @override
-  Color get actionSaveSubtle => const Color(0x14976C06);
+  Color get actionSaveSubtle => const Color(0x147C2531);
   @override
   Color get actionRepost => const Color(0xFF0C8465);
   @override
@@ -233,7 +233,7 @@ class KlectColorsLight extends KlectColors {
   @override
   Color get matchHigh => const Color(0xFF0C8465);
   @override
-  Color get matchPeak => const Color(0xFF976C06);
+  Color get matchPeak => const Color(0xFF7C2531);
   @override
   Color get skeletonBase => const Color(0xFFF0F1F4);
   @override
@@ -296,8 +296,8 @@ class TypeStep {
 }
 
 abstract final class Fonts {
-  static const String display = 'Instrument Serif';
-  static const String sans = 'Inter';
+  static const String display = 'Fraunces';
+  static const String sans = 'Instrument Sans';
   static const String mono = 'JetBrains Mono';
 }
 
@@ -327,7 +327,7 @@ abstract final class Elevation {
   static const ShadowSpec low = ShadowSpec(1.0, 3.0, 0.0, Color(0x1F000000));
   static const ShadowSpec mid = ShadowSpec(4.0, 14.0, -2.0, Color(0x33000000));
   static const ShadowSpec high = ShadowSpec(12.0, 32.0, -6.0, Color(0x47000000));
-  static const ShadowSpec glow = ShadowSpec(0.0, 24.0, -4.0, Color(0x33F0B429));
+  static const ShadowSpec glow = ShadowSpec(0.0, 24.0, -4.0, Color(0x33A6323F));
 }
 
 abstract final class Durations {

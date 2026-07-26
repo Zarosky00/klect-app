@@ -14,18 +14,26 @@ A collection app should feel like a **private gallery at night**, not a dashboar
    text on OLED and flattens depth; this keeps the battery win while the UI still has air.
 2. **Depth comes from surface, not shadow.** Elevation steps the ramp `surface1 → surface4`.
    Shadows appear once, softly, under floating chrome only. Stacked shadows read cheap.
-3. **The photo is the hero.** Chrome is quiet: `textSecondary` for metadata, one brass accent
-   (`#F0B429`) reserved for the user's own intent — save, primary CTA, focus ring. Everything else
-   in the UI is greyscale so that user photography is the only source of colour.
+3. **The photo is the hero.** Chrome is quiet: `textSecondary` for metadata, one oxblood accent
+   (`#A6323F` dark · `#7C2531` light) reserved for the user's own intent — save, primary CTA,
+   focus ring. Everything else in the UI is greyscale so that user photography is the only source
+   of colour. Oxblood reads wine cellar and leather binding — deep and desaturated where
+   Pinterest's red is loud. **The accent is always a flat fill; a gradient carrying the accent is
+   a bug.** `semantic.warning` stays amber — it is a warning colour, not brand.
 
-The 60/30/10 split: 60% graphite neutrals, 30% surface/border structure, 10% brass + action colours.
+The 60/30/10 split: 60% graphite neutrals, 30% surface/border structure, 10% oxblood + action colours.
+
+The dark accent ramp is three chromatic steps plus two alphas: press `#8C2A35` · default `#A6323F`
+· hover `#BE4450`, with `subtle`/`ring` as alpha layers of the default. `border.focus` and
+`match.peak` sit on the hover step in dark — it is the first step of the family that clears 3:1
+against every surface tier a ring can wrap. Light uses `#7C2531` with darker hover/press.
 
 ### Action colours are semantic and never swapped
 
 | action | colour | why |
 |---|---|---|
 | like | `#FF4D6D` rose | affection, not urgency |
-| save | `#F0B429` brass | the brand action — collecting is the point |
+| save | `#A6323F` oxblood | the brand action — collecting is the point |
 | repost | `#2DD4A7` mint | circulation |
 | comment | `#4C9AFF` azure | conversation |
 | share | `#A5ACBA` grey | utility, not an achievement |
@@ -34,9 +42,15 @@ The 60/30/10 split: 60% graphite neutrals, 30% surface/border structure, 10% bra
 
 ## 2. Type
 
-- **Display** — `Instrument Serif`. Only for collection names, profile display names, and empty-state
-  headlines. A serif at large size is what separates "gallery" from "admin panel".
-- **UI** — `Inter`. Everything else.
+- **Display** — `Fraunces` (variable: `opsz`, `SOFT`, `WONK`). Only for collection names, profile
+  display names, and empty-state headlines. A sharp editorial serif at large size is what separates
+  "gallery" from "admin panel". Mobile pins the `opsz` axis to the rendered size.
+- **UI** — `Instrument Sans` (variable `wght`). Everything else.
+- **Weights are exact.** The token ramp's 450/550/650 are real variable-font positions —
+  `FontVariation('wght', …)` on mobile, numeric weights on web — never rounded to static hundreds.
+- **Both families are bundled.** Mobile ships the variable TTFs via pubspec `fonts:` (no runtime
+  fetch, no Roboto first paint; OFL licences ride along in `assets/fonts/`). Web loads the same
+  pair through `next/font/google` with `display: swap`.
 - **Counts** — always **tabular figures**. A like count that shifts width while animating looks broken.
 
 Scale: `display1/2/3 · title1/2/3 · body · bodyStrong · callout · label · caption · micro · count`.
@@ -110,12 +124,17 @@ exactly, or the swap-in flashes.
 ## 6. Accessibility floor (non-negotiable)
 
 - Body text ≥ 4.5:1, large text and icons ≥ 3:1, on **both** themes.
-  **Verified:** every text and action colour in `tokens.json` clears **4.5:1** against its theme's
-  `bg.base` — worst case is `light/action.repost` at 4.51:1. Three tokens were darkened to reach
-  this (`text.tertiary` in both themes, plus `accent.default` and `action.repost` in light). If you
-  change a colour, re-check the ratio before committing — the floor is the contract, not the hex.
+  **Verified for the oxblood rebrand:** `text.onAccent` ivory `#FFF6EC` clears **4.5:1 on every
+  accent step it sits on** — 6.24:1 on dark `accent.default` `#A6323F`, 4.75:1 on dark hover
+  `#BE4450`, 9.07:1 on light `#7C2531`. Dark `border.focus`/`match.peak` use the hover step
+  because it clears **3:1 on every surface tier** (3.75 on `bg.base` → 3.09 on `surface3`);
+  the dark default itself is 2.95:1 on `bg.base`, so **oxblood is never body-text on dark** —
+  it appears as a fill under ivory, or as an icon tint where the fill-state change (not hue) is
+  the signal. On light, `accent.default` is 9.38:1 against `bg.base` and may be used as text.
+  If you change a colour, re-check the ratio before committing — the floor is the contract,
+  not the hex.
 - Every interactive target ≥ 44×44 including hit-slop.
 - Every image field accepts `alt_text`; the closeup surfaces it; screen readers announce
   "photo 2 of 5" in the immersive viewer.
-- Focus ring: `border.focus` brass, 2px, always visible on keyboard nav — never `outline: none`.
+- Focus ring: `border.focus` oxblood, 2px, always visible on keyboard nav — never `outline: none`.
 - Colour is never the only signal: the like state also changes icon fill, not just hue.

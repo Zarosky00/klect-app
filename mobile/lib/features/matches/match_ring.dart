@@ -10,7 +10,7 @@ import '../../design/theme.dart';
 /// The thresholds are product data, not design values — the *colours* they
 /// resolve to are the tokens `match.low/mid/high/peak`.
 abstract final class MatchScale {
-  /// At or above this, the ramp reaches brass.
+  /// At or above this, the ramp reaches oxblood.
   static const int peak = 85;
 
   /// At or above this, mint.

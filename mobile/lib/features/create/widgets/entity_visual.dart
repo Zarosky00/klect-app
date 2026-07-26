@@ -51,7 +51,7 @@ abstract final class EntityVisual {
     return parsed == null ? null : Color(parsed);
   }
 
-  /// A data-driven accent, or the brass token when the row has none.
+  /// A data-driven accent, or the accent token when the row has none.
   static Color accent(BuildContext context, String? hex) =>
       parseHex(hex) ?? context.kc.accentDefault;
 

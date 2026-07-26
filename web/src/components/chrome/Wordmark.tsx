@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/cn';
 
 /**
- * The wordmark. Instrument Serif, one brass dot — the only place the accent
+ * The wordmark. Fraunces, one oxblood dot — the only place the accent
  * appears without the user having asked for something.
  */
 export function Wordmark({

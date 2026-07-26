@@ -30,7 +30,6 @@ dependencies:
   # Platform / utility
   share_plus: ^13.3.0
   timeago: ^3.7.1
-  google_fonts: ^8.2.0
   shimmer: ^3.0.0
   flutter_webrtc: ^1.5.2
   permission_handler: ^12.0.3
@@ -47,3 +46,21 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Brand fonts are BUNDLED variable TTFs (no runtime fetch, no Roboto first
+  # paint). Family names must match `typography.family` in
+  # packages/tokens/tokens.json. Exact token weights (450/550/650) are reached
+  # via FontVariation('wght', …) in lib/design/theme.dart — the variable fonts
+  # cover the full axis, so no per-weight assets are needed.
+  # Licences: assets/fonts/OFL-*.txt (registered in main.dart).
+  fonts:
+    - family: Fraunces
+      fonts:
+        - asset: "assets/fonts/Fraunces[SOFT,WONK,opsz,wght].ttf"
+    - family: Instrument Sans
+      fonts:
+        - asset: "assets/fonts/InstrumentSans[wdth,wght].ttf"
+
+  assets:
+    - assets/fonts/OFL-Fraunces.txt
+    - assets/fonts/OFL-InstrumentSans.txt

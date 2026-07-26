@@ -5,7 +5,7 @@ import 'k_pressable.dart';
 
 /// The three button weights the product uses. Anything else is a [KPressable].
 enum KButtonVariant {
-  /// Brass fill — the user's own intent. One per screen.
+  /// Oxblood fill — the user's own intent. One per screen.
   primary,
 
   /// Bordered, surface fill.

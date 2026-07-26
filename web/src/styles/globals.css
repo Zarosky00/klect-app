@@ -93,7 +93,7 @@
     display: none !important;
   }
 
-  /* Focus is never invisible. Keyboard users get the brass ring everywhere. */
+  /* Focus is never invisible. Keyboard users get the oxblood ring everywhere. */
   :focus-visible {
     outline: var(--k-stroke-focus) solid var(--k-border-focus);
     outline-offset: var(--k-space-0-5);

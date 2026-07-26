@@ -17,7 +17,7 @@ import 'notifications_controller.dart';
 
 /// Icon and colour for one notification type.
 ///
-/// Every action colour is the semantic one: rose for likes, brass for saves,
+/// Every action colour is the semantic one: rose for likes, oxblood for saves,
 /// mint for reposts, azure for conversation. Moderation and product notices
 /// arrive as `system`.
 ({IconData icon, Color tint}) notificationStyle(

@@ -17,22 +17,22 @@
   --k-border-subtle: #20242E;
   --k-border-default: #2A2F3B;
   --k-border-strong: #3A4150;
-  --k-border-focus: #F0B429;
+  --k-border-focus: #BE4450;
   --k-text-primary: #F5F6F8;
   --k-text-secondary: #A5ACBA;
   --k-text-tertiary: #717A8C;
   --k-text-disabled: #4A5162;
   --k-text-inverse: #0A0B0E;
-  --k-text-onAccent: #1A1204;
-  --k-accent-default: #F0B429;
-  --k-accent-hover: #F7C34A;
-  --k-accent-press: #D89C15;
-  --k-accent-subtle: rgb(240 180 41 / 0.122);
-  --k-accent-ring: rgb(240 180 41 / 0.4);
+  --k-text-onAccent: #FFF6EC;
+  --k-accent-default: #A6323F;
+  --k-accent-hover: #BE4450;
+  --k-accent-press: #8C2A35;
+  --k-accent-subtle: rgb(166 50 63 / 0.122);
+  --k-accent-ring: rgb(166 50 63 / 0.4);
   --k-action-like: #FF4D6D;
   --k-action-likeSubtle: rgb(255 77 109 / 0.122);
-  --k-action-save: #F0B429;
-  --k-action-saveSubtle: rgb(240 180 41 / 0.122);
+  --k-action-save: #A6323F;
+  --k-action-saveSubtle: rgb(166 50 63 / 0.122);
   --k-action-repost: #2DD4A7;
   --k-action-repostSubtle: rgb(45 212 167 / 0.122);
   --k-action-comment: #4C9AFF;
@@ -46,7 +46,7 @@
   --k-match-low: #6E7688;
   --k-match-mid: #4C9AFF;
   --k-match-high: #2DD4A7;
-  --k-match-peak: #F0B429;
+  --k-match-peak: #BE4450;
   --k-skeleton-base: #171A22;
   --k-skeleton-shimmer: #22262F;
 }
@@ -64,22 +64,22 @@
   --k-border-subtle: #EBECF0;
   --k-border-default: #DFE1E6;
   --k-border-strong: #C1C7D0;
-  --k-border-focus: #976C06;
+  --k-border-focus: #7C2531;
   --k-text-primary: #0F1116;
   --k-text-secondary: #525A69;
   --k-text-tertiary: #6B7485;
   --k-text-disabled: #A9B0BD;
   --k-text-inverse: #FFFFFF;
-  --k-text-onAccent: #1A1204;
-  --k-accent-default: #976C06;
-  --k-accent-hover: #946A05;
-  --k-accent-press: #785603;
-  --k-accent-subtle: rgb(151 108 6 / 0.078);
-  --k-accent-ring: rgb(151 108 6 / 0.349);
+  --k-text-onAccent: #FFF6EC;
+  --k-accent-default: #7C2531;
+  --k-accent-hover: #6E1F2A;
+  --k-accent-press: #591923;
+  --k-accent-subtle: rgb(124 37 49 / 0.078);
+  --k-accent-ring: rgb(124 37 49 / 0.349);
   --k-action-like: #E01B47;
   --k-action-likeSubtle: rgb(224 27 71 / 0.078);
-  --k-action-save: #976C06;
-  --k-action-saveSubtle: rgb(151 108 6 / 0.078);
+  --k-action-save: #7C2531;
+  --k-action-saveSubtle: rgb(124 37 49 / 0.078);
   --k-action-repost: #0C8465;
   --k-action-repostSubtle: rgb(12 132 101 / 0.078);
   --k-action-comment: #0B5CD5;
@@ -93,7 +93,7 @@
   --k-match-low: #6B7485;
   --k-match-mid: #0B5CD5;
   --k-match-high: #0C8465;
-  --k-match-peak: #976C06;
+  --k-match-peak: #7C2531;
   --k-skeleton-base: #F0F1F4;
   --k-skeleton-shimmer: #E7E9EE;
 }
@@ -112,22 +112,22 @@
     --k-border-subtle: #EBECF0;
     --k-border-default: #DFE1E6;
     --k-border-strong: #C1C7D0;
-    --k-border-focus: #976C06;
+    --k-border-focus: #7C2531;
     --k-text-primary: #0F1116;
     --k-text-secondary: #525A69;
     --k-text-tertiary: #6B7485;
     --k-text-disabled: #A9B0BD;
     --k-text-inverse: #FFFFFF;
-    --k-text-onAccent: #1A1204;
-    --k-accent-default: #976C06;
-    --k-accent-hover: #946A05;
-    --k-accent-press: #785603;
-    --k-accent-subtle: rgb(151 108 6 / 0.078);
-    --k-accent-ring: rgb(151 108 6 / 0.349);
+    --k-text-onAccent: #FFF6EC;
+    --k-accent-default: #7C2531;
+    --k-accent-hover: #6E1F2A;
+    --k-accent-press: #591923;
+    --k-accent-subtle: rgb(124 37 49 / 0.078);
+    --k-accent-ring: rgb(124 37 49 / 0.349);
     --k-action-like: #E01B47;
     --k-action-likeSubtle: rgb(224 27 71 / 0.078);
-    --k-action-save: #976C06;
-    --k-action-saveSubtle: rgb(151 108 6 / 0.078);
+    --k-action-save: #7C2531;
+    --k-action-saveSubtle: rgb(124 37 49 / 0.078);
     --k-action-repost: #0C8465;
     --k-action-repostSubtle: rgb(12 132 101 / 0.078);
     --k-action-comment: #0B5CD5;
@@ -141,7 +141,7 @@
     --k-match-low: #6B7485;
     --k-match-mid: #0B5CD5;
     --k-match-high: #0C8465;
-    --k-match-peak: #976C06;
+    --k-match-peak: #7C2531;
     --k-skeleton-base: #F0F1F4;
     --k-skeleton-shimmer: #E7E9EE;
   }
@@ -149,8 +149,8 @@
 
 :root {
   /* type */
-  --k-font-display: 'Instrument Serif';
-  --k-font-sans: 'Inter';
+  --k-font-display: 'Fraunces';
+  --k-font-sans: 'Instrument Sans';
   --k-font-mono: 'JetBrains Mono';
   --k-text-display1-size: 2.75rem;
   --k-text-display1-lh: 1.0909;
@@ -244,7 +244,7 @@
   --k-shadow-low: 0 1px 3px 0px rgb(0 0 0 / 0.122);
   --k-shadow-mid: 0 4px 14px -2px rgb(0 0 0 / 0.2);
   --k-shadow-high: 0 12px 32px -6px rgb(0 0 0 / 0.278);
-  --k-shadow-glow: 0 0px 24px -4px rgb(240 180 41 / 0.2);
+  --k-shadow-glow: 0 0px 24px -4px rgb(166 50 63 / 0.2);
   /* motion */
   --k-dur-instant: 90ms;
   --k-dur-fast: 140ms;

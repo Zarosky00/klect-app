@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Instrument_Serif, Inter } from 'next/font/google';
+import { Fraunces, Instrument_Sans } from 'next/font/google';
 import type { ReactNode } from 'react';
 import '@/styles/globals.css';
 import { defaultMetadata } from '@/lib/seo';
@@ -7,20 +7,24 @@ import { getViewerBootstrap } from '@/lib/viewer';
 import { AppProviders } from '@/providers/app-providers';
 import { THEME_INIT_SCRIPT } from '@/providers/theme-provider';
 
-/** Display — collection names, profile names, empty-state headlines. Nothing else. */
-const instrumentSerif = Instrument_Serif({
+/**
+ * Display — collection names, profile names, empty-state headlines. Nothing
+ * else. Variable font: the full wght axis plus Fraunces' optical-size and
+ * soft/wonk axes, so token weights land exactly (no rounding to hundreds).
+ */
+const fraunces = Fraunces({
   subsets: ['latin'],
-  weight: '400',
-  style: ['normal', 'italic'],
   display: 'swap',
-  variable: '--font-instrument-serif',
+  variable: '--font-fraunces',
+  axes: ['SOFT', 'WONK', 'opsz'],
 });
 
-/** UI — everything else. */
-const inter = Inter({
+/** UI — everything else. Variable wght axis covers 450/550/650 exactly. */
+const instrumentSans = Instrument_Sans({
   subsets: ['latin'],
+  style: ['normal', 'italic'],
   display: 'swap',
-  variable: '--font-inter',
+  variable: '--font-instrument-sans',
 });
 
 export const metadata: Metadata = defaultMetadata;
@@ -49,7 +53,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${instrumentSerif.variable}`}
+      className={`${instrumentSans.variable} ${fraunces.variable}`}
       suppressHydrationWarning
     >
       <head>

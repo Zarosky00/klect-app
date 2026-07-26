@@ -3,14 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:klect/design/theme.dart';
 
-/// Call once per test file, in `setUpAll`.
-///
-/// google_fonts fetches font binaries over HTTP the first time a style is
-/// built. Tests have no network, and the failure surfaces as an unhandled
-/// async error, so we pin typography to the bundled fallback instead.
-void useOfflineFonts() {
-  KlectTypography.useBundledFallback();
-}
+/// Kept for `setUpAll(useOfflineFonts)` call sites: fonts are now bundled
+/// variable TTFs (pubspec `fonts:`), so typography is always offline and this
+/// is a no-op. New tests do not need to call it.
+void useOfflineFonts() {}
 
 /// Pumps [child] inside a real KLECT theme and a Riverpod scope.
 ///

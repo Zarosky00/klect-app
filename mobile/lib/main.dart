@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show LicenseEntryWithLineBreaks, LicenseRegistry;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,20 @@ import 'core/supabase.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // The bundled Fraunces + Instrument Sans TTFs ship under the SIL Open Font
+  // License; surface it in the standard licence page.
+  LicenseRegistry.addLicense(() async* {
+    for (final path in <String>[
+      'assets/fonts/OFL-Fraunces.txt',
+      'assets/fonts/OFL-InstrumentSans.txt',
+    ]) {
+      yield LicenseEntryWithLineBreaks(
+        <String>['klect_fonts'],
+        await rootBundle.loadString(path),
+      );
+    }
+  });
 
   await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
     DeviceOrientation.portraitUp,

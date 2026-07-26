@@ -5,7 +5,7 @@ import '../design/theme.dart';
 
 /// The product's text input.
 ///
-/// The focus ring is the brass `border.focus` at [Strokes.focus] and is always
+/// The focus ring is the oxblood `border.focus` at [Strokes.focus] and is always
 /// visible on keyboard navigation — never `outline: none`.
 class KTextField extends StatelessWidget {
   /// Creates a text field.

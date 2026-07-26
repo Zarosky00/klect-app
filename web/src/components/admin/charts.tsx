@@ -11,7 +11,7 @@
  *
  * Decisions worth stating:
  * - Both charts plot **magnitude**, not identity, so both are sequential: one
- *   hue (brass accent) for every mark. A value-ramp across nominal categories
+ *   hue (oxblood accent) for every mark. A value-ramp across nominal categories
  *   would double-encode length as hue, which is an anti-pattern.
  * - Bars cap at 24px and carry a 4px rounded data-end, square at the baseline.
  * - Adjacent bars are separated by a 2px gap in the surface colour, never a stroke.

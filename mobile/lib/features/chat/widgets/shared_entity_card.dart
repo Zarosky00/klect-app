@@ -31,7 +31,7 @@ class SharedEntityCard extends ConsumerWidget {
   /// The entity's id.
   final String entityId;
 
-  /// True inside the viewer's own bubble, whose fill is the brass accent.
+  /// True inside the viewer's own bubble, whose fill is the oxblood accent.
   final bool onDark;
 
   @override

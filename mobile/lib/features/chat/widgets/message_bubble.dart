@@ -75,7 +75,7 @@ class MessageBubble extends StatelessWidget {
   /// Bytes for a photo still uploading.
   final Uint8List? localPreview;
 
-  /// Plays the brief brass pulse a quote-jump or search-jump lands with.
+  /// Plays the brief accent pulse a quote-jump or search-jump lands with.
   final bool highlighted;
 
   /// Opens the message actions sheet.
@@ -263,7 +263,7 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
-/// The brass wash a jumped-to message lands with, then lets go of.
+/// The accent wash a jumped-to message lands with, then lets go of.
 ///
 /// System-driven, so it is a curve, not a spring; the screen holds [active]
 /// for a beat and the container animates both directions.

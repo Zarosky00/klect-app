@@ -34,7 +34,7 @@ export interface AvatarProps {
   size?: AvatarSize;
   verified?: boolean;
   className?: string;
-  /** Brass ring, for "this is you" or an active state. */
+  /** Accent ring, for "this is you" or an active state. */
   ring?: boolean;
 }
 

@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'tokens.g.dart';
 
@@ -66,49 +65,45 @@ class KlectTextStyles {
   final TextStyle count;
 }
 
-/// Turns [TypeScale] steps into [TextStyle]s, wiring Instrument Serif + Inter.
+/// Turns [TypeScale] steps into [TextStyle]s, wiring Fraunces + Instrument Sans.
+///
+/// Both families ship as **bundled variable TTFs** (see `fonts:` in
+/// pubspec.yaml) — no runtime fetch, no Roboto first paint, and widget tests
+/// need no network shim.
 abstract final class KlectTypography {
-  /// google_fonts fetches font binaries over HTTP on first use. Widget tests
-  /// have no network, and an unhandled fetch failure fails the test, so tests
-  /// call [useBundledFallback] in `setUpAll` to keep typography local.
-  static bool _remoteFonts = true;
-
-  /// Disables google_fonts network loading. Call this once in `setUpAll()` of
-  /// any widget test that pumps a KLECT theme.
-  static void useBundledFallback() {
-    _remoteFonts = false;
-    GoogleFonts.config.allowRuntimeFetching = false;
-  }
-
-  /// Whether remote font loading is currently enabled.
-  static bool get remoteFontsEnabled => _remoteFonts;
-
-  /// [FontWeight] only exists in hundreds; the token ramp uses 450/550/650 to
-  /// express intent. Round to the nearest available weight, preserving the
-  /// relative ordering of the ramp.
+  /// Nearest static [FontWeight] for a token weight.
+  ///
+  /// The *rendered* weight comes from the variable-font axis in [style]; this
+  /// rounded value rides along only so fallback fonts and bold-synthesis
+  /// heuristics degrade sensibly.
   static FontWeight weight(int w) {
     final index = ((w / 100).round() - 1).clamp(0, 8);
     return FontWeight.values[index];
   }
 
   /// Resolves one [TypeStep] into a concrete style in [color].
+  ///
+  /// Token weights (450/550/650) are **exact** variable-font positions via
+  /// [FontVariation] — never rounded to the static hundreds. Fraunces also
+  /// carries an optical-size axis (9–144); pinning `opsz` to the rendered size
+  /// is what gives display type its editorial bite.
   static TextStyle style(TypeStep step, Color color) {
-    final base = TextStyle(
+    return TextStyle(
       color: color,
+      fontFamily: step.family,
       fontSize: step.size,
       height: step.heightFactor,
       fontWeight: weight(step.weight),
+      fontVariations: <FontVariation>[
+        FontVariation.weight(step.weight.toDouble()),
+        if (step.family == Fonts.display)
+          FontVariation.opticalSize(step.size.clamp(9.0, 144.0).toDouble()),
+      ],
       letterSpacing: step.tracking,
       fontFeatures:
           step.tabular ? const <FontFeature>[FontFeature.tabularFigures()] : null,
       leadingDistribution: TextLeadingDistribution.even,
     );
-    if (!_remoteFonts) {
-      return base.copyWith(fontFamily: step.family);
-    }
-    return step.family == Fonts.display
-        ? GoogleFonts.instrumentSerif(textStyle: base)
-        : GoogleFonts.inter(textStyle: base);
   }
 }
 

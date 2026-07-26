@@ -40,7 +40,7 @@
   --color-ink-inverse: var(--k-text-inverse);
   --color-ink-on-accent: var(--k-text-onAccent);
 
-  /* ── accent (brass — the user's own intent) ──────────────────────────── */
+  /* ── accent (oxblood — the user's own intent, always a flat fill) ────── */
   --color-accent: var(--k-accent-default);
   --color-accent-hover: var(--k-accent-hover);
   --color-accent-press: var(--k-accent-press);
@@ -92,9 +92,9 @@
 
   /* ── type ────────────────────────────────────────────────────────────────
      next/font supplies the loaded family; the token names it. */
-  --font-sans: var(--font-inter), var(--k-font-sans), system-ui, -apple-system,
-    'Segoe UI', Roboto, sans-serif;
-  --font-display: var(--font-instrument-serif), var(--k-font-display), Georgia,
+  --font-sans: var(--font-instrument-sans), var(--k-font-sans), system-ui,
+    -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: var(--font-fraunces), var(--k-font-display), Georgia,
     'Times New Roman', serif;
   --font-mono: var(--k-font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -251,7 +251,7 @@
   min-height: var(--k-tap-min);
 }
 
-/* ── the focus ring — brass, 2px, never removed ─────────────────────────── */
+/* ── the focus ring — oxblood, 2px, never removed ───────────────────────── */
 @utility focus-ring {
   outline: none;
 

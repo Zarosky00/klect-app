@@ -23,7 +23,7 @@ class KChip extends StatelessWidget {
   /// Optional leading glyph.
   final IconData? icon;
 
-  /// Selected chips take the brass accent.
+  /// Selected chips take the oxblood accent.
   final bool selected;
 
   /// Tap handler.

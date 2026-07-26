@@ -4,7 +4,7 @@ import { tokenColor } from '@/lib/token-colors';
 export const size = { width: 32, height: 32 };
 export const contentType = 'image/png';
 
-/** Favicon: the K on the near-black base, with the brass full stop. */
+/** Favicon: the K on the near-black base, with the oxblood full stop. */
 export default function Icon() {
   return new ImageResponse(
     (

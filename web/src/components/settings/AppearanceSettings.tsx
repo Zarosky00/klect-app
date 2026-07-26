@@ -26,7 +26,7 @@ const choices: Array<{
     value: 'light',
     label: 'Always light',
     icon: 'sun',
-    blurb: 'Paper-white surfaces with the same brass accent.',
+    blurb: 'Paper-white surfaces with the same oxblood accent.',
   },
 ];
 

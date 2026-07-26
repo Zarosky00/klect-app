@@ -29,7 +29,7 @@ class KAvatar extends StatelessWidget {
   /// Draws the verified badge.
   final bool isVerified;
 
-  /// Draws a brass ring — used for "has something new".
+  /// Draws an oxblood accent ring — used for "has something new".
   final bool showRing;
 
   /// Tap handler; usually routes to `/u/:username`.

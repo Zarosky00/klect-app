@@ -279,15 +279,12 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                   ),
                 )
               else
+                // Flat accent wash — the brand never gradients (REDESIGN B2).
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: <Color>[
-                        accent.withValues(alpha: Opacities.ghost),
-                        colors.bgBase,
-                      ],
+                    color: Color.alphaBlend(
+                      accent.withValues(alpha: Opacities.ghost),
+                      colors.bgBase,
                     ),
                   ),
                 ),
