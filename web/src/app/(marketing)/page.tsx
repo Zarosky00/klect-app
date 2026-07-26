@@ -115,9 +115,9 @@ export default async function MarketingHomePage() {
             >
               Surf without an account
             </ButtonLink>
-            {/* target keeps next/link from SPA-routing a binary file */}
+            {/* APK ships as a GitHub release asset — too big for git or Vercel */}
             <ButtonLink
-              href="/downloads/klect.apk"
+              href="https://github.com/Zarosky00/klect-app/releases/download/v1.0.0/klect.apk"
               size="lg"
               variant="secondary"
               iconLeft="download"
@@ -252,7 +252,7 @@ export default async function MarketingHomePage() {
               Why collections
             </Link>
             <a
-              href="/downloads/klect.apk"
+              href="https://github.com/Zarosky00/klect-app/releases/download/v1.0.0/klect.apk"
               download
               className="focus-ring rounded-sm text-label text-ink-2 underline underline-offset-4 transition-colors dur-fast hover:text-ink"
             >
