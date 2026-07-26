@@ -193,6 +193,18 @@ touched the search/trigram/feed indexes. Re-check once real usage exists before 
 - **Local serving:** `npm --prefix klect/web run start` on port 3112 (`.claude/launch.json`,
   autoPort). If 3112 is squatted by an orphaned `next start-server.js` from a dead session, kill
   that node process rather than hopping ports.
+- **GitHub:** https://github.com/Zarosky00/klect-app (public, `main`). NOTE: the account's older
+  *private* `klect` repo (pushed 2026-06-10) is unrelated prior work — never push there.
+  APK ships as a release asset: https://github.com/Zarosky00/klect-app/releases (v1.0.0,
+  `klect.apk`); the site's download button points at it. `web/public/downloads/` is gitignored.
+- **Vercel (production):** https://klect-web.vercel.app — project `klect-web` under team
+  `ak-ash-s-projects` (`team_JvJqCf8EOWaYD7AOSrPIvvMx`). Deployed via a bootstrap shim (the MCP
+  deploy tool takes inline files, too small for the real tree): install command clones
+  `klect-app`, copies `web/` over the stub, then `npm install` + `next build` in Vercel's cloud.
+  `.env.production` (public values only) rides in the shim, NOT in git. Redeploy = re-run the
+  same deploy call; it re-clones latest `main`.
+  ⚠ Pending user action: add `https://klect-web.vercel.app/**` to Supabase dashboard →
+  Authentication → URL Configuration (Site URL + Redirect URLs) so auth emails link to prod.
 - **Platform proof:** `flutter build apk --release` → `app-release.apk` (95.9 MB) ✅, and the
   production web build served locally via `next start` renders live DB content with zero console
   errors ✅. Two machine fixes were needed for the APK (this box has **8 GB RAM**): Gradle heap
