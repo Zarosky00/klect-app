@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-26 · Session: chat upgrade + verification sweep
+> Last updated: 2026-07-27 · Session: redesign — rebrand, Create, Pulse X-parity, mobile-web
 
 ---
 
@@ -16,6 +16,7 @@
 | 5 | Next.js web + admin (`web/`) | ✅ **DONE (features)** | All 31 page routes + 3 auth route handlers + sitemap/robots implemented incl. intercepting closeup modal and full `/admin` — zero placeholders. `tsc` exit 0. Group *management* UI is mobile-only for now (web renders groups fine). |
 | 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | `verify.sh` fully green 2026-07-26 (tokens 3/3 · mobile pub get/analyze/test/build web · web tsc/lint/build). Manual CHECKLIST.md sections A–H (63 seen-it-work items) still to walk through. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **DONE & VERIFIED** | Migration **0017 applied to live DB** + all 5 group RPCs smoke-tested under JWT impersonation (incl. owner auto-transfer). Advisors: 0 ERROR. `database.types.ts` regenerated. |
+| 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
 
 **Verification (actually run, not assumed — full sweep 2026-07-26):**
 - `bash scripts/verify.sh` **all green**: tokens 3/3 (one warn-only hex in the blurhash decoder,
@@ -211,6 +212,33 @@ touched the search/trigram/feed indexes. Re-check once real usage exists before 
   right-sized in `mobile/android/gradle.properties` (template's `-Xmx8G` exceeded physical RAM and
   crashed the daemon with a native OOM) and `kotlin.incremental=false` (its cache files hit Windows
   file-lock errors). Both fixes are committed with comments in that file.
+
+### 2026-07-27 — redesign session (`REDESIGN_PLAN.md` executed in full)
+- 4-agent audit grounded the plan; user locked: oxblood accent, Fraunces+Instrument Sans, full
+  algorithmic For-you, crop/rotate/presets editor.
+- **0018_pulse_first_class applied live** (dry-run-validated first in a rolled-back transaction):
+  post_media, `create_post` (sole insert path), `pulse_feed` p_mode following|foryou with
+  server-embedded targets, LIMIT + empty-repost + viewer_reposted bugs fixed, counter-INSERT
+  hardening. Smoke: 6/6 under JWT impersonation. Advisors 0 ERROR (+1 accepted WARN).
+- **Rebrand**: oxblood ramps with per-surface WCAG checks (focus ring moved to the hover step to
+  clear 3:1 on dark), fonts **bundled** (variable TTFs + OFL licences, FontVariation exact
+  450/550/650 weights), the one accent gradient flattened, web on next/font.
+- **Mobile**: Surf-header overlap + profile bio-bleed root-caused and fixed; KImageCache
+  bounded-retry + tap-to-retry chip; settings rebuilt with depth (section islands, icon chips,
+  hero row); cover-orphan bug fixed (PendingCover uploads at save, not pick); Create inverted to
+  PICK→FRAME→FILE with a pure-Flutter cropper (token aspect presets + live masonry preview),
+  keep-alive uploads, un-stranded inline shelf creation; Pulse: createPost API, rebuilt composer
+  (text/photos/entity/quote), Repost|Quote|Undo chooser, For-you|Following tabs, paged/sorted
+  comments with batched viewer-likes (fixes the always-false viewerLiked), stagger motion.
+- **Web**: composer moved to `create_post` (un-broke live posting), photos+entity+quote parity,
+  For-you tabs, envelope target cards, comment pill fixed (was dead), comments upgrades; nav
+  rework (Messages in bottom bar, avatar sheet for Profile/Settings/Admin), 16px `input` token
+  kills iOS focus-zoom, touch-visible tile/bubble actions, `-webkit-touch-callout` fix,
+  full-screen dvh closeup on phones, safe-area top, chat overflow parity (mute/pin/archive/
+  block/report + edit/delete own message), admin report actions touch-visible.
+- All verify.sh phases green (web phase re-run first-pass green; mobile 4/4). Production Vercel
+  redeployed mid-session to un-break posting. Site APK button now points at
+  `releases/latest/download/klect.apk` (stable across future releases).
 
 ---
 

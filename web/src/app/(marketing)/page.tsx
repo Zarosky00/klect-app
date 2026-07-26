@@ -117,7 +117,7 @@ export default async function MarketingHomePage() {
             </ButtonLink>
             {/* APK ships as a GitHub release asset — too big for git or Vercel */}
             <ButtonLink
-              href="https://github.com/Zarosky00/klect-app/releases/download/v1.0.0/klect.apk"
+              href="https://github.com/Zarosky00/klect-app/releases/latest/download/klect.apk"
               size="lg"
               variant="secondary"
               iconLeft="download"
@@ -252,7 +252,7 @@ export default async function MarketingHomePage() {
               Why collections
             </Link>
             <a
-              href="https://github.com/Zarosky00/klect-app/releases/download/v1.0.0/klect.apk"
+              href="https://github.com/Zarosky00/klect-app/releases/latest/download/klect.apk"
               download
               className="focus-ring rounded-sm text-label text-ink-2 underline underline-offset-4 transition-colors dur-fast hover:text-ink"
             >
