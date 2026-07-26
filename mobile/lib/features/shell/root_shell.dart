@@ -8,6 +8,7 @@ import '../../core/api/klect_api.dart';
 import '../../core/supabase.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
+import 'update_banner.dart';
 
 /// Unread notification count, for the tab badge.
 final unreadNotificationCountProvider = FutureProvider<int>(
@@ -38,63 +39,83 @@ class RootShell extends ConsumerWidget {
       backgroundColor: colors.bgBase,
       extendBody: true,
       body: navigationShell,
-      bottomNavigationBar: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: Blurs.chrome, sigmaY: Blurs.chrome),
-          child: Container(
-            decoration: BoxDecoration(
-              color: colors.surfaceGlass,
-              border: Border(
-                top: BorderSide(
-                  color: colors.borderSubtle,
-                  width: Strokes.hairline,
-                ),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // Sideloaded-build update prompt; renders nothing when up to date.
+          const UpdateBanner(),
+          _BottomBar(navigationShell: navigationShell, unread: unread),
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomBar extends StatelessWidget {
+  const _BottomBar({required this.navigationShell, required this.unread});
+
+  final StatefulNavigationShell navigationShell;
+  final int unread;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: Blurs.chrome, sigmaY: Blurs.chrome),
+        child: Container(
+          decoration: BoxDecoration(
+            color: colors.surfaceGlass,
+            border: Border(
+              top: BorderSide(
+                color: colors.borderSubtle,
+                width: Strokes.hairline,
               ),
             ),
-            child: SafeArea(
-              top: false,
-              child: SizedBox(
-                height: Layout.bottomBarHeight,
-                child: Row(
-                  children: <Widget>[
-                    _Tab(
-                      index: 0,
-                      icon: Icons.grid_view_outlined,
-                      activeIcon: Icons.grid_view_rounded,
-                      label: 'Surf',
-                      shell: navigationShell,
-                    ),
-                    _Tab(
-                      index: 1,
-                      icon: Icons.bolt_outlined,
-                      activeIcon: Icons.bolt_rounded,
-                      label: 'Pulse',
-                      shell: navigationShell,
-                    ),
-                    _Tab(
-                      index: 2,
-                      icon: Icons.add_box_outlined,
-                      activeIcon: Icons.add_box_rounded,
-                      label: 'Create',
-                      shell: navigationShell,
-                    ),
-                    _Tab(
-                      index: 3,
-                      icon: Icons.notifications_none_rounded,
-                      activeIcon: Icons.notifications_rounded,
-                      label: 'Alerts',
-                      badge: unread,
-                      shell: navigationShell,
-                    ),
-                    _Tab(
-                      index: 4,
-                      icon: Icons.person_outline_rounded,
-                      activeIcon: Icons.person_rounded,
-                      label: 'You',
-                      shell: navigationShell,
-                    ),
-                  ],
-                ),
+          ),
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: Layout.bottomBarHeight,
+              child: Row(
+                children: <Widget>[
+                  _Tab(
+                    index: 0,
+                    icon: Icons.grid_view_outlined,
+                    activeIcon: Icons.grid_view_rounded,
+                    label: 'Surf',
+                    shell: navigationShell,
+                  ),
+                  _Tab(
+                    index: 1,
+                    icon: Icons.bolt_outlined,
+                    activeIcon: Icons.bolt_rounded,
+                    label: 'Pulse',
+                    shell: navigationShell,
+                  ),
+                  _Tab(
+                    index: 2,
+                    icon: Icons.add_box_outlined,
+                    activeIcon: Icons.add_box_rounded,
+                    label: 'Create',
+                    shell: navigationShell,
+                  ),
+                  _Tab(
+                    index: 3,
+                    icon: Icons.notifications_none_rounded,
+                    activeIcon: Icons.notifications_rounded,
+                    label: 'Alerts',
+                    badge: unread,
+                    shell: navigationShell,
+                  ),
+                  _Tab(
+                    index: 4,
+                    icon: Icons.person_outline_rounded,
+                    activeIcon: Icons.person_rounded,
+                    label: 'You',
+                    shell: navigationShell,
+                  ),
+                ],
               ),
             ),
           ),

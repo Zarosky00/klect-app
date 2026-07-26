@@ -2,7 +2,10 @@ name: klect
 description: "KLECT — a social network where the unit of content is a collection."
 publish_to: 'none'
 
-version: 1.0.0+1
+# ⚠ The x.y.z part MUST move in lockstep with `kAppVersion` in
+# lib/core/app_version.dart AND the GitHub release tag (vX.Y.Z) on
+# Zarosky00/klect-app — the in-app update checker compares the two.
+version: 1.2.0+3
 
 environment:
   sdk: ^3.12.2
@@ -38,6 +41,14 @@ dependencies:
   shared_preferences: ^2.5.5
   uuid: ^4.6.0
   collection: ^1.19.1
+
+  # In-app update check for sideloaded Android builds: `http` polls the
+  # public GitHub releases endpoint, `url_launcher` hands the APK URL to the
+  # browser (Android's installer takes over from the download — deliberately
+  # no REQUEST_INSTALL_PACKAGES/FileProvider plumbing). Both were already in
+  # the dependency tree transitively.
+  http: ^1.6.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

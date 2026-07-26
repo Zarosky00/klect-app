@@ -78,5 +78,13 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- url_launcher: the update banner hands the APK release URL to the
+             browser, which downloads it and lets Android's installer take
+             over. Package-visibility rules (API 30+) require declaring the
+             https VIEW intent we launch. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>
