@@ -239,6 +239,12 @@ touched the search/trigram/feed indexes. Re-check once real usage exists before 
 - All verify.sh phases green (web phase re-run first-pass green; mobile 4/4). Production Vercel
   redeployed mid-session to un-break posting. Site APK button now points at
   `releases/latest/download/klect.apk` (stable across future releases).
+- **In-app update checker shipped as v1.2.0** (`lib/core/updates/`, banner in root shell):
+  Android-only, checks `releases/latest` at most every 6h with cached fallback and
+  skip-this-version persistence; "Update now" opens the latest-release APK in the browser
+  (deliberate: no REQUEST_INSTALL_PACKAGES/FileProvider plumbing). `kAppVersion` in
+  `lib/core/app_version.dart` must move in lockstep with pubspec.yaml + the release tag —
+  releasing without bumping all three breaks the banner logic. 15 tests cover it.
 
 ---
 
