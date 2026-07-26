@@ -164,7 +164,13 @@ export const Pressable = forwardRef<HTMLButtonElement, PressableProps>(function 
     <button
       ref={ref}
       type="button"
-      className={cn('focus-ring relative select-none touch-manipulation', feedback && 'k-pressable', className)}
+      className={cn(
+        // `k-no-callout` suppresses the iOS long-press image sheet so a held
+        // press reaches `onPeek` instead of Safari's own menu.
+        'focus-ring k-no-callout relative select-none touch-manipulation',
+        feedback && 'k-pressable',
+        className,
+      )}
       style={
         feedback
           ? ({ ...style, '--k-press-scale': String(pressScale) } as CSSProperties)

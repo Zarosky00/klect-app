@@ -148,6 +148,8 @@ export function EntityCard({
               'absolute inset-x-2 bottom-2 z-raised',
               'opacity-0 transition-opacity dur-fast ease-standard',
               'group-hover:opacity-100 group-focus-within:opacity-100',
+              // Touch has no hover: the action row is simply always there.
+              'pointer-coarse:opacity-100',
             )}
           >
             <ActionBar

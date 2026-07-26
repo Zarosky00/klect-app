@@ -63,7 +63,8 @@ misinformation | impersonation | other`
 | RPC | Args | Returns |
 |---|---|---|
 | `surf_feed` | `p_limit=30`, `p_offset=0`, `p_seed`, `p_filter` | `setof surf_card` — **the Pinterest grid** |
-| `pulse_feed` | `p_limit=25`, `p_before?` | `jsonb[]` — **the X stream** |
+| `pulse_feed` | `p_limit=25`, `p_before?`, `p_mode='following'\|'foryou'` | `jsonb[]` — **the X stream**. 0018: envelope extended (`kind`, `media[]`, `target{}` server-embedded, `created_at`, threading ids); `foryou` is taste+engagement ranked — page with `min(sort_at)` as next `p_before` |
+| `create_post` | `p_body?`, `p_kind='post'`, `p_entity_type?`+`p_entity_id?` (entity share, or quote when `'post'`), `p_media jsonb?` (≤4 descriptors under `{uid}/posts/{draft}/…` in the `media` bucket), `p_reply_to?` | `jsonb` — the new post's full pulse envelope. **The only insert path for posts** (0018 revoked direct INSERT). Stable errors: `body_or_attachment_required`, `bad_target`, `entity_not_found`, `reply_not_found`, `blocked`, `bad_media`, `too_many_media`, `media_not_yours`, `body_too_long` |
 | `get_closeup` | `p_type`, `p_id` | `jsonb` — **the single-tap detail payload** |
 | `search_all` | `p_q`, `p_limit=20` | `{ people, collections, items, tags }` |
 | `get_matches` | `p_limit=20` | collectors ranked by taste overlap (recomputes on call) |

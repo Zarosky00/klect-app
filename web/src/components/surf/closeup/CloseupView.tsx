@@ -10,7 +10,7 @@ import { cn } from '@/lib/cn';
 import { ENTITY_LABEL, entityHref } from '@/lib/entities';
 import { compactCount, longTimeAgo, plural } from '@/lib/format';
 import { seedFromCloseup } from '@/lib/interactions';
-import { collectionHref, routes, subcollectionHref } from '@/lib/routes';
+import { closeupHref, collectionHref, routes, subcollectionHref } from '@/lib/routes';
 import { mediaUrl } from '@/lib/storage';
 import {
   closeupCover,
@@ -147,9 +147,26 @@ export function CloseupView({
                 onImmersive={openImmersive}
               />
             ) : payload.entity_type === 'post' ? (
-              <blockquote className="rounded-lg border border-line-subtle bg-surface-1 p-6 font-display text-display3 text-ink">
-                {payload.post.body ?? 'Post'}
-              </blockquote>
+              <div className="flex flex-col gap-3">
+                <blockquote className="rounded-lg border border-line-subtle bg-surface-1 p-6 font-display text-display3 text-ink">
+                  {payload.post.body ?? 'Post'}
+                </blockquote>
+                {payload.post.entity_type && payload.post.entity_id ? (
+                  <Link
+                    href={closeupHref(payload.post.entity_type, payload.post.entity_id)}
+                    className={cn(
+                      'focus-ring flex items-center gap-2 rounded-lg border border-line',
+                      'bg-surface-1 px-4 py-3 text-callout text-ink-2',
+                      'transition-colors dur-fast ease-standard hover:border-line-strong hover:text-ink',
+                    )}
+                  >
+                    <span className="text-micro uppercase tracking-widest text-ink-3">
+                      {payload.post.entity_type === 'post' ? 'Quotes' : 'Shares'}
+                    </span>
+                    View the attached {ENTITY_LABEL[payload.post.entity_type].toLowerCase()}
+                  </Link>
+                ) : null}
+              </div>
             ) : (
               <button
                 type="button"

@@ -4,13 +4,16 @@
  *
  * `listComments` gives the rows; the author profiles come from one batched
  * `in()` lookup rather than a join, so the shape stays exactly the generated
- * row type and nothing here depends on PostgREST embedding inference.
+ * row type and nothing here depends on PostgREST embedding inference. The
+ * viewer's own likes over the page are seeded the same way — one batched read,
+ * never one probe per comment.
  *
  * No count is ever computed here: `like_count` and `reply_count` are counter
  * columns kept correct by triggers (BACKEND_API §1).
  */
 import { listComments, type Client } from '@/lib/api';
 import type { EntityType } from '@/lib/entities';
+import { toKlectError } from '@/lib/errors';
 import type { CommentRow } from '@/lib/types';
 
 export interface CommentAuthor {
@@ -32,14 +35,23 @@ export interface CommentNode {
   replyCount: number;
   createdAt: string;
   editedAt: string | null;
+  /** Seeded from one batched read of the viewer's likes over this page. */
+  viewerLiked: boolean;
   /** True while an optimistic post is still in flight. */
   pending?: boolean;
 }
 
 export const MAX_COMMENT_DEPTH = 3;
 export const MAX_COMMENT_LENGTH = 2000;
+export const COMMENT_PAGE_SIZE = 50;
 
-function toNode(row: CommentRow, authors: Map<string, CommentAuthor>): CommentNode {
+export type CommentSort = 'top' | 'newest';
+
+function toNode(
+  row: CommentRow,
+  authors: Map<string, CommentAuthor>,
+  liked: ReadonlySet<string>,
+): CommentNode {
   return {
     id: row.id,
     body: row.body,
@@ -51,38 +63,72 @@ function toNode(row: CommentRow, authors: Map<string, CommentAuthor>): CommentNo
     replyCount: row.reply_count,
     createdAt: row.created_at,
     editedAt: row.edited_at,
+    viewerLiked: liked.has(row.id),
   };
+}
+
+export interface CommentPage {
+  nodes: CommentNode[];
+  /** True when another `loadCommentThread` call could return more rows. */
+  hasMore: boolean;
+  /** Offset to pass for the next page. */
+  nextOffset: number;
 }
 
 export async function loadCommentThread(
   client: Client,
   type: EntityType,
   id: string,
-  limit = 200,
-): Promise<CommentNode[]> {
-  const rows = (await listComments(client, type, id, { limit })).filter(
-    (row) => row.hidden_at === null,
-  );
-  if (rows.length === 0) return [];
+  options: { limit?: number; offset?: number; viewerId?: string | null } = {},
+): Promise<CommentPage> {
+  const limit = options.limit ?? COMMENT_PAGE_SIZE;
+  const offset = options.offset ?? 0;
+
+  const raw = await listComments(client, type, id, { limit, offset });
+  const rows = raw.filter((row) => row.hidden_at === null);
+  const hasMore = raw.length === limit;
+  const nextOffset = offset + raw.length;
+
+  if (rows.length === 0) return { nodes: [], hasMore, nextOffset };
 
   const authorIds = [...new Set(rows.map((row) => row.author_id))];
-  const { data } = await client
-    .from('profiles')
-    .select('id, username, display_name, avatar_path, is_verified')
-    .in('id', authorIds);
+  const commentIds = rows.map((row) => row.id);
+
+  const [authorsResult, likesResult] = await Promise.all([
+    client
+      .from('profiles')
+      .select('id, username, display_name, avatar_path, is_verified')
+      .in('id', authorIds),
+    options.viewerId
+      ? client
+          .from('likes')
+          .select('entity_id')
+          .eq('user_id', options.viewerId)
+          .eq('entity_type', 'comment')
+          .in('entity_id', commentIds)
+      : Promise.resolve({ data: [] as Array<{ entity_id: string }>, error: null }),
+  ]);
+  if (likesResult.error) throw toKlectError(likesResult.error);
 
   const authors = new Map<string, CommentAuthor>();
-  for (const profile of data ?? []) authors.set(profile.id, profile);
+  for (const profile of authorsResult.data ?? []) authors.set(profile.id, profile);
+  const liked = new Set((likesResult.data ?? []).map((row) => row.entity_id));
 
-  return rows.map((row) => toNode(row, authors));
+  return { nodes: rows.map((row) => toNode(row, authors, liked)), hasMore, nextOffset };
 }
 
 export interface CommentTreeNode extends CommentNode {
   children: CommentTreeNode[];
 }
 
-/** Roots first, replies nested underneath, both in posting order. */
-export function buildCommentTree(nodes: readonly CommentNode[]): CommentTreeNode[] {
+/**
+ * Roots ordered by `sort` — Top (most liked) or Newest — with replies nested
+ * underneath in posting order.
+ */
+export function buildCommentTree(
+  nodes: readonly CommentNode[],
+  sort: CommentSort = 'newest',
+): CommentTreeNode[] {
   const byId = new Map<string, CommentTreeNode>();
   for (const node of nodes) byId.set(node.id, { ...node, children: [] });
 
@@ -93,11 +139,17 @@ export function buildCommentTree(nodes: readonly CommentNode[]): CommentTreeNode
     else roots.push(node);
   }
 
-  const sort = (list: CommentTreeNode[]): void => {
+  roots.sort((a, b) =>
+    sort === 'top'
+      ? b.likeCount - a.likeCount || a.createdAt.localeCompare(b.createdAt)
+      : b.createdAt.localeCompare(a.createdAt),
+  );
+
+  const sortChildren = (list: CommentTreeNode[]): void => {
     list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    for (const child of list) sort(child.children);
+    for (const child of list) sortChildren(child.children);
   };
-  sort(roots);
+  for (const root of roots) sortChildren(root.children);
 
   return roots;
 }

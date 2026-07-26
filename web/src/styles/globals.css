@@ -128,6 +128,19 @@
     background-color: var(--k-border-strong);
     border-radius: var(--k-radius-full);
   }
+
+  /* iOS Safari zooms the whole page when a focused field computes under 16px.
+     On coarse pointers every field reads at the `input` token step (16px) so
+     focus never zooms. The fix is a floor, never a viewport lock — pinch
+     zooming stays available (a11y). `!important` outranks the type-scale
+     utility classes; `max(…, 1em)` keeps fields inside larger type intact. */
+  @media (pointer: coarse) {
+    input,
+    select,
+    textarea {
+      font-size: max(var(--k-text-input-size), 1em) !important;
+    }
+  }
 }
 
 @layer components {
@@ -153,6 +166,12 @@
 
   .k-spin {
     animation: k-spin var(--k-dur-deliberate) var(--k-ease-linear) infinite;
+  }
+
+  /* Long-press must reach the radial peek before iOS offers its own image
+     sheet. Applied by `Pressable`, the one gesture surface. */
+  .k-no-callout {
+    -webkit-touch-callout: none;
   }
 
   /* Tap feedback. The scale factor is supplied by `pressScale` in
@@ -216,6 +235,25 @@
     animation: k-toast-in var(--k-dur-medium) var(--k-ease-emphasized) both;
   }
 
+  /* Pulse card entrance — staggered fade + rise. The per-card delay is set
+     inline from `listStaggerDelay` (src/design/motion.ts), tokens only. */
+  .k-feed-enter {
+    animation: k-feed-enter var(--k-dur-medium) var(--k-ease-decelerate) both;
+  }
+
+  /* The post you just composed slides in from above the stream. */
+  .k-post-in {
+    animation: k-post-in var(--k-dur-medium) var(--k-ease-decelerate) both;
+  }
+
+  /* Reduced motion: content appears in place, no travel. */
+  @media (prefers-reduced-motion: reduce) {
+    .k-feed-enter,
+    .k-post-in {
+      animation: none;
+    }
+  }
+
   /* Masonry column count comes straight from tokens.g.css. */
   .k-masonry {
     column-count: var(--k-masonry-cols);
@@ -263,6 +301,28 @@
   from {
     opacity: 0;
     transform: translateY(var(--k-space-3));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes k-feed-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--k-space-2));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes k-post-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--k-space-3)));
   }
   to {
     opacity: 1;

@@ -350,7 +350,18 @@ export function closeupDescription(payload: CloseupPayload): string | null {
 
 /* ── pulse ────────────────────────────────────────────────────────────────── */
 
+export type PulseMode = 'following' | 'foryou';
+
+export const PULSE_MODES: readonly PulseMode[] = ['foryou', 'following'];
+
+export const PULSE_MODE_LABELS: Record<PulseMode, string> = {
+  foryou: 'For you',
+  following: 'Following',
+};
+
 export interface PulseActor {
+  /** Present since migration 0018; older optimistic rows may omit it. */
+  id?: string | null;
   username: string;
   display_name: string;
   avatar_path: string | null;
@@ -358,8 +369,46 @@ export interface PulseActor {
 }
 
 export interface PulseReposter {
+  id?: string | null;
   username: string;
   display_name: string;
+  avatar_path?: string | null;
+  is_verified?: boolean;
+}
+
+/** One photo attached to a post — mirrors `post_media` (migration 0018). */
+export interface PulseMedia {
+  id: string;
+  storage_path: string;
+  width: number | null;
+  height: number | null;
+  blurhash: string | null;
+  dominant_color: string | null;
+  alt_text: string | null;
+  position: number;
+}
+
+/**
+ * The server-embedded preview of a post's attached / quoted / reposted thing.
+ * Uniform keys across types; `{type, id, unavailable: true}` when the target is
+ * not visible to the caller — render a tombstone, never an empty card.
+ */
+export interface PulseTarget {
+  type: EntityType;
+  id: string;
+  unavailable?: boolean;
+  title?: string | null;
+  subtitle?: string | null;
+  body?: string | null;
+  kind?: string | null;
+  cover_path?: string | null;
+  cover_blurhash?: string | null;
+  cover_width?: number | null;
+  cover_height?: number | null;
+  child_count?: number | null;
+  like_count?: number | null;
+  created_at?: string | null;
+  author?: PulseActor | null;
 }
 
 export interface PulseEntry {
@@ -383,6 +432,17 @@ export interface PulseEntry {
   viewer_liked: boolean;
   viewer_saved: boolean;
   viewer_reposted: boolean;
+  /* Additive envelope keys from migration 0018. */
+  kind?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  created_at?: string;
+  reply_to_post_id?: string | null;
+  root_post_id?: string | null;
+  /** The post's own photos, ordered by position. */
+  media?: PulseMedia[];
+  /** Server-embedded target payload — quoted post, shared entity, or tombstone. */
+  target?: PulseTarget | null;
 }
 
 /* ── search ───────────────────────────────────────────────────────────────── */

@@ -9,7 +9,9 @@ import { useEntitySocial } from '@/providers/interactions-provider';
 import { useSession } from '@/providers/session-provider';
 import { useToast } from '@/providers/toast-provider';
 import { CountPill } from './CountPill';
+import { Icon } from './Icon';
 import { IconButton } from './Button';
+import { useEscape } from './overlay';
 import { ReportDialog } from './ReportDialog';
 
 /**
@@ -34,6 +36,12 @@ export interface ActionBarProps {
   showShare?: boolean;
   showReport?: boolean;
   onComment?: () => void;
+  /**
+   * When provided, the repost pill opens an X-style chooser — Repost / Quote /
+   * Undo — instead of toggling directly, and Quote calls this. Pulse passes it;
+   * surf cards keep the one-tap toggle.
+   */
+  onQuote?: () => void;
   className?: string;
 }
 
@@ -48,12 +56,16 @@ export function ActionBar({
   showShare = true,
   showReport = true,
   onComment,
+  onQuote,
   className,
 }: ActionBarProps) {
   const social = useEntitySocial(type, id, seed);
   const { user } = useSession();
   const { toast, success, fromError } = useToast();
   const [reporting, setReporting] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+
+  useEscape(choosing, () => setChoosing(false));
 
   const compact = variant === 'compact';
 
@@ -119,17 +131,87 @@ export function ActionBar({
           }}
         />
 
-        <CountPill
-          icon="repost"
-          tone="repost"
-          count={social.repostCount}
-          active={social.reposted}
-          compact={compact}
-          label={social.reposted ? 'Undo repost' : 'Repost'}
-          onClick={() => {
-            if (requireAuth()) social.repost();
-          }}
-        />
+        {onQuote ? (
+          <span className="relative inline-flex">
+            <CountPill
+              icon="repost"
+              tone="repost"
+              count={social.repostCount}
+              active={social.reposted}
+              compact={compact}
+              label={social.reposted ? 'Repost options' : 'Repost or quote'}
+              aria-haspopup="menu"
+              aria-expanded={choosing}
+              onClick={() => {
+                if (requireAuth()) setChoosing((open) => !open);
+              }}
+            />
+            {choosing ? (
+              <>
+                {/* Invisible scrim: any click outside the menu dismisses it. */}
+                <button
+                  type="button"
+                  aria-label="Close repost options"
+                  tabIndex={-1}
+                  className="fixed inset-0 z-raised cursor-default"
+                  onClick={() => setChoosing(false)}
+                />
+                <div
+                  role="menu"
+                  aria-label="Repost options"
+                  className={cn(
+                    'absolute left-0 top-full z-sheet mt-1 w-48 overflow-hidden',
+                    'rounded-lg border border-line bg-surface-1 py-1 shadow-high',
+                  )}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={cn(
+                      'focus-ring flex w-full items-center gap-2.5 px-3 py-2 text-left',
+                      'text-callout transition-colors dur-fast ease-standard hover:bg-surface-2',
+                      social.reposted ? 'text-danger' : 'text-ink',
+                    )}
+                    onClick={() => {
+                      setChoosing(false);
+                      social.repost();
+                    }}
+                  >
+                    <Icon name="repost" size="sm" />
+                    {social.reposted ? 'Undo repost' : 'Repost'}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={cn(
+                      'focus-ring flex w-full items-center gap-2.5 px-3 py-2 text-left',
+                      'text-callout text-ink transition-colors dur-fast ease-standard hover:bg-surface-2',
+                    )}
+                    onClick={() => {
+                      setChoosing(false);
+                      onQuote();
+                    }}
+                  >
+                    <Icon name="comment" size="sm" />
+                    Quote
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </span>
+        ) : (
+          <CountPill
+            icon="repost"
+            tone="repost"
+            count={social.repostCount}
+            active={social.reposted}
+            compact={compact}
+            label={social.reposted ? 'Undo repost' : 'Repost'}
+            onClick={() => {
+              if (requireAuth()) social.repost();
+            }}
+          />
+        )}
 
         {showComment ? (
           <CountPill

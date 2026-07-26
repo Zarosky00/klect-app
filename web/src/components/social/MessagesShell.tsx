@@ -74,8 +74,8 @@ export function MessagesShell({
   return (
     /* The app shell puts a top bar above and a bottom bar below on mobile, and
        neither on desktop — so the pane height is the viewport minus exactly
-       what the chrome already took. */
-    <div className="flex h-[calc(100dvh-var(--k-topbar-h)-var(--k-bottombar-h)-env(safe-area-inset-bottom))] min-h-0 md:h-dvh">
+       what the chrome already took, including both safe-area insets. */
+    <div className="flex h-[calc(100dvh-var(--k-topbar-h)-var(--k-bottombar-h)-env(safe-area-inset-top)-env(safe-area-inset-bottom))] min-h-0 md:h-dvh">
       <aside
         aria-label="Conversations"
         className={cn(

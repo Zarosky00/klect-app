@@ -456,6 +456,29 @@ export async function getConversationSummary(
   return summary ?? null;
 }
 
+/**
+ * Per-viewer conversation flags. `pinned`, `archived_at` and `muted_until`
+ * live on the viewer's own `conversation_members` row (never the conversation),
+ * mirroring mobile `ChatApi`: pin is a boolean, archive stamps `archived_at`,
+ * mute stamps `muted_until` (null clears either).
+ */
+export async function updateConversationMembership(
+  client: Client,
+  conversationId: string,
+  userId: string,
+  patch: Pick<
+    Tables['conversation_members']['Update'],
+    'pinned' | 'archived_at' | 'muted_until'
+  >,
+): Promise<void> {
+  const { error } = await client
+    .from('conversation_members')
+    .update(patch)
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId);
+  if (error) throw toKlectError(error);
+}
+
 /* ── message metadata (reactions, receipts, replies) ──────────────────────── */
 
 export async function listMessageReactions(

@@ -30,6 +30,7 @@ import {
   MAX_COMMENT_DEPTH,
   MAX_COMMENT_LENGTH,
   type CommentNode,
+  type CommentSort,
   type CommentTreeNode,
 } from './comments';
 
@@ -68,27 +69,54 @@ export function CommentThread({ type, id, autoFocus = false, className }: Commen
   const [replyTo, setReplyTo] = useState<CommentNode | null>(null);
   const [reportTarget, setReportTarget] = useState<CommentNode | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CommentNode | null>(null);
+  const [sort, setSort] = useState<CommentSort>('top');
+  const [hasMore, setHasMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const viewerId = user?.id ?? null;
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      setNodes(await loadCommentThread(supabase, type, id));
+      const page = await loadCommentThread(supabase, type, id, { viewerId });
+      setNodes(page.nodes);
+      setHasMore(page.hasMore);
+      setOffset(page.nextOffset);
     } catch (thrown) {
       setError(thrown);
     }
-  }, [id, supabase, type]);
+  }, [id, supabase, type, viewerId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await loadCommentThread(supabase, type, id, { offset, viewerId });
+      setNodes((current) => {
+        const known = new Set((current ?? []).map((node) => node.id));
+        const fresh = page.nodes.filter((node) => !known.has(node.id));
+        return [...(current ?? []), ...fresh];
+      });
+      setHasMore(page.hasMore);
+      setOffset(page.nextOffset);
+    } catch (thrown) {
+      fromError(thrown);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [fromError, hasMore, id, loadingMore, offset, supabase, type, viewerId]);
+
   useEffect(() => {
     if (autoFocus) composerRef.current?.focus();
   }, [autoFocus]);
 
-  const tree = useMemo(() => buildCommentTree(nodes ?? []), [nodes]);
+  const tree = useMemo(() => buildCommentTree(nodes ?? [], sort), [nodes, sort]);
 
   const post = useCallback(
     async (body: string, parent: CommentNode | null) => {
@@ -117,6 +145,7 @@ export function CommentThread({ type, id, autoFocus = false, className }: Commen
         replyCount: 0,
         createdAt: new Date().toISOString(),
         editedAt: null,
+        viewerLiked: false,
         pending: true,
       };
 
@@ -171,7 +200,31 @@ export function CommentThread({ type, id, autoFocus = false, className }: Commen
 
   return (
     <section className={cn('flex flex-col gap-4', className)} aria-label="Comments">
-      <h2 className="font-display text-title1 text-ink">Comments</h2>
+      <div className="flex items-center gap-3">
+        <h2 className="min-w-0 flex-1 font-display text-title1 text-ink">Comments</h2>
+        <div
+          role="group"
+          aria-label="Sort comments"
+          className="flex items-center gap-0.5 rounded-full border border-line-subtle bg-surface-1 p-0.5"
+        >
+          {(['top', 'newest'] as const).map((candidate) => (
+            <button
+              key={candidate}
+              type="button"
+              aria-pressed={sort === candidate}
+              onClick={() => setSort(candidate)}
+              className={cn(
+                'focus-ring rounded-full px-3 py-1 text-caption transition-colors dur-fast ease-standard',
+                sort === candidate
+                  ? 'bg-surface-3 text-ink'
+                  : 'text-ink-3 hover:text-ink-2',
+              )}
+            >
+              {candidate === 'top' ? 'Top' : 'Newest'}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {user ? (
         <form
@@ -261,6 +314,19 @@ export function CommentThread({ type, id, autoFocus = false, className }: Commen
         </ol>
       )}
 
+      {hasMore && nodes !== null ? (
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={loadingMore}
+            onClick={() => void loadMore()}
+          >
+            Load more comments
+          </Button>
+        </div>
+      ) : null}
+
       <ReportDialog
         open={reportTarget !== null}
         onClose={() => setReportTarget(null)}
@@ -292,8 +358,11 @@ interface CommentBranchProps {
 }
 
 function CommentBranch({ node, viewerId, onReply, onReport, onDelete }: CommentBranchProps) {
+  // `viewerLiked` came from one batched read over the whole page, so the pill
+  // starts red when it should — no per-comment probe, no flash of wrong state.
   const social = useEntitySocial('comment', node.pending ? '' : node.id, {
     likeCount: node.likeCount,
+    viewerLiked: node.viewerLiked,
   });
   const mine = viewerId !== null && viewerId === node.authorId;
 

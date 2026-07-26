@@ -101,11 +101,17 @@
 -- (plus require_auth's existing 'Authentication required' / 'Account
 --  suspended', errcode 42501)
 --
--- STATUS: ⚠ NOT YET APPLIED to `new_klect` (dikhuygcwxnrsckqglzg).
--- Apply via Supabase MCP `apply_migration` as version 0018_pulse_first_class,
--- then: smoke under JWT impersonation (create post w/ media descriptor, quote
--- a post, foryou vs following ordering, LIMIT respected), run get_advisors,
--- regenerate web/src/lib/database.types.ts, update BACKEND_API.md §2/§4.
+-- STATUS: ✅ APPLIED 2026-07-26 to `new_klect` (dikhuygcwxnrsckqglzg) via
+-- Supabase MCP `apply_migration` as version 0018_pulse_first_class.
+-- Smoke-tested under JWT impersonation as aria (all rolled back):
+-- create_post text → kind=post · quote → kind=quote with embedded target.body
+-- · foreign-uid media descriptor → media_not_yours · pulse_feed(p_limit=>3)
+-- returned 3 entries (LIMIT fix proven) · foryou mode ran clean · direct
+-- posts INSERT → 42501. Advisors: 0 ERROR; the only 0018 WARNs are
+-- create_post/pulse_feed in the accepted
+-- authenticated_security_definer_function_executable class (the internal
+-- pulse_* helpers raise none — fencing held). Still pending: regenerate
+-- web/src/lib/database.types.ts, update BACKEND_API.md §2/§4.
 -- ============================================================================
 
 

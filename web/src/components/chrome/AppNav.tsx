@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { profileHref, routes } from '@/lib/routes';
 import { Avatar } from '@/components/ui/Avatar';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { Sheet } from '@/components/ui/Sheet';
 import { Wordmark } from './Wordmark';
 import { ThemeToggle } from './ThemeToggle';
 import { useSession } from '@/providers/session-provider';
@@ -24,6 +26,25 @@ const NAV_ITEMS: NavItem[] = [
   { href: routes.matches, label: 'Matches', icon: 'users', authOnly: true },
   { href: routes.notifications, label: 'Alerts', icon: 'bell', authOnly: true },
   { href: routes.messages, label: 'Messages', icon: 'mail', authOnly: true },
+];
+
+/**
+ * The five mobile tabs. Everything that fell off the bar — Profile, Matches,
+ * Settings, Admin, theme, sign out — lives in the top-bar account sheet, so
+ * every destination stays reachable on a phone.
+ */
+const MOBILE_TABS: NavItem[] = [
+  { href: routes.surf, label: 'Surf', icon: 'compass' },
+  { href: routes.pulse, label: 'Pulse', icon: 'activity' },
+  { href: routes.create, label: 'Create', icon: 'plus' },
+  { href: routes.notifications, label: 'Alerts', icon: 'bell' },
+  { href: routes.messages, label: 'Messages', icon: 'mail' },
+];
+
+const MOBILE_TABS_SIGNED_OUT: NavItem[] = [
+  { href: routes.surf, label: 'Surf', icon: 'compass' },
+  { href: routes.search, label: 'Search', icon: 'search' },
+  { href: routes.signIn, label: 'Sign in', icon: 'user' },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -130,7 +151,7 @@ export function AppNavRail() {
 export function AppNavBottomBar() {
   const pathname = usePathname();
   const { user } = useSession();
-  const items = NAV_ITEMS.filter((item) => !item.authOnly || user).slice(0, 5);
+  const items = user ? MOBILE_TABS : MOBILE_TABS_SIGNED_OUT;
 
   return (
     <nav
@@ -160,24 +181,154 @@ export function AppNavBottomBar() {
   );
 }
 
-/** Mobile top bar — the wordmark plus create/settings. */
+/**
+ * Mobile top bar. Signed in: search plus the account sheet (everything the
+ * five tabs cannot hold). Signed out: theme and sign-in. Both bars pad for
+ * the device's top notch/status bar (`safe-area-inset-top`).
+ */
 export function AppTopBar() {
   const { user } = useSession();
   return (
     <header
-      className="glass sticky top-0 z-sticky flex items-center gap-3 border-b border-line-subtle px-4 md:hidden"
-      style={{ minHeight: 'var(--k-topbar-h)' }}
+      className="glass sticky top-0 z-sticky flex items-center gap-3 border-b border-line-subtle px-4 pt-[env(safe-area-inset-top)] md:hidden"
+      style={{ minHeight: 'calc(var(--k-topbar-h) + env(safe-area-inset-top))' }}
     >
       <Wordmark size="sm" />
       <div className="flex-1" />
-      <ThemeToggle />
-      <Link
-        href={user ? routes.create : routes.signIn}
-        aria-label={user ? 'Create' : 'Sign in'}
-        className="focus-ring k-pressable inline-flex size-9 items-center justify-center rounded-full bg-accent text-ink-on-accent"
-      >
-        <Icon name={user ? 'plus' : 'user'} size="md" />
-      </Link>
+      {user ? (
+        <>
+          <Link
+            href={routes.search}
+            aria-label="Search"
+            className="focus-ring grid size-9 place-items-center rounded-full text-ink-2 transition-colors dur-fast ease-standard hover:text-ink"
+          >
+            <Icon name="search" size="lg" />
+          </Link>
+          <AccountMenu />
+        </>
+      ) : (
+        <>
+          <ThemeToggle />
+          <Link
+            href={routes.signIn}
+            aria-label="Sign in"
+            className="focus-ring k-pressable inline-flex size-9 items-center justify-center rounded-full bg-accent text-ink-on-accent"
+          >
+            <Icon name="user" size="md" />
+          </Link>
+        </>
+      )}
     </header>
+  );
+}
+
+/* ── the account sheet ────────────────────────────────────────────────────── */
+
+function MenuRow({
+  href,
+  icon,
+  label,
+  onNavigate,
+}: {
+  href: string;
+  icon: IconName;
+  label: string;
+  onNavigate: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      className={cn(
+        'focus-ring flex items-center gap-3 rounded-md px-3 py-3 text-body-strong text-ink',
+        'transition-colors dur-fast ease-standard hover:bg-surface-2',
+      )}
+    >
+      <Icon name={icon} size="lg" className="text-ink-2" />
+      {label}
+    </Link>
+  );
+}
+
+/**
+ * The avatar in the top bar opens this bottom sheet: Profile, Matches,
+ * Settings, Admin (staff), the theme control and sign out — the destinations
+ * the five-tab bar cannot carry.
+ */
+function AccountMenu() {
+  const { profile, isStaff, signOut } = useSession();
+  const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const close = () => setOpen(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Account menu"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        className="focus-ring k-pressable inline-flex rounded-full"
+      >
+        <Avatar
+          path={profile?.avatar_path}
+          name={profile?.display_name}
+          size="sm"
+          verified={profile?.is_verified ?? false}
+        />
+      </button>
+
+      <Sheet
+        open={open}
+        onClose={close}
+        title={profile?.display_name ?? 'Account'}
+        {...(profile ? { description: `@${profile.username}` } : {})}
+      >
+        <nav aria-label="Account" className="flex flex-col gap-1">
+          {profile ? (
+            <MenuRow
+              href={profileHref(profile.username)}
+              icon="user"
+              label="Profile"
+              onNavigate={close}
+            />
+          ) : null}
+          <MenuRow href={routes.matches} icon="users" label="Matches" onNavigate={close} />
+          <MenuRow href={routes.settings} icon="sliders" label="Settings" onNavigate={close} />
+          {isStaff ? (
+            <MenuRow href={routes.admin} icon="shield" label="Admin" onNavigate={close} />
+          ) : null}
+
+          <div className="mt-2 flex items-center justify-between gap-3 border-t border-line-subtle px-3 pt-4">
+            <span className="text-label text-ink-2">Theme</span>
+            <ThemeToggle />
+          </div>
+
+          <button
+            type="button"
+            disabled={signingOut}
+            onClick={async () => {
+              setSigningOut(true);
+              try {
+                await signOut();
+                setOpen(false);
+              } finally {
+                setSigningOut(false);
+              }
+            }}
+            className={cn(
+              'focus-ring mt-2 flex items-center gap-3 rounded-md px-3 py-3 text-left text-body-strong text-danger',
+              'transition-colors dur-fast ease-standard hover:bg-danger-subtle',
+              'disabled:opacity-[var(--k-opacity-disabled)]',
+            )}
+          >
+            <Icon name={signingOut ? 'spinner' : 'logout'} size="lg" />
+            Sign out
+          </button>
+        </nav>
+      </Sheet>
+    </>
   );
 }

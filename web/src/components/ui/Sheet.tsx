@@ -17,6 +17,13 @@ export interface SheetProps {
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /** REPLACES the body's default `px-6 pb-6` padding when provided. */
+  contentClassName?: string;
+  /**
+   * Bottom sheets only: take the whole dynamic viewport (square corners, no
+   * max-height cap). The closeup uses this on phones.
+   */
+  fullHeight?: boolean;
 }
 
 /**
@@ -35,6 +42,8 @@ export function Sheet({
   children,
   footer,
   className,
+  contentClassName,
+  fullHeight = false,
 }: SheetProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const titleId = useId();
@@ -86,7 +95,10 @@ export function Sheet({
               className={cn(
                 'absolute flex flex-col border-line bg-surface-1 shadow-high',
                 isBottom
-                  ? 'inset-x-0 bottom-0 max-h-[88vh] rounded-t-2xl border-t'
+                  ? cn(
+                      'inset-x-0 bottom-0 border-t',
+                      fullHeight ? 'h-dvh' : 'max-h-[88dvh] rounded-t-2xl',
+                    )
                   : 'inset-y-0 right-0 w-full max-w-110 border-l',
                 className,
               )}
@@ -110,7 +122,9 @@ export function Sheet({
                 </header>
               ) : null}
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">{children}</div>
+              <div className={cn('min-h-0 flex-1 overflow-y-auto', contentClassName ?? 'px-6 pb-6')}>
+                {children}
+              </div>
 
               {footer ? (
                 <footer className="flex items-center justify-end gap-3 border-t border-line-subtle px-6 py-4">

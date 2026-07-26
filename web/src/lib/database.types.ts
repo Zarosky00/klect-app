@@ -1217,6 +1217,69 @@ export type Database = {
           },
         ]
       }
+      post_media: {
+        Row: {
+          alt_text: string | null
+          blurhash: string | null
+          bytes: number | null
+          created_at: string
+          dominant_color: string | null
+          height: number | null
+          id: string
+          mime_type: string | null
+          position: number
+          post_id: string
+          storage_path: string
+          user_id: string
+          width: number | null
+        }
+        Insert: {
+          alt_text?: string | null
+          blurhash?: string | null
+          bytes?: number | null
+          created_at?: string
+          dominant_color?: string | null
+          height?: number | null
+          id?: string
+          mime_type?: string | null
+          position?: number
+          post_id: string
+          storage_path: string
+          user_id: string
+          width?: number | null
+        }
+        Update: {
+          alt_text?: string | null
+          blurhash?: string | null
+          bytes?: number | null
+          created_at?: string
+          dominant_color?: string | null
+          height?: number | null
+          id?: string
+          mime_type?: string | null
+          position?: number
+          post_id?: string
+          storage_path?: string
+          user_id?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "post_media_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "post_media_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       posts: {
         Row: {
           author_id: string
@@ -1909,6 +1972,17 @@ export type Database = {
         }
         Returns: string
       }
+      create_post: {
+        Args: {
+          p_body: string
+          p_entity_id?: string
+          p_entity_type?: Database["public"]["Enums"]["entity_type"]
+          p_kind?: Database["public"]["Enums"]["post_kind"]
+          p_media?: Json
+          p_reply_to?: string
+        }
+        Returns: Json
+      }
       delete_comment: { Args: { p_comment: string }; Returns: Json }
       entity_counter: {
         Args: {
@@ -1972,7 +2046,19 @@ export type Database = {
         Returns: undefined
       }
       pulse_feed: {
-        Args: { p_before?: string; p_limit?: number }
+        Args: { p_before?: string; p_limit?: number; p_mode?: string }
+        Returns: Json
+      }
+      pulse_post_envelope: {
+        Args: { p_post: string; p_viewer: string }
+        Returns: Json
+      }
+      pulse_post_media: { Args: { p_post: string }; Returns: Json }
+      pulse_target_payload: {
+        Args: {
+          p_id: string
+          p_type: Database["public"]["Enums"]["entity_type"]
+        }
         Returns: Json
       }
       record_view: {

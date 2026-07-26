@@ -11,6 +11,7 @@ import { Pressable } from '@/components/ui/Pressable';
 import { curve, fadeRise, gridStaggerDelay, reducedTransition } from '@/design/motion';
 import { cn } from '@/lib/cn';
 import { entityHref, ENTITY_LABEL } from '@/lib/entities';
+import { useCoarsePointer } from '@/lib/media-query';
 import { compactCount, plural } from '@/lib/format';
 import type { SocialSeed } from '@/lib/interactions';
 import { mediaUrl } from '@/lib/storage';
@@ -74,6 +75,9 @@ export const SurfTile = memo(function SurfTile({
 }: SurfTileProps) {
   const reduced = useReducedMotion();
   const [revealed, setRevealed] = useState(false);
+  // Touch devices have no hover to reveal with — caption and actions stay on.
+  const coarse = useCoarsePointer();
+  const shown = revealed || coarse;
   const key = tileKey(card);
 
   const seed = useMemo<SocialSeed>(
@@ -169,7 +173,7 @@ export const SurfTile = memo(function SurfTile({
             'pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-0.5 p-3',
             'bg-gradient-to-t from-scrim to-transparent',
             'transition-opacity dur-fast ease-standard',
-            revealed ? 'opacity-100' : 'opacity-0',
+            shown ? 'opacity-100' : 'opacity-0',
           )}
         >
           <span className="truncate font-display text-title3 text-ink-inverse drop-shadow-md">
@@ -184,8 +188,10 @@ export const SurfTile = memo(function SurfTile({
       </Pressable>
 
       {/* Sibling of the button, never a child. Mounted only once revealed so a
-          60-tile grid does not carry 60 idle action bars. */}
-      {revealed ? (
+          60-tile grid does not carry 60 idle action bars — except on touch,
+          where "revealed" would never happen and the actions must simply be
+          there. */}
+      {shown ? (
         <div
           className="absolute right-2 top-2 z-raised"
           onMouseEnter={() => setRevealed(true)}

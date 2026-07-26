@@ -163,6 +163,8 @@ export function ReportRow({
             'flex shrink-0 items-center gap-0.5 transition-opacity dur-fast ease-standard',
             'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100',
             'group-data-[active=true]:opacity-100',
+            // Touch cannot hover: moderation actions are simply always there.
+            'pointer-coarse:opacity-100',
           )}
         >
           {MOD_ACTIONS.map((spec) => (

@@ -204,6 +204,10 @@
   --k-text-count-lh: 1.3846;
   --k-text-count-weight: 600;
   --k-text-count-tracking: 0rem;
+  --k-text-input-size: 1rem;
+  --k-text-input-lh: 1.3750;
+  --k-text-input-weight: 400;
+  --k-text-input-tracking: 0rem;
   /* space */
   --k-space-0: 0px;
   --k-space-1: 4px;

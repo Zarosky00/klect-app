@@ -43,6 +43,29 @@ export class KlectError extends Error {
 const SUSPENDED = /account suspended/i;
 const NOT_ACCEPTING = /not accepting messages/i;
 
+/**
+ * Stable snake_case texts raised by the RPCs (migration 0018's header lists
+ * them) → human copy. The raw text is the whole exception message.
+ */
+const RPC_MESSAGES: Record<
+  string,
+  { kind: KlectErrorKind; message: string }
+> = {
+  body_too_long: { kind: 'unknown', message: 'That post is over the length limit.' },
+  body_or_attachment_required: {
+    kind: 'unknown',
+    message: 'Write something or attach something first.',
+  },
+  bad_target: { kind: 'unknown', message: 'That attachment cannot be shared.' },
+  entity_not_found: { kind: 'not_found', message: 'That no longer exists.' },
+  reply_not_found: { kind: 'not_found', message: 'The post you replied to is gone.' },
+  blocked: { kind: 'forbidden', message: 'You cannot interact with this collector.' },
+  bad_media: { kind: 'unknown', message: 'One of those photos could not be attached.' },
+  too_many_media: { kind: 'unknown', message: 'A post can carry up to four photos.' },
+  media_not_yours: { kind: 'forbidden', message: 'Those photos are not yours to attach.' },
+  bad_mode: { kind: 'unknown', message: 'Unknown feed mode. Refresh and try again.' },
+};
+
 export function toKlectError(error: unknown): KlectError {
   if (error instanceof KlectError) return error;
 
@@ -53,6 +76,11 @@ export function toKlectError(error: unknown): KlectError {
   const pg = error as Partial<PostgrestError> | null | undefined;
   const rawMessage = pg?.message ?? (error instanceof Error ? error.message : '');
   const code = pg?.code;
+
+  const rpc = RPC_MESSAGES[rawMessage.trim()];
+  if (rpc) {
+    return new KlectError(rpc.kind, rpc.message, { code, retryable: false, cause: error });
+  }
 
   if (SUSPENDED.test(rawMessage)) {
     return new KlectError('suspended', 'Your account is suspended.', {

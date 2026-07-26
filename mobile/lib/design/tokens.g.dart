@@ -315,6 +315,7 @@ abstract final class TypeScale {
   static const TypeStep caption = TypeStep(12.0, 16.0, 450, Fonts.sans, 0.15);
   static const TypeStep micro = TypeStep(11.0, 14.0, 600, Fonts.sans, 0.40);
   static const TypeStep count = TypeStep(13.0, 18.0, 600, Fonts.sans, 0.00, tabular: true);
+  static const TypeStep input = TypeStep(16.0, 22.0, 400, Fonts.sans, 0.00);
 }
 
 class ShadowSpec {

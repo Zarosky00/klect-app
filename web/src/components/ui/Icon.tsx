@@ -43,7 +43,13 @@ export type IconName =
   | 'link'
   | 'download'
   | 'spinner'
-  | 'verified';
+  | 'verified'
+  | 'pencil'
+  | 'pin'
+  | 'archive'
+  | 'bell-off'
+  | 'block'
+  | 'logout';
 
 type Shape = (filled: boolean) => JSX.Element;
 
@@ -263,6 +269,51 @@ const shapes: Record<IconName, Shape> = {
         stroke="none"
       />
       <path d="m8.6 12 2.4 2.4 4.4-4.6" fill="none" stroke="var(--k-bg-base)" />
+    </>
+  ),
+  pencil: () => (
+    <>
+      <path d="m4.4 19.6 1-4L16.6 4.4a2.05 2.05 0 0 1 2.9 2.9L8.4 18.6l-4 1Z" fill="none" />
+      <path d="m14.4 6.6 3 3" fill="none" />
+    </>
+  ),
+  pin: (filled) => (
+    <>
+      <path
+        d="M9 3.4h6l-.7 6.4 2.9 3.4H6.8l2.9-3.4Z"
+        fill={filled ? 'currentColor' : 'none'}
+      />
+      <path d="M12 13.2v7.4" fill="none" />
+    </>
+  ),
+  archive: () => (
+    <>
+      <rect x="3" y="4" width="18" height="4.4" rx="1.2" fill="none" />
+      <path d="M5 8.4V19a1.8 1.8 0 0 0 1.8 1.8h10.4A1.8 1.8 0 0 0 19 19V8.4" fill="none" />
+      <path d="M9.8 12.4h4.4" fill="none" />
+    </>
+  ),
+  'bell-off': () => (
+    <>
+      <path
+        d="M6.4 6.4a6.2 6.2 0 0 0-.6 3c0 4.9-2 6.1-2 6.1h12.6M18.2 12.6V9.4a6.2 6.2 0 0 0-9.3-5.4"
+        fill="none"
+      />
+      <path d="M13.7 19.2a2 2 0 0 1-3.4 0" fill="none" />
+      <path d="m4 4 16 16" fill="none" />
+    </>
+  ),
+  block: () => (
+    <>
+      <circle cx="12" cy="12" r="8.6" fill="none" />
+      <path d="M5.9 5.9 18.1 18.1" fill="none" />
+    </>
+  ),
+  logout: () => (
+    <>
+      <path d="M9.4 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h3.4" fill="none" />
+      <path d="m15.2 8 4 4-4 4" fill="none" />
+      <path d="M19.2 12H9.6" fill="none" />
     </>
   ),
 };

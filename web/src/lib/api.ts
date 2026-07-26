@@ -14,7 +14,7 @@
  *   · every failure becomes a `KlectError` with a `kind` the UI can branch on.
  */
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/lib/database.types';
+import type { Database, Json } from '@/lib/database.types';
 import type {
   AppRole,
   EntityType,
@@ -41,6 +41,7 @@ import type {
   NotificationRow,
   ProfileRow,
   PulseEntry,
+  PulseMode,
   SearchResults,
   SubcollectionRow,
   SubmitReportResult,
@@ -266,14 +267,55 @@ export async function surfFeed(
 
 export async function pulseFeed(
   client: Client,
-  params: { limit?: number; before?: string } = {},
+  params: { limit?: number; before?: string; mode?: PulseMode } = {},
 ): Promise<PulseEntry[]> {
   const { data, error } = await client.rpc('pulse_feed', {
     p_limit: params.limit ?? 25,
     ...(params.before === undefined ? {} : { p_before: params.before }),
+    ...(params.mode === undefined ? {} : { p_mode: params.mode }),
   });
   if (error) throw toKlectError(error);
   return asJson<PulseEntry[]>(data ?? []);
+}
+
+/** One uploaded photo, described for `create_post`'s `p_media`. */
+export interface PostMediaDescriptor {
+  /** Bucket-relative key — MUST start with the uploader's uid. */
+  storage_path: string;
+  width?: number | null;
+  height?: number | null;
+  blurhash?: string | null;
+  dominant_color?: string | null;
+  mime_type?: string | null;
+  bytes?: number | null;
+  alt_text?: string | null;
+  position?: number | null;
+}
+
+export interface CreatePostInput {
+  body?: string;
+  /** Share a collection/subcollection/item, or quote a post (`entityType: 'post'`). */
+  entityType?: EntityType;
+  entityId?: string;
+  media?: PostMediaDescriptor[];
+  replyTo?: string;
+}
+
+/**
+ * THE insert path for posts — direct INSERT on `posts` was revoked in
+ * migration 0018. Returns the post's full pulse envelope so the stream can
+ * prepend it verbatim, media and embedded target included.
+ */
+export async function createPost(client: Client, input: CreatePostInput): Promise<PulseEntry> {
+  const { data, error } = await client.rpc('create_post', {
+    p_body: input.body ?? '',
+    ...(input.entityType === undefined ? {} : { p_entity_type: input.entityType }),
+    ...(input.entityId === undefined ? {} : { p_entity_id: input.entityId }),
+    ...(input.media === undefined ? {} : { p_media: input.media as unknown as Json }),
+    ...(input.replyTo === undefined ? {} : { p_reply_to: input.replyTo }),
+  });
+  if (error) throw toKlectError(error);
+  return asJson<PulseEntry>(data);
 }
 
 /** The single-tap detail payload. Shape varies by `entity_type`. */
@@ -755,6 +797,43 @@ export async function sendMessage(
   message: MessageInsert,
 ): Promise<MessageRow> {
   return unwrap(await client.from('messages').insert(message).select('*').single());
+}
+
+/**
+ * Rewrites the body of the viewer's own message and stamps `edited_at`.
+ * Mirrors mobile `ChatApi.editMessage` — RLS plus the `author_id` filter keep
+ * this to the author's own rows.
+ */
+export async function editMessage(
+  client: Client,
+  messageId: string,
+  authorId: string,
+  body: string,
+): Promise<void> {
+  const { error } = await client
+    .from('messages')
+    .update({ body, edited_at: new Date().toISOString() })
+    .eq('id', messageId)
+    .eq('author_id', authorId);
+  if (error) throw toKlectError(error);
+}
+
+/**
+ * Soft-deletes the viewer's own message for everyone. Threads filter on
+ * `deleted_at is null` (and live rows render a "Message deleted" stub), so
+ * the bubble disappears on both sides. Mirrors mobile `ChatApi.deleteMessage`.
+ */
+export async function deleteMessage(
+  client: Client,
+  messageId: string,
+  authorId: string,
+): Promise<void> {
+  const { error } = await client
+    .from('messages')
+    .update({ deleted_at: new Date().toISOString(), body: null })
+    .eq('id', messageId)
+    .eq('author_id', authorId);
+  if (error) throw toKlectError(error);
 }
 
 /* ── blocks & mutes (settings) ────────────────────────────────────────────── */
