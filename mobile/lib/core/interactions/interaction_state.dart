@@ -63,6 +63,20 @@ class InteractionState {
         hydrated: true,
       );
 
+  /// Seeds from a comment row — comments are full social citizens (0021),
+  /// so a comment's bar hydrates exactly like a post's.
+  factory InteractionState.fromComment(CommentModel comment) =>
+      InteractionState(
+        liked: comment.viewerLiked,
+        saved: comment.viewerSaved,
+        reposted: comment.viewerReposted,
+        likeCount: comment.likeCount,
+        saveCount: comment.saveCount,
+        repostCount: comment.repostCount,
+        commentCount: comment.replyCount,
+        hydrated: true,
+      );
+
   /// Seeds from a pulse entry.
   factory InteractionState.fromPulse(PulseEntry entry) => InteractionState(
         liked: entry.viewerLiked,

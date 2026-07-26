@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
 import '../auth/auth_controller.dart';
+import '../pulse/widgets/pulse_card.dart';
 import 'edit_profile_screen.dart';
 import 'entity_tile.dart';
 import 'fill_viewport.dart';
@@ -19,11 +21,15 @@ import 'follow_button.dart';
 import 'follow_list_sheet.dart';
 import 'profile_queries.dart';
 import 'user_actions.dart';
+import 'user_posts_controller.dart';
 
 /// Which slice of a profile is on screen.
 enum ProfileTab {
   /// The shelves this account owns.
   collections('Collections'),
+
+  /// Posts, quotes and reposts — `user_posts` (0021).
+  posts('Posts'),
 
   /// Every item, newest first.
   items('Items'),
@@ -85,6 +91,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _refreshProfile();
     ref
       ..invalidate(profileCollectionsProvider(userId))
+      ..invalidate(userPostsProvider(userId))
       ..invalidate(profileItemsProvider(userId))
       ..invalidate(profileTasteTagsProvider(userId))
       ..invalidate(profileLikesProvider(userId))
@@ -726,6 +733,7 @@ class _ProfileTabContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (tab) {
+      ProfileTab.posts => _PostsSliver(userId: profile.id),
       ProfileTab.collections => _CardsSliver(
           value: ref
               .watch(profileCollectionsProvider(profile.id))
@@ -778,6 +786,90 @@ class _ProfileTabContent extends ConsumerWidget {
           onEmptyAction: () => context.go('/surf'),
         ),
     };
+  }
+}
+
+/// The Posts tab — `user_posts` (0021) rendered with the exact stream row
+/// the Pulse feed uses, so a post reads identically on both surfaces.
+class _PostsSliver extends ConsumerWidget {
+  const _PostsSliver({required this.userId});
+
+  final String userId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(userPostsProvider(userId));
+
+    if (state.loading && state.items.isEmpty) {
+      return const SliverToBoxAdapter(child: KSkeletonList(rows: 3));
+    }
+    final error = state.error;
+    if (error != null && state.items.isEmpty) {
+      return SliverToBoxAdapter(
+        child: KErrorState(
+          error: error,
+          compact: true,
+          onRetry: () => ref.invalidate(userPostsProvider(userId)),
+        ),
+      );
+    }
+    if (state.items.isEmpty) {
+      return const SliverToBoxAdapter(
+        child: KEmptyState(
+          title: 'Nothing said yet',
+          message: 'Posts, quotes and reposts land here — the Pulse side of '
+              'a collector.',
+          icon: Icons.bolt_outlined,
+          compact: true,
+        ),
+      );
+    }
+
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
+        SliverList.builder(
+          itemCount: state.items.length,
+          itemBuilder: (context, index) {
+            final item = state.items[index];
+            return PulseCard(key: ValueKey<String>(item.key), item: item);
+          },
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(Space.s4),
+            child: error != null
+                ? KInlineError(
+                    message: error.message,
+                    onRetry: () => unawaited(
+                      ref
+                          .read(userPostsProvider(userId).notifier)
+                          .loadMore(),
+                    ),
+                  )
+                : state.hasMore
+                    ? KButton(
+                        label: state.loadingMore
+                            ? 'Loading…'
+                            : 'Show more posts',
+                        variant: KButtonVariant.ghost,
+                        size: KButtonSize.small,
+                        busy: state.loadingMore,
+                        expand: true,
+                        onPressed: state.loadingMore
+                            ? null
+                            : () => unawaited(
+                                  ref
+                                      .read(
+                                        userPostsProvider(userId).notifier,
+                                      )
+                                      .loadMore(),
+                                ),
+                      )
+                    : const SizedBox.shrink(),
+          ),
+        ),
+      ],
+    );
   }
 }
 

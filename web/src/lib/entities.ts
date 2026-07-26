@@ -1,5 +1,5 @@
 import type { Database } from '@/lib/database.types';
-import { closeupHref, collectionHref, itemHref, subcollectionHref } from '@/lib/routes';
+import { closeupHref, collectionHref, itemHref, postHref, subcollectionHref } from '@/lib/routes';
 
 export type EntityType = Database['public']['Enums']['entity_type'];
 export type Visibility = Database['public']['Enums']['visibility'];
@@ -121,6 +121,8 @@ export function entityHref(type: EntityType, id: string): string {
     case 'item':
       return itemHref(id);
     case 'post':
+      // Thread-first Pulse (W3): a post's canonical page is its thread.
+      return postHref(id);
     case 'comment':
       return closeupHref(type, id);
   }

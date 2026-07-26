@@ -179,12 +179,17 @@ class KlectApi {
     return <SurfCard>[for (final row in rows) SurfCard.fromJson(row)];
   }
 
-  /// `pulse_feed` — the X-style stream. Pass the oldest [before] you have to
-  /// page backwards; [mode] picks the ranked For-you feed or the
-  /// chronological Following feed (`p_mode`, 0018).
+  /// `pulse_feed` — the X-style stream. [mode] picks the ranked For-you feed
+  /// or the chronological Following feed (`p_mode`, 0018).
+  ///
+  /// 0021 pagination contract: the RPC returns **up to [limit] + 1** rows —
+  /// render the first [limit] and treat `length > limit` as has-more. Page
+  /// with the `(sort_at, cursor_id)` of the last rendered row as
+  /// ([before], [beforeId]) so same-timestamp twins are never skipped.
   Future<List<PulseEntry>> pulseFeed({
     int limit = 25,
     DateTime? before,
+    String? beforeId,
     PulseMode mode = PulseMode.following,
   }) async {
     final rows = asMapList(
@@ -192,6 +197,72 @@ class KlectApi {
         'p_limit': limit,
         'p_before': isoOrNull(before),
         'p_mode': mode.wire,
+        'p_before_id': beforeId,
+      }),
+    );
+    return <PulseEntry>[for (final row in rows) PulseEntry.fromJson(row)];
+  }
+
+  /// `get_post_thread(p_post, p_limit, p_before, p_sort)` — the X thread
+  /// payload (0021): `{post, stats, comments[], has_more}` with batched
+  /// viewer like/save/repost state per comment.
+  ///
+  /// [before] pages the comments by `created_at` keyset — pass the minimum
+  /// `createdAt` currently on screen in both sort modes.
+  Future<PostThread> getPostThread(
+    String postId, {
+    int limit = 30,
+    DateTime? before,
+    CommentSort sort = CommentSort.top,
+  }) async {
+    try {
+      return PostThread.fromJson(
+        asMap(
+          await _rpc('get_post_thread', <String, dynamic>{
+            'p_post': postId,
+            'p_limit': limit,
+            'p_before': isoOrNull(before),
+            'p_sort': sort.wire,
+          }),
+        ),
+        postId,
+      );
+    } on KlectError catch (error) {
+      throw switch (error.raw.trim()) {
+        'post_not_found' => KlectError(
+            KlectErrorKind.notFound,
+            'This post is gone — or is no longer visible to you.',
+            code: error.code,
+            cause: error,
+          ),
+        'bad_sort' => KlectError(
+            KlectErrorKind.unknown,
+            'Comments could not be sorted that way.',
+            code: error.code,
+            cause: error,
+          ),
+        _ => error,
+      };
+    }
+  }
+
+  /// `user_posts(p_user, p_limit, p_before)` — the profile Posts tab (0021):
+  /// the author's posts/quotes plus their entity reposts, shaped exactly
+  /// like `pulse_feed` envelopes so both parse through [PulseEntry].
+  ///
+  /// Same extra-row contract as [pulseFeed]: up to [limit] + 1 rows come
+  /// back, `length > limit` means another page exists. The RPC keysets on
+  /// `p_before` alone — pass the minimum `sort_at` on screen.
+  Future<List<PulseEntry>> userPosts(
+    String userId, {
+    int limit = 25,
+    DateTime? before,
+  }) async {
+    final rows = asMapList(
+      await _rpc('user_posts', <String, dynamic>{
+        'p_user': userId,
+        'p_limit': limit,
+        'p_before': isoOrNull(before),
       }),
     );
     return <PulseEntry>[for (final row in rows) PulseEntry.fromJson(row)];
@@ -876,12 +947,27 @@ class KlectApi {
   /// Which of [commentIds] the viewer has liked — **one** query for a whole
   /// page of comments, instead of a `viewer_liked` that never arrives from a
   /// plain table select.
-  Future<Set<String>> fetchLikedCommentIds(List<String> commentIds) async {
+  Future<Set<String>> fetchLikedCommentIds(List<String> commentIds) =>
+      _fetchRelatedCommentIds('likes', commentIds);
+
+  /// Which of [commentIds] the viewer has saved — same batched idiom (0021
+  /// made comments saveable).
+  Future<Set<String>> fetchSavedCommentIds(List<String> commentIds) =>
+      _fetchRelatedCommentIds('saves', commentIds);
+
+  /// Which of [commentIds] the viewer has reposted.
+  Future<Set<String>> fetchRepostedCommentIds(List<String> commentIds) =>
+      _fetchRelatedCommentIds('reposts', commentIds);
+
+  Future<Set<String>> _fetchRelatedCommentIds(
+    String table,
+    List<String> commentIds,
+  ) async {
     final me = currentUserId;
     if (me == null || commentIds.isEmpty) return const <String>{};
     final rows = await _guard(
       () => _client
-          .from('likes')
+          .from(table)
           .select('entity_id')
           .eq('user_id', me)
           .eq('entity_type', EntityType.comment.wire)

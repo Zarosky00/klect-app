@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
+import '../../../core/links.dart';
 import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
@@ -34,17 +36,52 @@ class PulseTargetCard extends ConsumerWidget {
   /// Height of the entity cover thumbnail.
   static const double thumb = Space.s20;
 
+  /// A comment target deep-links to the discussion it lives under —
+  /// `parent_type`/`parent_id` arrived with the 0021 comment branch.
+  String? get _commentDestination {
+    final parentType = target.parentType;
+    final parentId = target.parentId;
+    if (parentType == null || parentId == null) return null;
+    if (parentType == EntityType.post) {
+      return KlectLinks.postThreadPath(parentId);
+    }
+    return KlectLinks.closeupPath(parentType, parentId);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (target.unavailable || target.type == null) {
       return const _TargetTombstone();
     }
 
-    final card = target.type == EntityType.post
-        ? _QuotedPostBody(target: target)
-        : _EntityBody(target: target);
+    final card = switch (target.type!) {
+      EntityType.post => _QuotedPostBody(target: target),
+      EntityType.comment => _CommentBody(target: target),
+      _ => _EntityBody(target: target),
+    };
 
     if (!interactive) return card;
+
+    // A quoted post opens its thread; a reposted comment opens the parent
+    // discussion. Neither is a Surf tile, so neither gets the double-tap
+    // immersive — plain tap only, no delay.
+    if (target.type == EntityType.post) {
+      return KGestureRegion(
+        semanticLabel: target.body ?? target.author?.name,
+        onTap: () => context.push(KlectLinks.postThreadPath(target.id)),
+        child: card,
+      );
+    }
+    if (target.type == EntityType.comment) {
+      final destination = _commentDestination;
+      return KGestureRegion(
+        semanticLabel: target.body ?? target.author?.name,
+        onTap: destination == null
+            ? null
+            : () => context.push(destination),
+        child: card,
+      );
+    }
 
     final entity = EntityRef(target.type!, target.id);
     return KEntityGestureCard(
@@ -197,6 +234,108 @@ class _QuotedPostBody extends ConsumerWidget {
                     .clamp(Aspect.gridMin, Aspect.gridMax),
                 borderRadius: BorderRadius.circular(Radii.md),
                 semanticLabel: body ?? 'Post photo',
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A reposted comment: author byline, the comment's own words, and a hint at
+/// the discussion it came from. Before 0021 this fell through to the entity
+/// card and rendered an empty title — now the body *is* the card.
+class _CommentBody extends ConsumerWidget {
+  const _CommentBody({required this.target});
+
+  final PulseTarget target;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.kc;
+    final text = context.kt;
+    final author = target.author;
+    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
+          author?.avatarPath,
+          bucket: StorageBucket.avatars,
+        );
+    final when = target.createdAt;
+    final body = target.body;
+
+    return _TargetShell(
+      child: Padding(
+        padding: const EdgeInsets.all(Space.s3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(
+                  Icons.mode_comment_rounded,
+                  size: Space.s3,
+                  color: colors.textTertiary,
+                ),
+                const SizedBox(width: Space.s1),
+                Text(
+                  'COMMENT',
+                  style: text.micro.copyWith(color: colors.textTertiary),
+                ),
+              ],
+            ),
+            const SizedBox(height: Space.s2),
+            Row(
+              children: <Widget>[
+                KAvatar(
+                  imageUrl: avatarUrl,
+                  name: author?.name,
+                  size: Space.s6,
+                  isVerified: author?.isVerified ?? false,
+                ),
+                const SizedBox(width: Space.s2),
+                Flexible(
+                  child: Text(
+                    author?.name ?? 'Someone',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.label,
+                  ),
+                ),
+                if (author != null && author.username.isNotEmpty) ...<Widget>[
+                  const SizedBox(width: Space.s1),
+                  Flexible(
+                    child: Text(
+                      author.handle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.micro.copyWith(color: colors.textTertiary),
+                    ),
+                  ),
+                ],
+                if (when != null) ...<Widget>[
+                  const SizedBox(width: Space.s1),
+                  Text(
+                    '· ${timeago.format(when, locale: 'en_short')}',
+                    style: text.micro.copyWith(color: colors.textTertiary),
+                  ),
+                ],
+              ],
+            ),
+            if (body != null && body.isNotEmpty) ...<Widget>[
+              const SizedBox(height: Space.s2),
+              Text(
+                body,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: text.body,
+              ),
+            ],
+            if (target.parentId != null) ...<Widget>[
+              const SizedBox(height: Space.s2),
+              Text(
+                'From a discussion — tap to open it',
+                style: text.micro.copyWith(color: colors.textTertiary),
               ),
             ],
           ],

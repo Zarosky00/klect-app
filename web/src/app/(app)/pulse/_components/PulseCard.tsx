@@ -2,19 +2,17 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { PostMediaGrid, PostTargetCard } from '@/components/thread/post-bits';
 import { ActionBar } from '@/components/ui/ActionBar';
 import { Avatar } from '@/components/ui/Avatar';
-import { BlurhashImage } from '@/components/ui/BlurhashImage';
 import { Icon } from '@/components/ui/Icon';
 import { listStaggerDelay } from '@/design/motion';
-import { aspect } from '@/design/tokens.g';
 import { cn } from '@/lib/cn';
-import { ENTITY_LABEL, type EntityType } from '@/lib/entities';
-import { compactCount, longTimeAgo, plural, shortTimeAgo } from '@/lib/format';
+import { type EntityType } from '@/lib/entities';
+import { longTimeAgo, shortTimeAgo } from '@/lib/format';
 import type { SocialSeed } from '@/lib/interactions';
-import { closeupHref, profileHref } from '@/lib/routes';
-import { mediaUrl } from '@/lib/storage';
-import type { PulseEntry, PulseMedia, PulseTarget } from '@/lib/types';
+import { closeupHref, postHref, profileHref } from '@/lib/routes';
+import type { PulseEntry } from '@/lib/types';
 import type { ComposerSubject } from './PulseComposer';
 
 /**
@@ -26,8 +24,12 @@ import type { ComposerSubject } from './PulseComposer';
  * shared collection renders as a collection, and content that has vanished or
  * gone private renders as a tombstone, never an empty card.
  *
- * The comment pill and the body both open the post closeup (the intercepting
- * `/closeup/post/…` route), which is where the thread lives.
+ * Thread-first (W3): Pulse split visually from Surf. No double-tap immersive,
+ * no hero — a plain click on the body, the photos, the timestamp or the
+ * comment pill opens the post's thread page (`/p/[id]`, intercepted as a
+ * modal in-app), which is where the discussion lives. Media renders bounded
+ * inline, never masonry-shaped. Entity reposts without a post row still open
+ * the entity's closeup — their discussion hangs off the entity itself.
  */
 export interface PulseCardProps {
   entry: PulseEntry;
@@ -94,8 +96,13 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
       ? { type: entry.target_type, id: entry.target_id }
       : null;
 
-  const subjectHref = subject ? closeupHref(subject.type, subject.id) : null;
-  const postHref = entry.post_id ? closeupHref('post', entry.post_id) : subjectHref;
+  // W3: posts open their thread; entity reposts open the entity's closeup.
+  const subjectHref = entry.post_id
+    ? postHref(entry.post_id)
+    : subject
+      ? closeupHref(subject.type, subject.id)
+      : null;
+  const threadHref = entry.post_id ? postHref(entry.post_id) : null;
 
   const isQuote = Boolean(entry.quote_text);
   const media = entry.media ?? [];
@@ -150,9 +157,9 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
             <span aria-hidden className="text-caption text-ink-3">
               ·
             </span>
-            {postHref ? (
+            {subjectHref ? (
               <Link
-                href={postHref}
+                href={subjectHref}
                 className="focus-ring rounded-sm text-caption text-ink-3 transition-colors dur-fast hover:text-ink"
               >
                 <time dateTime={entry.sort_at} title={longTimeAgo(entry.sort_at)}>
@@ -171,8 +178,8 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
           </p>
 
           {entry.body ? (
-            entry.post_id ? (
-              <Link href={closeupHref('post', entry.post_id)} className="focus-ring rounded-sm">
+            threadHref ? (
+              <Link href={threadHref} className="focus-ring rounded-sm">
                 <p className="whitespace-pre-wrap break-words text-body text-ink-2">
                   {entry.body}
                 </p>
@@ -184,11 +191,9 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
             )
           ) : null}
 
-          {media.length > 0 ? (
-            <MediaGrid media={media} href={entry.post_id ? closeupHref('post', entry.post_id) : null} />
-          ) : null}
+          {media.length > 0 ? <PostMediaGrid media={media} href={threadHref} /> : null}
 
-          {entry.target ? <TargetCard target={entry.target} /> : null}
+          {entry.target ? <PostTargetCard target={entry.target} /> : null}
 
           {subject ? (
             <ActionBar
@@ -207,184 +212,5 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
         </div>
       </div>
     </article>
-  );
-}
-
-/* ── the post's own photos ────────────────────────────────────────────────── */
-
-function MediaGrid({ media, href }: { media: PulseMedia[]; href: string | null }) {
-  const cell = (
-    photo: PulseMedia,
-    options: { intrinsic?: boolean; ratio?: number; className?: string } = {},
-  ) => {
-    const image = (
-      <BlurhashImage
-        src={mediaUrl(photo.storage_path)}
-        alt={photo.alt_text ?? ''}
-        width={options.intrinsic ? photo.width : null}
-        height={options.intrinsic ? photo.height : null}
-        blurhash={photo.blurhash}
-        dominantColor={photo.dominant_color}
-        fallbackAspect={options.ratio ?? 1}
-        sizes="(max-width: 768px) 90vw, 560px"
-        imageClassName="transition-transform dur-medium ease-standard group-hover:scale-[1.02]"
-      />
-    );
-    return href ? (
-      <Link
-        key={photo.id}
-        href={href}
-        className={cn('focus-ring group block overflow-hidden', options.className)}
-      >
-        {image}
-      </Link>
-    ) : (
-      <span key={photo.id} className={cn('block overflow-hidden', options.className)}>
-        {image}
-      </span>
-    );
-  };
-
-  const first = media[0];
-  if (!first) return null;
-
-  return (
-    <div
-      className="overflow-hidden rounded-lg border border-line-subtle"
-      role="group"
-      aria-label={`${media.length} ${plural(media.length, 'photo')}`}
-    >
-      {media.length === 1 ? (
-        cell(first, { intrinsic: true })
-      ) : media.length === 2 ? (
-        <div className="grid grid-cols-2 gap-px">{media.map((photo) => cell(photo))}</div>
-      ) : media.length === 3 ? (
-        <div className="flex flex-col gap-px">
-          {cell(first, { ratio: aspect.gridMax })}
-          <div className="grid grid-cols-2 gap-px">
-            {media.slice(1).map((photo) => cell(photo))}
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-px">{media.map((photo) => cell(photo))}</div>
-      )}
-    </div>
-  );
-}
-
-/* ── the embedded target ──────────────────────────────────────────────────── */
-
-function TargetCard({ target }: { target: PulseTarget }) {
-  if (target.unavailable) {
-    return (
-      <div className="rounded-lg border border-dashed border-line px-4 py-3 text-caption text-ink-3">
-        This {ENTITY_LABEL[target.type].toLowerCase()} is no longer available.
-      </div>
-    );
-  }
-  if (target.type === 'post' || target.type === 'comment') {
-    return <QuotedPostCard target={target} />;
-  }
-  return <EntityTargetCard target={target} />;
-}
-
-/** A quoted post (or comment): author row, words, first photo. */
-function QuotedPostCard({ target }: { target: PulseTarget }) {
-  const author = target.author;
-  return (
-    <Link
-      href={closeupHref(target.type, target.id)}
-      className={cn(
-        'focus-ring block rounded-lg border border-line bg-surface-1 p-3',
-        'transition-colors dur-fast ease-standard hover:border-line-strong',
-      )}
-    >
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Avatar
-          path={author?.avatar_path}
-          name={author?.display_name}
-          username={author?.username}
-          size="xs"
-          verified={author?.is_verified ?? false}
-        />
-        <span className="text-callout font-medium text-ink">
-          {author?.display_name ?? 'Collector'}
-        </span>
-        <span className="text-caption text-ink-3">@{author?.username ?? 'unknown'}</span>
-        {target.created_at ? (
-          <time dateTime={target.created_at} className="text-caption text-ink-3">
-            {shortTimeAgo(target.created_at)}
-          </time>
-        ) : null}
-      </p>
-
-      {target.body ? (
-        <p className="mt-1.5 line-clamp-4 whitespace-pre-wrap break-words text-body text-ink-2">
-          {target.body}
-        </p>
-      ) : null}
-
-      {target.cover_path ? (
-        <div className="mt-2 overflow-hidden rounded-md border border-line-subtle">
-          <BlurhashImage
-            src={mediaUrl(target.cover_path)}
-            alt=""
-            width={target.cover_width ?? null}
-            height={target.cover_height ?? null}
-            blurhash={target.cover_blurhash}
-            fallbackAspect={aspect.gridMax}
-            sizes="(max-width: 768px) 85vw, 520px"
-          />
-        </div>
-      ) : null}
-    </Link>
-  );
-}
-
-/** A shared collection / subcollection / item, rendered like what it is. */
-function EntityTargetCard({ target }: { target: PulseTarget }) {
-  const childCount = target.child_count ?? 0;
-  const likeCount = target.like_count ?? 0;
-  const childLabel =
-    target.type === 'item'
-      ? `${compactCount(childCount)} ${plural(childCount, 'photo')}`
-      : `${compactCount(childCount)} ${plural(childCount, 'item')}`;
-
-  return (
-    <Link
-      href={closeupHref(target.type, target.id)}
-      className={cn(
-        'focus-ring group flex gap-3 overflow-hidden rounded-lg border border-line',
-        'bg-surface-1 transition-colors dur-fast ease-standard hover:border-line-strong',
-      )}
-    >
-      <div className="w-28 shrink-0 sm:w-36">
-        <BlurhashImage
-          src={mediaUrl(target.cover_path)}
-          alt=""
-          width={target.cover_width ?? null}
-          height={target.cover_height ?? null}
-          blurhash={target.cover_blurhash}
-          fallbackAspect={1}
-          sizes="144px"
-        />
-      </div>
-
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 py-3 pr-3">
-        <span className="text-micro uppercase tracking-widest text-ink-3">
-          {ENTITY_LABEL[target.type]}
-          {target.author ? ` · @${target.author.username}` : ''}
-        </span>
-        <span className="truncate font-display text-title2 text-ink">
-          {target.title ?? 'Untitled'}
-        </span>
-        {target.subtitle ? (
-          <span className="line-clamp-2 text-caption text-ink-2">{target.subtitle}</span>
-        ) : null}
-        <span className="tabular text-caption text-ink-3">
-          {childLabel} · {compactCount(likeCount)} {plural(likeCount, 'like')}
-        </span>
-      </div>
-    </Link>
   );
 }

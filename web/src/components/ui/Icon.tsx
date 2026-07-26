@@ -49,7 +49,8 @@ export type IconName =
   | 'archive'
   | 'bell-off'
   | 'block'
-  | 'logout';
+  | 'logout'
+  | 'rotate';
 
 type Shape = (filled: boolean) => JSX.Element;
 
@@ -314,6 +315,12 @@ const shapes: Record<IconName, Shape> = {
       <path d="M9.4 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h3.4" fill="none" />
       <path d="m15.2 8 4 4-4 4" fill="none" />
       <path d="M19.2 12H9.6" fill="none" />
+    </>
+  ),
+  rotate: () => (
+    <>
+      <path d="M20.2 12a8.2 8.2 0 1 1-2.4-5.8L20.2 8.4" fill="none" />
+      <path d="M20.2 3.8v4.6h-4.6" fill="none" />
     </>
   ),
 };

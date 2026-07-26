@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +21,12 @@ import 'pulse_target_card.dart';
 /// photos), a bare repost ("kenji reposted"), a quote with commentary, and
 /// any of those carrying the server-embedded target — a quoted-post card or
 /// an entity card, with a tombstone when the target is gone.
+///
+/// **Pulse rows are not Surf tiles.** A plain tap opens the post's thread
+/// (`/post/:id`) — there is no double-tap immersive and no hero flight,
+/// because a stream row's destination is the discussion, not the photograph.
+/// The long-press peek stays: like/save/repost/share/report is one gesture
+/// away everywhere.
 ///
 /// The action bar underneath is the *same* bar the Closeup uses, wired to the
 /// same optimistic engine — a like here and a like there are the same like.
@@ -49,6 +57,36 @@ class PulseCard extends ConsumerWidget {
     return target;
   }
 
+  /// Where a plain tap lands.
+  ///
+  ///  * a post/quote row (or a bare repost **of a post**) → its thread;
+  ///  * a repost of a comment → the discussion the comment lives under;
+  ///  * a repost of a collection/shelf/thing → that entity's closeup.
+  String? get _destination {
+    final postId = item.postId;
+    if (postId != null && postId.isNotEmpty) {
+      return KlectLinks.postThreadPath(postId);
+    }
+    final inline = _inlinePost;
+    if (inline != null && !inline.unavailable && inline.id.isNotEmpty) {
+      return KlectLinks.postThreadPath(inline.id);
+    }
+    final entity = item.entity;
+    if (entity.type == EntityType.comment) {
+      final target = item.target;
+      final parentType = target?.parentType;
+      final parentId = target?.parentId;
+      if (parentType == EntityType.post && parentId != null) {
+        return KlectLinks.postThreadPath(parentId);
+      }
+      if (parentType != null && parentId != null) {
+        return KlectLinks.closeupPath(parentType, parentId);
+      }
+      return null;
+    }
+    return KlectLinks.closeupPath(entity.type, entity.id);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
@@ -64,12 +102,19 @@ class PulseCard extends ConsumerWidget {
           presenter?.avatarPath,
           bucket: StorageBucket.avatars,
         );
+    final destination = _destination;
 
-    return KEntityGestureCard(
-      entity: item.entity,
-      title: body ?? presenter?.name,
-      subtitle: presenter?.handle,
-      pressFeedback: false,
+    return KGestureRegion(
+      semanticLabel: body ?? presenter?.name,
+      onTap: destination == null ? null : () => context.push(destination),
+      onLongPress: () => unawaited(
+        KPeekMenu.show(
+          context,
+          entity: item.entity,
+          title: body ?? presenter?.name,
+          subtitle: presenter?.handle,
+        ),
+      ),
       child: Container(
         padding: const EdgeInsets.fromLTRB(
           Space.s4,
@@ -142,7 +187,12 @@ class PulseCard extends ConsumerWidget {
                       ],
                       if (item.media.isNotEmpty) ...<Widget>[
                         const SizedBox(height: Space.s3),
-                        PostMediaGrid(media: item.media),
+                        // Bounded in the stream: a tall photo previews inside
+                        // the row instead of masquerading as a masonry tile.
+                        PostMediaGrid(
+                          media: item.media,
+                          maxHeight: PostMediaGrid.streamMaxHeight,
+                        ),
                       ],
                       if (inlinePost != null) ...<Widget>[
                         if (inlinePost.unavailable) ...<Widget>[
@@ -170,12 +220,9 @@ class PulseCard extends ConsumerWidget {
                         compact: true,
                         alignment: MainAxisAlignment.start,
                         shareTitle: body ?? presenter?.name,
-                        onComment: () => context.push(
-                          KlectLinks.closeupPath(
-                            item.entity.type,
-                            item.entity.id,
-                          ),
-                        ),
+                        onComment: destination == null
+                            ? null
+                            : () => context.push(destination),
                       ),
                     ],
                   ),
@@ -189,7 +236,8 @@ class PulseCard extends ConsumerWidget {
   }
 }
 
-/// The photo of a bare-reposted post, rendered inline (unboxed).
+/// The photo of a bare-reposted post, rendered inline (unboxed) and bounded
+/// like every other stream photo.
 class _InlinePostCover extends ConsumerWidget {
   const _InlinePostCover({required this.target});
 
@@ -198,13 +246,18 @@ class _InlinePostCover extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final url = ref.watch(klectApiProvider).publicUrl(target.coverPath);
-    return KBlurhashImage(
-      url: url,
-      blurhash: target.coverBlurhash,
-      aspectRatio: (target.coverAspect ?? Aspect.cover)
-          .clamp(Aspect.gridMin, Aspect.gridMax),
-      borderRadius: BorderRadius.circular(Radii.lg),
-      semanticLabel: target.body ?? 'Post photo',
+    return LayoutBuilder(
+      builder: (context, constraints) => KBlurhashImage(
+        url: url,
+        blurhash: target.coverBlurhash,
+        aspectRatio: PostMediaGrid.boundedAspect(
+          target.coverAspect ?? Aspect.cover,
+          constraints.maxWidth,
+          PostMediaGrid.streamMaxHeight,
+        ),
+        borderRadius: BorderRadius.circular(Radii.lg),
+        semanticLabel: target.body ?? 'Post photo',
+      ),
     );
   }
 }
@@ -212,15 +265,41 @@ class _InlinePostCover extends ConsumerWidget {
 /// X's media grid: one photo full-width at its own ratio, two side by side,
 /// three as one tall + two stacked, four as a 2×2 — all inside one rounded
 /// clip, every box reserved before a byte arrives.
+///
+/// Pass [maxHeight] to bound a single photo's height — the Pulse stream does,
+/// so a portrait shot reads as an inline preview instead of a masonry tile.
+/// The thread screen leaves it null and shows the photo at its own ratio.
 class PostMediaGrid extends ConsumerWidget {
   /// Creates the grid.
-  const PostMediaGrid({required this.media, super.key});
+  const PostMediaGrid({required this.media, super.key, this.maxHeight});
 
   /// The post's photos, in position order (at most four render).
   final List<ItemMedia> media;
 
+  /// Height ceiling for the single-photo layout. Null = unbounded.
+  final double? maxHeight;
+
+  /// The stream's single-photo ceiling — composed from the 4pt grid
+  /// (`Space.s24 × 4`), matching web's bounded inline preview.
+  static const double streamMaxHeight = Space.s24 * 4;
+
   /// Gap between grid cells.
   static const double _gap = Space.s05;
+
+  /// The aspect ratio that renders [intrinsic] inside [width] without
+  /// exceeding [maxHeight]: the intrinsic ratio (clamped to the grid band)
+  /// widened until the resulting height fits the ceiling.
+  static double boundedAspect(
+    double intrinsic,
+    double width,
+    double? maxHeight,
+  ) {
+    final clamped =
+        intrinsic.clamp(Aspect.gridMin, Aspect.gridMax).toDouble();
+    if (maxHeight == null || maxHeight <= 0 || width <= 0) return clamped;
+    final floor = width / maxHeight;
+    return clamped < floor ? floor : clamped;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -241,11 +320,17 @@ class PostMediaGrid extends ConsumerWidget {
       final intrinsic = (m.width != null && m.height != null && m.height! > 0)
           ? m.width! / m.height!
           : Aspect.cover;
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(Radii.lg),
-        child: image(
-          m,
-          aspectRatio: intrinsic.clamp(Aspect.gridMin, Aspect.gridMax),
+      return LayoutBuilder(
+        builder: (context, constraints) => ClipRRect(
+          borderRadius: BorderRadius.circular(Radii.lg),
+          child: image(
+            m,
+            aspectRatio: boundedAspect(
+              intrinsic,
+              constraints.maxWidth,
+              maxHeight,
+            ),
+          ),
         ),
       );
     }

@@ -15,6 +15,8 @@ class CommentModel {
     this.parentId,
     this.depth = 0,
     this.likeCount = 0,
+    this.saveCount = 0,
+    this.repostCount = 0,
     this.replyCount = 0,
     this.editedAt,
     this.hiddenAt,
@@ -23,13 +25,19 @@ class CommentModel {
     this.updatedAt,
     this.author,
     this.viewerLiked = false,
+    this.viewerSaved = false,
+    this.viewerReposted = false,
     this.isPending = false,
     this.failed = false,
   });
 
   /// Parses a `comments` row, optionally with an embedded `author` join.
+  ///
+  /// Also accepts a `get_post_thread` comment entry (0021), whose viewer
+  /// state arrives nested as `viewer: {liked, saved, reposted}`.
   factory CommentModel.fromJson(Map<String, dynamic> json) {
     final author = asMap(json['author'] ?? json['profiles']);
+    final viewer = asMap(json['viewer']);
     return CommentModel(
       id: asString(json['id']),
       body: asString(json['body']),
@@ -39,6 +47,8 @@ class CommentModel {
       parentId: asStringOrNull(json['parent_id']),
       depth: asInt(json['depth']),
       likeCount: asInt(json['like_count']),
+      saveCount: asInt(json['save_count']),
+      repostCount: asInt(json['repost_count']),
       replyCount: asInt(json['reply_count']),
       editedAt: asDateOrNull(json['edited_at']),
       hiddenAt: asDateOrNull(json['hidden_at']),
@@ -46,7 +56,9 @@ class CommentModel {
       createdAt: asDateOrNull(json['created_at']),
       updatedAt: asDateOrNull(json['updated_at']),
       author: author.isEmpty ? null : Profile.fromJson(author),
-      viewerLiked: asBool(json['viewer_liked']),
+      viewerLiked: asBool(json['viewer_liked'] ?? viewer['liked']),
+      viewerSaved: asBool(json['viewer_saved'] ?? viewer['saved']),
+      viewerReposted: asBool(json['viewer_reposted'] ?? viewer['reposted']),
     );
   }
 
@@ -75,6 +87,13 @@ class CommentModel {
   /// Trigger-maintained like count for this comment.
   final int likeCount;
 
+  /// Trigger-maintained save count (0021 — comments are full social
+  /// citizens).
+  final int saveCount;
+
+  /// Trigger-maintained repost count (0021).
+  final int repostCount;
+
   /// Trigger-maintained reply count.
   final int replyCount;
 
@@ -99,6 +118,12 @@ class CommentModel {
   /// Whether the viewer liked this comment.
   final bool viewerLiked;
 
+  /// Whether the viewer saved this comment.
+  final bool viewerSaved;
+
+  /// Whether the viewer reposted this comment.
+  final bool viewerReposted;
+
   /// Client-only: the comment is on screen but not yet acknowledged by the
   /// server. Render it at reduced opacity.
   final bool isPending;
@@ -115,8 +140,12 @@ class CommentModel {
     String? id,
     String? body,
     int? likeCount,
+    int? saveCount,
+    int? repostCount,
     int? replyCount,
     bool? viewerLiked,
+    bool? viewerSaved,
+    bool? viewerReposted,
     bool? isPending,
     bool? failed,
     DateTime? createdAt,
@@ -131,6 +160,8 @@ class CommentModel {
         parentId: parentId,
         depth: depth,
         likeCount: likeCount ?? this.likeCount,
+        saveCount: saveCount ?? this.saveCount,
+        repostCount: repostCount ?? this.repostCount,
         replyCount: replyCount ?? this.replyCount,
         editedAt: editedAt,
         hiddenAt: hiddenAt,
@@ -139,6 +170,8 @@ class CommentModel {
         updatedAt: updatedAt,
         author: author ?? this.author,
         viewerLiked: viewerLiked ?? this.viewerLiked,
+        viewerSaved: viewerSaved ?? this.viewerSaved,
+        viewerReposted: viewerReposted ?? this.viewerReposted,
         isPending: isPending ?? this.isPending,
         failed: failed ?? this.failed,
       );

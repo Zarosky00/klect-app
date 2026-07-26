@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PulseCard } from '@/app/(app)/pulse/_components/PulseCard';
+import { userPosts } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { calendarDate, compactCount, plural } from '@/lib/format';
 import { bannerUrl } from '@/lib/storage';
@@ -10,10 +12,10 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Icon } from '@/components/ui/Icon';
-import { SkeletonGrid } from '@/components/ui/Skeleton';
+import { SkeletonGrid, SkeletonRow } from '@/components/ui/Skeleton';
 import { useRealtimeProfile } from '@/providers/interactions-provider';
 import { useSession } from '@/providers/session-provider';
-import type { ProfileRow } from '@/lib/types';
+import { pulseEntryKey, type ProfileRow, type PulseEntry } from '@/lib/types';
 import { EntityCard } from './EntityCard';
 import { FollowButton } from './FollowButton';
 import { ProfileEditor } from './ProfileEditor';
@@ -27,24 +29,30 @@ import {
 } from './queries';
 
 /**
- * The profile: banner, avatar, serif display name, bio, live counts, and four
- * tabs over the same card component — collections, items, likes and saves.
+ * The profile: banner, avatar, serif display name, bio, live counts, and five
+ * tabs — collections, items, posts, likes and saves. The entity tabs share one
+ * card component; Posts renders `user_posts` pulse envelopes (migration 0021)
+ * through the same `PulseCard` the stream uses, so a post can never look
+ * different on a profile than it does in Pulse.
  *
  * The header is server-rendered for SEO and first paint; this component takes
  * over for the tabs, the optimistic follow and the overflow actions.
  */
 
-const TABS = ['collections', 'items', 'likes', 'saves'] as const;
+const TABS = ['collections', 'items', 'posts', 'likes', 'saves'] as const;
 export type ProfileTab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<ProfileTab, string> = {
   collections: 'Collections',
   items: 'Items',
+  posts: 'Posts',
   likes: 'Likes',
   saves: 'Saves',
 };
 
 const PAGE_SIZE = 24;
+/** `user_posts` page size — extra-row has_more contract (migration 0021). */
+const POSTS_PAGE_SIZE = 20;
 
 export interface ProfileScreenProps {
   profile: ProfileRow;
@@ -52,6 +60,9 @@ export interface ProfileScreenProps {
   /** First page of the default tab, rendered on the server. */
   initialTab: ProfileTab;
   initialSummaries: EntitySummary[];
+  /** First `user_posts` page (raw, may hold the extra has_more row) when the
+   *  Posts tab was deep-linked; null lets the client fetch on first select. */
+  initialPosts?: PulseEntry[] | null;
 }
 
 function isProfileTab(value: string | null): value is ProfileTab {
@@ -63,6 +74,7 @@ export function ProfileScreen({
   relationship,
   initialTab,
   initialSummaries,
+  initialPosts = null,
 }: ProfileScreenProps) {
   const { supabase, user } = useSession();
   const isSelf = user?.id === profile.id;
@@ -77,6 +89,17 @@ export function ProfileScreen({
   const [loading, setLoading] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
   const [editing, setEditing] = useState(false);
+
+  // The Posts tab is envelope-shaped, not summary-shaped — its own state.
+  // Extra-row contract: render POSTS_PAGE_SIZE, the surplus row means more.
+  const [posts, setPosts] = useState<PulseEntry[] | null>(() =>
+    initialPosts === null ? null : initialPosts.slice(0, POSTS_PAGE_SIZE),
+  );
+  const [postsHasMore, setPostsHasMore] = useState(
+    () => initialPosts !== null && initialPosts.length > POSTS_PAGE_SIZE,
+  );
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [postsFailure, setPostsFailure] = useState<unknown>(null);
 
   // Follower count stays live while you sit on the page.
   useRealtimeProfile(profile.id);
@@ -113,6 +136,33 @@ export function ProfileScreen({
     [profile.id, supabase],
   );
 
+  /** First page (no `before`) or the next one (`before` = min sort_at loaded). */
+  const loadPosts = useCallback(
+    async (before?: string) => {
+      setPostsLoading(true);
+      setPostsFailure(null);
+      try {
+        const rows = await userPosts(supabase, profile.id, {
+          limit: POSTS_PAGE_SIZE,
+          ...(before === undefined ? {} : { before }),
+        });
+        const hasMore = rows.length > POSTS_PAGE_SIZE;
+        const rendered = hasMore ? rows.slice(0, POSTS_PAGE_SIZE) : rows;
+        setPosts((current) => {
+          const existing = before === undefined ? [] : (current ?? []);
+          const known = new Set(existing.map(pulseEntryKey));
+          return [...existing, ...rendered.filter((row) => !known.has(pulseEntryKey(row)))];
+        });
+        setPostsHasMore(hasMore);
+      } catch (error) {
+        setPostsFailure(error);
+      } finally {
+        setPostsLoading(false);
+      }
+    },
+    [profile.id, supabase],
+  );
+
   const requested = useRef(new Set<ProfileTab>([initialTab]));
 
   const select = useCallback(
@@ -127,10 +177,11 @@ export function ProfileScreen({
       }
       if (!requested.current.has(next)) {
         requested.current.add(next);
-        void load(next, 0);
+        if (next === 'posts') void loadPosts();
+        else void load(next, 0);
       }
     },
-    [load],
+    [load, loadPosts],
   );
 
   // Honour ?tab= on a cold deep link.
@@ -157,6 +208,12 @@ export function ProfileScreen({
       description: isSelf
         ? 'Items are the things themselves — one item, one to many photos.'
         : `${profile.display_name} has not published an item you can see.`,
+    },
+    posts: {
+      title: isSelf ? 'Nothing said yet' : 'No posts yet',
+      description: isSelf
+        ? 'Posts, quotes and reposts you make in Pulse land here.'
+        : `${profile.display_name} has not posted anything you can see.`,
     },
     likes: {
       title: isSelf ? 'Nothing liked yet' : 'Likes are private here',
@@ -347,7 +404,51 @@ export function ProfileScreen({
         aria-labelledby={`profile-tab-${tab}`}
         className="content-max px-4 pt-6 sm:px-6"
       >
-        {failure ? (
+        {tab === 'posts' ? (
+          postsFailure ? (
+            <ErrorState error={postsFailure} onRetry={() => void loadPosts()} />
+          ) : posts === null ? (
+            <div className="mx-auto flex w-full max-w-160 flex-col gap-4">
+              <SkeletonRow />
+              <SkeletonRow />
+            </div>
+          ) : posts.length === 0 ? (
+            <EmptyState
+              icon="activity"
+              title={emptyCopy.posts.title}
+              description={emptyCopy.posts.description}
+            />
+          ) : (
+            <div className="mx-auto w-full max-w-160">
+              <ol className="border-t border-line-subtle">
+                {posts.map((entry, index) => (
+                  <li key={pulseEntryKey(entry)}>
+                    <PulseCard entry={entry} enterIndex={index % POSTS_PAGE_SIZE} />
+                  </li>
+                ))}
+              </ol>
+
+              {postsHasMore ? (
+                <div className="mt-8 flex justify-center">
+                  <Button
+                    variant="secondary"
+                    loading={postsLoading}
+                    onClick={() => {
+                      // `user_posts` pages on p_before = min(sort_at) loaded.
+                      let before: string | undefined;
+                      for (const row of posts) {
+                        if (before === undefined || row.sort_at < before) before = row.sort_at;
+                      }
+                      void loadPosts(before);
+                    }}
+                  >
+                    Load more
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          )
+        ) : failure ? (
           <ErrorState error={failure} onRetry={() => void load(tab, 0)} />
         ) : loading && summaries.length === 0 ? (
           <SkeletonGrid count={9} />

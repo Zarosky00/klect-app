@@ -44,6 +44,8 @@ export const subcollectionHref = (id: string): string => `/s/${id}`;
 export const itemHref = (id: string): string => `/i/${id}`;
 export const conversationHref = (id: string): string => `/messages/${id}`;
 export const closeupHref = (type: string, id: string): string => `/closeup/${type}/${id}`;
+/** The post thread page — the X-style destination for a post (W3). */
+export const postHref = (id: string): string => `/p/${id}`;
 
 /** Signed-out visitors are redirected to sign-in from these. */
 export const PROTECTED_PREFIXES = [

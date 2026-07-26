@@ -80,11 +80,19 @@ class PulseFeedState {
 
 /// **Pulse** — the X-style stream, one controller per [PulseMode].
 ///
-/// `pulse_feed(p_limit, p_before, p_mode)` is a cursor feed, not an offset
-/// feed, so pagination is immune to new posts arriving while you read. Both
-/// modes page on **min(sort_at) currently on screen**: Following is
-/// chronological so that is simply the last row, and For-you is score-ordered
-/// so the minimum must be taken across the whole page (per the 0018 header).
+/// `pulse_feed(p_limit, p_before, p_mode, p_before_id)` is a cursor feed,
+/// not an offset feed, so pagination is immune to new posts arriving while
+/// you read. The 0021 contract:
+///
+///  * the RPC returns **up to `p_limit + 1` rows** — the extra row is the
+///    has-more signal, not content, so only the first `p_limit` render;
+///  * paging is a composite keyset: the oldest on-screen row's
+///    `(sort_at, cursor_id)` goes back as `(p_before, p_before_id)`, which
+///    is what stops a same-timestamp twin being skipped at a page boundary.
+///
+/// Both modes page on **min(sort_at) currently on screen**: Following is
+/// chronological so that is simply the last row, and For-you is
+/// score-ordered so the minimum must be taken across the whole page.
 class PulseFeedController extends Notifier<PulseFeedState> {
   /// Creates the controller for one feed mode.
   PulseFeedController(this.mode);
@@ -138,14 +146,16 @@ class PulseFeedController extends Notifier<PulseFeedState> {
     );
   }
 
-  /// The next `p_before`: the minimum `sort_at` currently on screen. For-you
-  /// pages are score-ordered, so the last row is not necessarily the oldest.
-  DateTime? _oldestOnScreen() {
-    DateTime? oldest;
+  /// The next `(p_before, p_before_id)`: the row with the minimum `sort_at`
+  /// currently on screen and its `cursor_id`. For-you pages are
+  /// score-ordered, so the last row is not necessarily the oldest.
+  PulseItem? _oldestOnScreen() {
+    PulseItem? oldest;
     for (final item in state.items) {
       final at = item.sortAt;
       if (at == null) continue;
-      if (oldest == null || at.isBefore(oldest)) oldest = at;
+      final oldestAt = oldest?.sortAt;
+      if (oldestAt == null || at.isBefore(oldestAt)) oldest = item;
     }
     return oldest;
   }
@@ -164,16 +174,25 @@ class PulseFeedController extends Notifier<PulseFeedState> {
           )
         : state.copyWith(loadingMore: true, clearError: true, clearFresh: true);
 
-    final before = reset ? null : _oldestOnScreen();
+    final cursor = reset ? null : _oldestOnScreen();
 
     try {
-      final rows = await ref
-          .read(klectApiProvider)
-          .pulseFeed(limit: pageSize, before: before, mode: mode);
+      final rows = await ref.read(klectApiProvider).pulseFeed(
+            limit: pageSize,
+            before: cursor?.sortAt,
+            beforeId: cursor?.cursorId,
+            mode: mode,
+          );
+
+      // 0021 extra-row contract: up to pageSize + 1 rows come back; the
+      // extra one only says "there is more" and must not render (it would
+      // duplicate the top of the next page).
+      final hasMore = rows.length > pageSize;
+      final pageRows = hasMore ? rows.sublist(0, pageSize) : rows;
 
       if (reset) _seen.clear();
       final fresh = <PulseItem>[];
-      for (final row in rows) {
+      for (final row in pageRows) {
         final item = PulseItem.fromEntry(row);
         if (_seen.add(item.key)) fresh.add(item);
       }
@@ -195,7 +214,7 @@ class PulseFeedController extends Notifier<PulseFeedState> {
 
       state = PulseFeedState(
         items: reset ? fresh : <PulseItem>[...state.items, ...fresh],
-        hasMore: rows.length >= pageSize,
+        hasMore: hasMore,
       );
 
       if (reset && fresh.isNotEmpty) {

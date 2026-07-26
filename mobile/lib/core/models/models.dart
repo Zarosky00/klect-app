@@ -15,3 +15,4 @@ export 'post.dart';
 export 'profile.dart';
 export 'results.dart';
 export 'surf_card.dart';
+export 'thread.dart';

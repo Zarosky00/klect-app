@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getProfileByUsername } from '@/lib/api';
+import { getProfileByUsername, userPosts } from '@/lib/api';
 import { compactCount } from '@/lib/format';
 import { profileHref } from '@/lib/routes';
 import { buildMetadata, notFoundMetadata } from '@/lib/seo';
 import { avatarUrl, bannerUrl } from '@/lib/storage';
 import { createClient } from '@/lib/supabase/server';
+import type { PulseEntry } from '@/lib/types';
 import { getViewerBootstrap } from '@/lib/viewer';
 import { ProfileScreen, type ProfileTab } from '@/components/social/ProfileScreen';
 import {
@@ -22,7 +23,10 @@ interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-const TABS: readonly ProfileTab[] = ['collections', 'items', 'likes', 'saves'];
+const TABS: readonly ProfileTab[] = ['collections', 'items', 'posts', 'likes', 'saves'];
+
+/** `user_posts` first page — extra-row has_more contract (migration 0021). */
+const POSTS_FIRST_PAGE = 20;
 
 function resolveTab(value: string | string[] | undefined): ProfileTab {
   const first = Array.isArray(value) ? value[0] : value;
@@ -73,15 +77,29 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
   const { user } = await getViewerBootstrap();
   const tab = resolveTab(query['tab']);
 
-  const [relationship, summaries]: [RelationshipState, EntitySummary[]] = await Promise.all([
+  const [relationship, summaries, initialPosts]: [
+    RelationshipState,
+    EntitySummary[],
+    PulseEntry[] | null,
+  ] = await Promise.all([
     user
       ? getRelationship(supabase, user.id, profile.id)
       : Promise.resolve<RelationshipState>({ following: false, blocked: false, muted: false }),
-    tab === 'collections'
-      ? listCollectionSummaries(supabase, profile.id)
-      : tab === 'items'
-        ? listItemSummaries(supabase, profile.id)
-        : listInteractedSummaries(supabase, tab === 'likes' ? 'likes' : 'saves', profile.id),
+    tab === 'posts'
+      ? Promise.resolve<EntitySummary[]>([])
+      : tab === 'collections'
+        ? listCollectionSummaries(supabase, profile.id)
+        : tab === 'items'
+          ? listItemSummaries(supabase, profile.id)
+          : listInteractedSummaries(supabase, tab === 'likes' ? 'likes' : 'saves', profile.id),
+    // Posts deep link: `user_posts` is anon-callable, so the first page is in
+    // the HTML like every other tab. Raw page — the screen applies the
+    // extra-row has_more contract.
+    tab === 'posts'
+      ? userPosts(supabase, profile.id, { limit: POSTS_FIRST_PAGE }).catch(
+          () => [] as PulseEntry[],
+        )
+      : Promise.resolve<PulseEntry[] | null>(null),
   ]);
 
   return (
@@ -90,6 +108,7 @@ export default async function ProfilePage({ params, searchParams }: PageProps) {
       relationship={relationship}
       initialTab={tab}
       initialSummaries={summaries}
+      initialPosts={initialPosts}
     />
   );
 }

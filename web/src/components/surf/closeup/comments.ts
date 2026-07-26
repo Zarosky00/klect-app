@@ -32,11 +32,17 @@ export interface CommentNode {
   parentId: string | null;
   depth: number;
   likeCount: number;
+  /** Trigger-maintained counter columns — comments are full social citizens
+   *  since migration 0021. */
+  saveCount: number;
+  repostCount: number;
   replyCount: number;
   createdAt: string;
   editedAt: string | null;
   /** Seeded from one batched read of the viewer's likes over this page. */
   viewerLiked: boolean;
+  viewerSaved: boolean;
+  viewerReposted: boolean;
   /** True while an optimistic post is still in flight. */
   pending?: boolean;
 }
@@ -51,6 +57,8 @@ function toNode(
   row: CommentRow,
   authors: Map<string, CommentAuthor>,
   liked: ReadonlySet<string>,
+  saved: ReadonlySet<string>,
+  reposted: ReadonlySet<string>,
 ): CommentNode {
   return {
     id: row.id,
@@ -60,10 +68,14 @@ function toNode(
     parentId: row.parent_id,
     depth: row.depth,
     likeCount: row.like_count,
+    saveCount: row.save_count,
+    repostCount: row.repost_count,
     replyCount: row.reply_count,
     createdAt: row.created_at,
     editedAt: row.edited_at,
     viewerLiked: liked.has(row.id),
+    viewerSaved: saved.has(row.id),
+    viewerReposted: reposted.has(row.id),
   };
 }
 
@@ -94,27 +106,43 @@ export async function loadCommentThread(
   const authorIds = [...new Set(rows.map((row) => row.author_id))];
   const commentIds = rows.map((row) => row.id);
 
-  const [authorsResult, likesResult] = await Promise.all([
-    client
-      .from('profiles')
-      .select('id, username, display_name, avatar_path, is_verified')
-      .in('id', authorIds),
+  // The viewer's likes/saves/reposts over the page, one batched read each —
+  // never a probe per comment (comments are full social citizens since 0021).
+  const none = Promise.resolve({ data: [] as Array<{ entity_id: string }>, error: null });
+  const viewerRows = (table: 'likes' | 'saves' | 'reposts') =>
     options.viewerId
       ? client
-          .from('likes')
+          .from(table)
           .select('entity_id')
           .eq('user_id', options.viewerId)
           .eq('entity_type', 'comment')
           .in('entity_id', commentIds)
-      : Promise.resolve({ data: [] as Array<{ entity_id: string }>, error: null }),
+      : none;
+
+  const [authorsResult, likesResult, savesResult, repostsResult] = await Promise.all([
+    client
+      .from('profiles')
+      .select('id, username, display_name, avatar_path, is_verified')
+      .in('id', authorIds),
+    viewerRows('likes'),
+    viewerRows('saves'),
+    viewerRows('reposts'),
   ]);
   if (likesResult.error) throw toKlectError(likesResult.error);
+  if (savesResult.error) throw toKlectError(savesResult.error);
+  if (repostsResult.error) throw toKlectError(repostsResult.error);
 
   const authors = new Map<string, CommentAuthor>();
   for (const profile of authorsResult.data ?? []) authors.set(profile.id, profile);
   const liked = new Set((likesResult.data ?? []).map((row) => row.entity_id));
+  const saved = new Set((savesResult.data ?? []).map((row) => row.entity_id));
+  const reposted = new Set((repostsResult.data ?? []).map((row) => row.entity_id));
 
-  return { nodes: rows.map((row) => toNode(row, authors, liked)), hasMore, nextOffset };
+  return {
+    nodes: rows.map((row) => toNode(row, authors, liked, saved, reposted)),
+    hasMore,
+    nextOffset,
+  };
 }
 
 export interface CommentTreeNode extends CommentNode {

@@ -26,6 +26,7 @@ import 'features/matches/matches_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'features/profile/profile_screen.dart';
 import 'features/pulse/pulse_screen.dart';
+import 'features/pulse/thread/post_thread_screen.dart';
 import 'features/search/search_screen.dart';
 import 'features/settings/appearance_settings_screen.dart';
 import 'features/settings/blocked_users_screen.dart';
@@ -250,6 +251,23 @@ final routerProvider = Provider<GoRouter>(
           path: Routes.matches,
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) => const MatchesScreen(),
+        ),
+
+        // ── the post thread — a Pulse row's single-tap destination ───────
+        GoRoute(
+          path: '/post/:id',
+          parentNavigatorKey: _rootNavigatorKey,
+          builder: (context, state) => PostThreadScreen(
+            postId: state.pathParameters['id'] ?? '',
+          ),
+        ),
+        // Canonical short link (`klect.app/p/:id`, shared by both clients)
+        // lands on the same thread.
+        GoRoute(
+          path: '/p/:id',
+          parentNavigatorKey: _rootNavigatorKey,
+          redirect: (context, state) =>
+              '/post/${state.pathParameters['id'] ?? ''}',
         ),
 
         // ── the gesture contract's two destinations ──────────────────────

@@ -64,6 +64,16 @@ const RPC_MESSAGES: Record<
   too_many_media: { kind: 'unknown', message: 'A post can carry up to four photos.' },
   media_not_yours: { kind: 'forbidden', message: 'Those photos are not yours to attach.' },
   bad_mode: { kind: 'unknown', message: 'Unknown feed mode. Refresh and try again.' },
+  /* Migration 0021 (thread-first Pulse). */
+  bad_sort: { kind: 'unknown', message: 'Unknown comment sort. Refresh and try again.' },
+  post_not_found: {
+    kind: 'not_found',
+    message: 'That post is private, deleted, or never existed.',
+  },
+  replies_use_comments: {
+    kind: 'unknown',
+    message: 'Replies live in comments now. Refresh and try again.',
+  },
 };
 
 export function toKlectError(error: unknown): KlectError {

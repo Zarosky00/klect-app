@@ -1,5 +1,5 @@
 import { entityHref, isEntityType, type NotificationType } from '@/lib/entities';
-import { closeupHref, conversationHref, profileHref, routes } from '@/lib/routes';
+import { closeupHref, conversationHref, postHref, profileHref, routes } from '@/lib/routes';
 import type { IconName } from '@/components/ui/Icon';
 import type { NotificationEntry } from './queries';
 
@@ -70,9 +70,12 @@ export function notificationTargetHref(entry: NotificationEntry): string {
     case 'comment':
     case 'reply':
     case 'mention':
-      // Comments live inside the closeup of whatever they hang off.
+      // Comments live inside the closeup of whatever they hang off — except a
+      // post's, whose discussion is the thread page (W3).
       return isEntityType(notification.entity_type) && notification.entity_id
-        ? closeupHref(notification.entity_type, notification.entity_id)
+        ? notification.entity_type === 'post'
+          ? postHref(notification.entity_id)
+          : closeupHref(notification.entity_type, notification.entity_id)
         : routes.notifications;
     default:
       return isEntityType(notification.entity_type) && notification.entity_id

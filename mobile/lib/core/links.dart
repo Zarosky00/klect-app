@@ -21,11 +21,15 @@ abstract final class KlectLinks {
   );
 
   /// In-app path for an entity.
+  ///
+  /// A post's destination is its **thread** (0021), not the closeup — `/p/:id`
+  /// is the canonical short link both clients serve, and the mobile router
+  /// aliases it onto [postThreadPath].
   static String pathFor(EntityType type, String id) => switch (type) {
     EntityType.collection => '/c/$id',
     EntityType.subcollection => '/s/$id',
     EntityType.item => '/i/$id',
-    EntityType.post => '/closeup/post/$id',
+    EntityType.post => '/p/$id',
     EntityType.comment => '/closeup/comment/$id',
   };
 
@@ -43,6 +47,9 @@ abstract final class KlectLinks {
   /// The closeup route for an entity — the single-tap destination.
   static String closeupPath(EntityType type, String id) =>
       '/closeup/${type.wire}/$id';
+
+  /// The post thread route — the single-tap destination for a Pulse row.
+  static String postThreadPath(String postId) => '/post/$postId';
 
   /// The immersive route for an entity — the double-tap destination.
   static String immersivePath(EntityType type, String id) =>

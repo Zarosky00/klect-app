@@ -409,6 +409,10 @@ export interface PulseTarget {
   like_count?: number | null;
   created_at?: string | null;
   author?: PulseActor | null;
+  /** Comment targets only (0021): the entity the comment hangs off, so a
+   *  reposted comment can deep-link into its discussion. */
+  parent_type?: EntityType | null;
+  parent_id?: string | null;
 }
 
 export interface PulseEntry {
@@ -443,6 +447,67 @@ export interface PulseEntry {
   media?: PulseMedia[];
   /** Server-embedded target payload — quoted post, shared entity, or tombstone. */
   target?: PulseTarget | null;
+  /**
+   * Composite-keyset cursor (migration 0021): post id for post rows, target
+   * entity id for repost rows. Page with `(sort_at, cursor_id)` of the last
+   * rendered row as `(p_before, p_before_id)`.
+   */
+  cursor_id?: string | null;
+}
+
+/**
+ * Stream identity of an envelope — a repost and its original are two rows,
+ * one post id. Includes `target_id` because entity reposts carry no post id,
+ * so two same-second reposts by one collector of different things would
+ * otherwise collide and dedupe each other away (W3 dedupe bug).
+ */
+export function pulseEntryKey(entry: PulseEntry): string {
+  return `${entry.feed_kind}:${entry.reposter_id ?? ''}:${entry.post_id ?? ''}:${entry.target_id ?? ''}:${entry.sort_at}`;
+}
+
+/* ── post thread (migration 0021, `get_post_thread`) ─────────────────────── */
+
+export type ThreadSort = 'top' | 'new';
+
+export interface ThreadCommentViewer {
+  liked: boolean;
+  saved: boolean;
+  reposted: boolean;
+}
+
+/** One comment in the thread page — flat, with `parent_id`/`depth` for nesting. */
+export interface ThreadComment {
+  id: string;
+  body: string;
+  author: PulseActor | null;
+  created_at: string;
+  like_count: number;
+  save_count: number;
+  repost_count: number;
+  reply_count: number;
+  parent_id: string | null;
+  depth: number;
+  viewer: ThreadCommentViewer;
+}
+
+export interface PostThreadStats {
+  like_count: number;
+  repost_count: number;
+  save_count: number;
+  comment_count: number;
+  view_count: number;
+}
+
+/**
+ * The X thread payload: `{post, stats, comments[], has_more}`. Comments are a
+ * flat page ordered by the requested sort; `has_more` is explicit (the feed
+ * RPCs use the extra-row contract instead because they return bare arrays).
+ */
+export interface PostThread {
+  post: PulseEntry;
+  stats: PostThreadStats;
+  comments: ThreadComment[];
+  has_more: boolean;
 }
 
 /* ── search ───────────────────────────────────────────────────────────────── */
@@ -490,11 +555,27 @@ export interface SearchTag {
   use_count: number;
 }
 
+/** One post row from `search_all`'s posts section (migration 0021). */
+export interface SearchPost {
+  id: string;
+  /** Body excerpt, capped server-side at 280 chars. */
+  body: string;
+  kind: string;
+  created_at: string;
+  like_count: number;
+  save_count: number;
+  repost_count: number;
+  comment_count: number;
+  view_count: number;
+  author: PulseActor | null;
+}
+
 export interface SearchResults {
   people: SearchPerson[];
   collections: SearchCollection[];
   items: SearchItem[];
   tags: SearchTag[];
+  posts: SearchPost[];
 }
 
 export const EMPTY_SEARCH_RESULTS: SearchResults = {
@@ -502,6 +583,7 @@ export const EMPTY_SEARCH_RESULTS: SearchResults = {
   collections: [],
   items: [],
   tags: [],
+  posts: [],
 };
 
 /* ── matches ──────────────────────────────────────────────────────────────── */

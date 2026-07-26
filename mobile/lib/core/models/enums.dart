@@ -424,19 +424,23 @@ enum PulseMode {
   final String label;
 }
 
-/// How a comment thread is ordered. A client-side order-by choice, not a
-/// Postgres enum — `fetchComments` turns it into the matching `order()` calls.
+/// How a comment thread is ordered. Client-side for the closeup's table
+/// reads (`fetchComments` turns it into `order()` calls) and the wire value
+/// of `get_post_thread(p_sort)` for the post thread (0021).
 enum CommentSort {
   /// Most-liked first, ties oldest-first — X's "Top".
-  top('Top'),
+  top('Top', 'top'),
 
   /// Newest first.
-  newest('Newest');
+  newest('Newest', 'new');
 
-  const CommentSort(this.label);
+  const CommentSort(this.label, this.wire);
 
   /// Human label for the sort toggle.
   final String label;
+
+  /// The value `get_post_thread` expects for `p_sort`.
+  final String wire;
 }
 
 /// `surf_feed(p_filter)`.

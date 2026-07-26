@@ -191,7 +191,72 @@ class ItemSearchHit {
   final String? avatarPath;
 }
 
-/// The whole `search_all` payload: `{people, collections, items, tags}`.
+/// A post hit from `search_all` (0021 adds the `posts` section).
+class PostSearchHit {
+  /// Creates a hit.
+  const PostSearchHit({
+    required this.id,
+    this.body,
+    this.kind,
+    this.createdAt,
+    this.likeCount = 0,
+    this.saveCount = 0,
+    this.repostCount = 0,
+    this.commentCount = 0,
+    this.viewCount = 0,
+    this.author,
+  });
+
+  /// Parses a `posts` entry of `search_all`.
+  factory PostSearchHit.fromJson(Map<String, dynamic> json) {
+    final author = asMap(json['author']);
+    return PostSearchHit(
+      id: asString(json['id']),
+      body: asStringOrNull(json['body']),
+      kind: asStringOrNull(json['kind']),
+      createdAt: asDateOrNull(json['created_at']),
+      likeCount: asInt(json['like_count']),
+      saveCount: asInt(json['save_count']),
+      repostCount: asInt(json['repost_count']),
+      commentCount: asInt(json['comment_count']),
+      viewCount: asInt(json['view_count']),
+      author: author.isEmpty ? null : Profile.fromJson(author),
+    );
+  }
+
+  /// Post id — deep-link target for the thread screen.
+  final String id;
+
+  /// Body excerpt (the RPC caps it at 280 characters).
+  final String? body;
+
+  /// `post` | `quote`.
+  final String? kind;
+
+  /// When it was posted.
+  final DateTime? createdAt;
+
+  /// Live like count.
+  final int likeCount;
+
+  /// Live save count.
+  final int saveCount;
+
+  /// Live repost count.
+  final int repostCount;
+
+  /// Live comment count.
+  final int commentCount;
+
+  /// Live view count.
+  final int viewCount;
+
+  /// Who wrote it.
+  final Profile? author;
+}
+
+/// The whole `search_all` payload:
+/// `{people, collections, items, tags, posts}`.
 class SearchResults {
   /// Creates a result set.
   const SearchResults({
@@ -199,6 +264,7 @@ class SearchResults {
     this.collections = const <CollectionSearchHit>[],
     this.items = const <ItemSearchHit>[],
     this.tags = const <TagModel>[],
+    this.posts = const <PostSearchHit>[],
   });
 
   /// Parses the `search_all` payload.
@@ -216,6 +282,9 @@ class SearchResults {
         tags: <TagModel>[
           for (final t in asMapList(json['tags'])) TagModel.fromJson(t),
         ],
+        posts: <PostSearchHit>[
+          for (final p in asMapList(json['posts'])) PostSearchHit.fromJson(p),
+        ],
       );
 
   /// Matching people.
@@ -229,6 +298,11 @@ class SearchResults {
 
   /// Matching tags.
   final List<TagModel> tags;
+
+  /// Matching posts (0021). Not included in [isEmpty] / [total] — the search
+  /// screen's sections are people/collections/items/tags; posts serve the
+  /// Pulse filter drawer's search, which reads this list directly.
+  final List<PostSearchHit> posts;
 
   /// True when nothing matched anywhere.
   bool get isEmpty =>
@@ -295,6 +369,7 @@ class PulseEntry {
     this.author,
     this.body,
     this.createdAt,
+    this.cursorId,
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
@@ -324,6 +399,7 @@ class PulseEntry {
       author: author.isEmpty ? null : Profile.fromJson(author),
       body: asStringOrNull(json['body'] ?? json['title']),
       createdAt: asDateOrNull(json['created_at']),
+      cursorId: asStringOrNull(json['cursor_id']),
       likeCount: count('like', 'like_count'),
       saveCount: count('save', 'save_count'),
       repostCount: count('repost', 'repost_count'),
@@ -362,6 +438,11 @@ class PulseEntry {
 
   /// Ordering key — pass the oldest one back as `p_before` to paginate.
   final DateTime? createdAt;
+
+  /// The 0021 composite-cursor id: the post id for post rows, the target
+  /// entity id for repost rows. Pass it as `p_before_id` alongside the
+  /// `p_before` of the same row so same-timestamp twins are never skipped.
+  final String? cursorId;
 
   /// Live like count.
   final int likeCount;

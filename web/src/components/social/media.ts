@@ -21,6 +21,14 @@ import { encode } from 'blurhash';
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '@/lib/env';
 import { toKlectError } from '@/lib/errors';
 import { BUCKET_MAX_BYTES, type Bucket } from '@/lib/storage';
+import {
+  MIN_CROP_EDGE,
+  clampInside,
+  drawTurnedImage,
+  normalizeTurns,
+  turnedSize,
+  type CropRect,
+} from './create/crop';
 
 /** Longest edge kept for gallery media. Comfortably above any tile's CSS size. */
 export const MAX_MEDIA_EDGE = 2048;
@@ -142,11 +150,20 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob>
 export interface PrepareOptions {
   maxEdge?: number;
   quality?: number;
+  /** Clockwise 90° rotations applied before the crop. */
+  quarterTurns?: number;
+  /**
+   * FRAME-beat crop, in turned-frame pixels (post-rotation space). Applied
+   * before the downscale, so the blurhash and intrinsic dimensions always
+   * describe exactly what was uploaded — same contract as mobile's
+   * `ImagePipeline.prepare`.
+   */
+  cropRect?: CropRect | null;
 }
 
 /**
- * One pass over the file: decode, downscale, encode WebP, and derive the
- * blurhash + dominant colour from a 32px sample of the same canvas.
+ * One pass over the file: decode, rotate, crop, downscale, encode WebP, and
+ * derive the blurhash + dominant colour from a 32px sample of the same canvas.
  */
 export async function prepareImage(
   file: File,
@@ -154,13 +171,26 @@ export async function prepareImage(
 ): Promise<PreparedImage> {
   const maxEdge = options.maxEdge ?? MAX_MEDIA_EDGE;
   const quality = options.quality ?? WEBP_QUALITY;
+  const turns = normalizeTurns(options.quarterTurns ?? 0);
 
   const source = await loadBitmap(file);
   const intrinsic = bitmapSize(source);
   if (intrinsic.width === 0 || intrinsic.height === 0) {
     throw new Error('That image has no pixels.');
   }
-  const target = scaleTo(intrinsic.width, intrinsic.height, maxEdge);
+
+  // The frame the crop lives in: oriented pixels after the quarter turns.
+  const turned = turnedSize(intrinsic.width, intrinsic.height, turns);
+  let crop: CropRect = { left: 0, top: 0, width: turned.width, height: turned.height };
+  if (options.cropRect) {
+    // Clamp: gesture math may overshoot an edge by a fraction of a pixel.
+    const clamped = clampInside(options.cropRect, turned.width, turned.height);
+    if (clamped.width >= MIN_CROP_EDGE && clamped.height >= MIN_CROP_EDGE) {
+      crop = clamped;
+    }
+  }
+
+  const target = scaleTo(Math.round(crop.width), Math.round(crop.height), maxEdge);
 
   const canvas = document.createElement('canvas');
   canvas.width = target.width;
@@ -169,7 +199,18 @@ export async function prepareImage(
   if (!context) throw new Error('This browser cannot process images.');
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(source as CanvasImageSource, 0, 0, target.width, target.height);
+  // Map the cropped region of the turned frame onto the whole canvas, then
+  // let the shared helper apply the rotation.
+  context.scale(target.width / crop.width, target.height / crop.height);
+  context.translate(-crop.left, -crop.top);
+  drawTurnedImage(
+    context,
+    source as HTMLImageElement | ImageBitmap,
+    turns,
+    turned.width,
+    turned.height,
+  );
+  context.setTransform(1, 0, 0, 1, 0, 0);
 
   const blob = await canvasToBlob(canvas, quality);
 

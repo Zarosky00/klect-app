@@ -158,27 +158,35 @@ class CommentsController extends Notifier<CommentsState> {
           ? await api.fetchCommentReplies(type: entity.type, id: entity.id)
           : const <CommentModel>[];
 
-      // Batched viewer-like seeding — ONE query for the whole page.
+      // Batched viewer-state seeding — three parallel queries for the whole
+      // page (comments are likeable, saveable AND repostable since 0021), a
+      // plain table select carries none of these.
       final fresh = <CommentModel>[...roots, ...replies];
-      final liked = await api.fetchLikedCommentIds(
-        <String>[for (final comment in fresh) comment.id],
-      );
+      final ids = <String>[for (final comment in fresh) comment.id];
+      final viewerState = await Future.wait(<Future<Set<String>>>[
+        api.fetchLikedCommentIds(ids),
+        api.fetchSavedCommentIds(ids),
+        api.fetchRepostedCommentIds(ids),
+      ]);
+      final liked = viewerState[0];
+      final saved = viewerState[1];
+      final reposted = viewerState[2];
       final seeded = <CommentModel>[
         for (final comment in fresh)
-          comment.copyWith(viewerLiked: liked.contains(comment.id)),
+          comment.copyWith(
+            viewerLiked: liked.contains(comment.id),
+            viewerSaved: saved.contains(comment.id),
+            viewerReposted: reposted.contains(comment.id),
+          ),
       ];
 
-      // Comments are likeable entities in their own right, so seed the engine
-      // for each one before any pill is built.
+      // Comments are full social citizens in their own right, so seed the
+      // engine for each one before any pill is built.
       final store = ref.read(interactionSeedStoreProvider);
       for (final comment in seeded) {
         store.put(
           EntityRef.comment(comment.id),
-          InteractionState(
-            liked: comment.viewerLiked,
-            likeCount: comment.likeCount,
-            hydrated: true,
-          ),
+          InteractionState.fromComment(comment),
         );
       }
 

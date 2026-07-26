@@ -39,10 +39,12 @@ import type {
   MatchPerson,
   MessageRow,
   NotificationRow,
+  PostThread,
   ProfileRow,
   PulseEntry,
   PulseMode,
   SearchResults,
+  ThreadSort,
   SubcollectionRow,
   SubmitReportResult,
   SurfCard,
@@ -265,14 +267,66 @@ export async function surfFeed(
     .filter((card): card is SurfCard => card !== null);
 }
 
+/**
+ * PAGINATION CONTRACT (migration 0021): returns UP TO `limit + 1` envelopes.
+ * Render the first `limit` and treat `length > limit` as has_more; page with
+ * `(sort_at, cursor_id)` of the last rendered row as `(before, beforeId)` —
+ * the composite keyset stops the same-timestamp skip.
+ */
 export async function pulseFeed(
   client: Client,
-  params: { limit?: number; before?: string; mode?: PulseMode } = {},
+  params: { limit?: number; before?: string; beforeId?: string; mode?: PulseMode } = {},
 ): Promise<PulseEntry[]> {
   const { data, error } = await client.rpc('pulse_feed', {
     p_limit: params.limit ?? 25,
     ...(params.before === undefined ? {} : { p_before: params.before }),
+    ...(params.beforeId === undefined ? {} : { p_before_id: params.beforeId }),
     ...(params.mode === undefined ? {} : { p_mode: params.mode }),
+  });
+  if (error) throw toKlectError(error);
+  return asJson<PulseEntry[]>(data ?? []);
+}
+
+/**
+ * The X thread payload: `{post, stats, comments[], has_more}` (migration 0021).
+ * Anon-callable — the thread page is a public SEO surface; viewer state simply
+ * reads false. Returns `null` for a post that is hidden, deleted or invisible
+ * (`post_not_found`) so pages can 404 instead of erroring.
+ */
+export async function getPostThread(
+  client: Client,
+  postId: string,
+  params: { limit?: number; before?: string; sort?: ThreadSort } = {},
+): Promise<PostThread | null> {
+  const { data, error } = await client.rpc('get_post_thread', {
+    p_post: postId,
+    p_limit: params.limit ?? 30,
+    ...(params.before === undefined ? {} : { p_before: params.before }),
+    ...(params.sort === undefined ? {} : { p_sort: params.sort }),
+  });
+  if (error) {
+    const klect = toKlectError(error);
+    if (klect.kind === 'not_found') return null;
+    throw klect;
+  }
+  if (!data || typeof data !== 'object') return null;
+  return asJson<PostThread>(data);
+}
+
+/**
+ * Profile Posts tab: the author's posts/quotes + entity reposts as pulse
+ * envelopes (migration 0021). Same extra-row has_more contract as `pulseFeed`;
+ * page with `before = min(sort_at)` on screen. Anon-callable.
+ */
+export async function userPosts(
+  client: Client,
+  userId: string,
+  params: { limit?: number; before?: string } = {},
+): Promise<PulseEntry[]> {
+  const { data, error } = await client.rpc('user_posts', {
+    p_user: userId,
+    p_limit: params.limit ?? 25,
+    ...(params.before === undefined ? {} : { p_before: params.before }),
   });
   if (error) throw toKlectError(error);
   return asJson<PulseEntry[]>(data ?? []);
@@ -345,6 +399,7 @@ export async function searchAll(
     collections: raw.collections ?? [],
     items: raw.items ?? [],
     tags: raw.tags ?? [],
+    posts: raw.posts ?? [],
   };
 }
 

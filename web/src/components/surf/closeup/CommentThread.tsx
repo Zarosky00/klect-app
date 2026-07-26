@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { CommentActionBar } from '@/components/thread/CommentActionBar';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { CountPill } from '@/components/ui/CountPill';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Icon } from '@/components/ui/Icon';
@@ -14,14 +14,10 @@ import { SkeletonRow } from '@/components/ui/Skeleton';
 import { TextArea } from '@/components/ui/TextField';
 import { deleteComment } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import type { EntityType } from '@/lib/entities';
+import { entityHref, type EntityType } from '@/lib/entities';
 import { longTimeAgo, shortTimeAgo } from '@/lib/format';
 import { profileHref, routes } from '@/lib/routes';
-import {
-  useAddComment,
-  useEntitySocial,
-  useInteractionStore,
-} from '@/providers/interactions-provider';
+import { useAddComment, useInteractionStore } from '@/providers/interactions-provider';
 import { useSession } from '@/providers/session-provider';
 import { useToast } from '@/providers/toast-provider';
 import {
@@ -142,10 +138,14 @@ export function CommentThread({ type, id, autoFocus = false, className }: Commen
         parentId: parent?.id ?? null,
         depth: parent ? parent.depth + 1 : 0,
         likeCount: 0,
+        saveCount: 0,
+        repostCount: 0,
         replyCount: 0,
         createdAt: new Date().toISOString(),
         editedAt: null,
         viewerLiked: false,
+        viewerSaved: false,
+        viewerReposted: false,
         pending: true,
       };
 
@@ -303,6 +303,7 @@ export function CommentThread({ type, id, autoFocus = false, className }: Commen
               key={node.id}
               node={node}
               viewerId={user?.id ?? null}
+              sharePath={entityHref(type, id)}
               onReply={(target) => {
                 setReplyTo(target);
                 composerRef.current?.focus();
@@ -352,18 +353,21 @@ export function CommentThread({ type, id, autoFocus = false, className }: Commen
 interface CommentBranchProps {
   node: CommentTreeNode;
   viewerId: string | null;
+  /** Deep link of the discussion this comment lives in (for the share menu). */
+  sharePath: string;
   onReply: (node: CommentNode) => void;
   onReport: (node: CommentNode) => void;
   onDelete: (node: CommentNode) => void;
 }
 
-function CommentBranch({ node, viewerId, onReply, onReport, onDelete }: CommentBranchProps) {
-  // `viewerLiked` came from one batched read over the whole page, so the pill
-  // starts red when it should — no per-comment probe, no flash of wrong state.
-  const social = useEntitySocial('comment', node.pending ? '' : node.id, {
-    likeCount: node.likeCount,
-    viewerLiked: node.viewerLiked,
-  });
+function CommentBranch({
+  node,
+  viewerId,
+  sharePath,
+  onReply,
+  onReport,
+  onDelete,
+}: CommentBranchProps) {
   const mine = viewerId !== null && viewerId === node.authorId;
 
   return (
@@ -404,28 +408,24 @@ function CommentBranch({ node, viewerId, onReply, onReport, onDelete }: CommentB
             {node.body}
           </p>
 
-          <div className="mt-1 flex items-center gap-1">
-            <CountPill
-              icon="heart"
-              tone="like"
-              compact
-              count={social.likeCount}
-              active={social.liked}
-              label={social.liked ? 'Unlike comment' : 'Like comment'}
-              disabled={node.pending}
-              onClick={() => social.like()}
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {/* The full comment action bar (W3) — viewer state came from one
+                batched read over the page, so pills start lit when they should. */}
+            <CommentActionBar
+              id={node.pending ? '' : node.id}
+              seed={{
+                likeCount: node.likeCount,
+                saveCount: node.saveCount,
+                repostCount: node.repostCount,
+                viewerLiked: node.viewerLiked,
+                viewerSaved: node.viewerSaved,
+                viewerReposted: node.viewerReposted,
+              }}
+              sharePath={sharePath}
+              shareTitle={node.body.slice(0, 60)}
+              {...(node.depth < MAX_COMMENT_DEPTH ? { onReply: () => onReply(node) } : {})}
+              disabled={node.pending ?? false}
             />
-
-            {node.depth < MAX_COMMENT_DEPTH ? (
-              <button
-                type="button"
-                className="focus-ring rounded-full px-2 py-1 text-caption text-ink-3 transition-colors dur-fast hover:text-ink"
-                onClick={() => onReply(node)}
-                disabled={node.pending}
-              >
-                Reply
-              </button>
-            ) : null}
 
             {mine ? (
               <button
@@ -457,6 +457,7 @@ function CommentBranch({ node, viewerId, onReply, onReport, onDelete }: CommentB
               key={child.id}
               node={child}
               viewerId={viewerId}
+              sharePath={sharePath}
               onReply={onReply}
               onReport={onReport}
               onDelete={onDelete}

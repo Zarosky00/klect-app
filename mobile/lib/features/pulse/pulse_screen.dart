@@ -11,8 +11,10 @@ import '../../router.dart';
 import '../../ui/ui.dart';
 import '../chat/widgets/messages_action.dart';
 import 'data/pulse_feed_controller.dart';
+import 'data/pulse_filters.dart';
 import 'widgets/pulse_card.dart';
 import 'widgets/pulse_composer.dart';
+import 'widgets/pulse_filter_drawer.dart';
 
 /// **Pulse** — the X half of Klect.
 ///
@@ -35,6 +37,9 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       <PulseMode, ScrollController>{
     for (final mode in PulseMode.values) mode: ScrollController(),
   };
+
+  /// Whether the filter drawer is unfolded under the tabs.
+  bool _filtersOpen = false;
 
   PulseMode get _mode => ref.read(pulseModeProvider);
 
@@ -88,6 +93,11 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
   Widget build(BuildContext context) {
     final mode = ref.watch(pulseModeProvider);
     final feed = ref.watch(pulseFeedProvider(mode));
+    final filters = ref.watch(pulseFiltersProvider);
+    // The matched-collector set only loads once the toggle is first used.
+    final tasteIds = filters.sharedTaste
+        ? ref.watch(matchedCollectorIdsProvider).value
+        : null;
 
     return KScaffold(
       onRefresh: _refresh,
@@ -115,9 +125,28 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
                 ),
                 const MessagesAction(),
               ],
-              bottom: _PulseTabs(selected: mode, onSelect: _selectMode),
+              bottom: _PulseTabs(
+                selected: mode,
+                onSelect: _selectMode,
+                filtersOpen: _filtersOpen,
+                filtersActive: filters.isActive,
+                onToggleFilters: () =>
+                    setState(() => _filtersOpen = !_filtersOpen),
+              ),
             ),
-            ..._body(feed, mode),
+            // The filter drawer unfolds under the tabs — animated collapse,
+            // zero height when shut.
+            SliverToBoxAdapter(
+              child: AnimatedSize(
+                duration: KMotion.duration(context, KDurations.medium),
+                curve: KMotion.curve(context, KCurves.emphasized),
+                alignment: Alignment.topCenter,
+                child: _filtersOpen
+                    ? const PulseFilterDrawer()
+                    : const SizedBox(width: double.infinity),
+              ),
+            ),
+            ..._body(feed, mode, filters, tasteIds),
             const SliverToBoxAdapter(
               child: SizedBox(height: Layout.bottomBarHeight + Space.s16),
             ),
@@ -127,7 +156,12 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     );
   }
 
-  List<Widget> _body(PulseFeedState feed, PulseMode mode) {
+  List<Widget> _body(
+    PulseFeedState feed,
+    PulseMode mode,
+    PulseFilters filters,
+    Set<String>? tasteIds,
+  ) {
     if (feed.items.isEmpty && feed.loading) {
       return const <Widget>[
         SliverToBoxAdapter(child: KSkeletonList(rows: 4)),
@@ -174,11 +208,30 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       ];
     }
 
+    // Type / Time / shared-taste are client-side filters over the fetched
+    // pages — the stream keeps paging normally underneath them.
+    final visible = filters.apply(feed.items, tasteIds);
+    if (visible.isEmpty) {
+      return <Widget>[
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: KEmptyState(
+            title: 'Nothing matches those filters',
+            message: 'Loosen the Type or Time filters — or keep scrolling: '
+                'older pages load underneath and may match.',
+            icon: Icons.filter_alt_off_outlined,
+            actionLabel: 'Clear filters',
+            onAction: ref.read(pulseFiltersProvider.notifier).clear,
+          ),
+        ),
+      ];
+    }
+
     return <Widget>[
       SliverList.builder(
-        itemCount: feed.items.length,
+        itemCount: visible.length,
         itemBuilder: (context, index) {
-          final item = feed.items[index];
+          final item = visible[index];
           final card = PulseCard(key: ValueKey<String>(item.key), item: item);
           if (item.key == feed.freshKey) {
             // The post the user just composed slides in from above.
@@ -221,12 +274,28 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
   }
 }
 
-/// The For-you ▸ Following segmented control, pinned under the serif title.
+/// The For-you ▸ Following segmented control, pinned under the serif title,
+/// with the filter-drawer toggle on the trailing edge.
 class _PulseTabs extends StatelessWidget implements PreferredSizeWidget {
-  const _PulseTabs({required this.selected, required this.onSelect});
+  const _PulseTabs({
+    required this.selected,
+    required this.onSelect,
+    required this.filtersOpen,
+    required this.filtersActive,
+    required this.onToggleFilters,
+  });
 
   final PulseMode selected;
   final void Function(PulseMode) onSelect;
+
+  /// Whether the drawer is currently unfolded.
+  final bool filtersOpen;
+
+  /// Whether any filter deviates from the defaults — shows the accent dot.
+  final bool filtersActive;
+
+  /// Unfolds / folds the drawer.
+  final VoidCallback onToggleFilters;
 
   @override
   Size get preferredSize => const Size.fromHeight(Space.s12);
@@ -264,6 +333,39 @@ class _PulseTabs extends StatelessWidget implements PreferredSizeWidget {
                     ),
                 ],
               ),
+            ),
+            const Spacer(),
+            Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                KIconButton(
+                  icon: filtersOpen
+                      ? Icons.tune_rounded
+                      : Icons.tune_outlined,
+                  semanticLabel: filtersOpen
+                      ? 'Hide filters'
+                      : 'Show filters',
+                  color: filtersOpen || filtersActive
+                      ? colors.accentDefault
+                      : colors.textSecondary,
+                  onPressed: onToggleFilters,
+                ),
+                if (filtersActive)
+                  Positioned(
+                    top: Space.s1,
+                    right: Space.s1,
+                    child: IgnorePointer(
+                      child: Container(
+                        width: Space.s2,
+                        height: Space.s2,
+                        decoration: BoxDecoration(
+                          color: colors.accentDefault,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),

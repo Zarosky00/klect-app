@@ -11,7 +11,7 @@ import { cn } from '@/lib/cn';
 import { ENTITY_LABEL, entityHref } from '@/lib/entities';
 import { compactCount, longTimeAgo, plural } from '@/lib/format';
 import { seedFromCloseup } from '@/lib/interactions';
-import { closeupHref, collectionHref, routes, subcollectionHref } from '@/lib/routes';
+import { closeupHref, collectionHref, postHref, routes, subcollectionHref } from '@/lib/routes';
 import { mediaUrl } from '@/lib/storage';
 import {
   closeupCover,
@@ -173,7 +173,13 @@ export function CloseupView({
                 </blockquote>
                 {payload.post.entity_type && payload.post.entity_id ? (
                   <Link
-                    href={closeupHref(payload.post.entity_type, payload.post.entity_id)}
+                    href={
+                      // A quoted post deep-links to its thread (W3); shared
+                      // shelves keep the modal-over-grid closeup.
+                      payload.post.entity_type === 'post'
+                        ? postHref(payload.post.entity_id)
+                        : closeupHref(payload.post.entity_type, payload.post.entity_id)
+                    }
                     className={cn(
                       'focus-ring flex items-center gap-2 rounded-lg border border-line',
                       'bg-surface-1 px-4 py-3 text-callout text-ink-2',

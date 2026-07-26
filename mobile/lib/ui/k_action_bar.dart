@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/interactions/interactions.dart';
+import '../core/models/models.dart';
 import '../design/theme.dart';
 import '../features/pulse/widgets/pulse_composer.dart';
 import 'k_count_pill.dart';
@@ -110,8 +111,11 @@ class _KActionBarState extends ConsumerState<KActionBar> {
   /// A bare repost is the idempotent `toggle_repost`; Quote opens the Pulse
   /// composer with this entity embedded as the subject (`create_post` with
   /// `entity_type = 'post'` for posts, an entity share card otherwise).
+  /// Comments cannot be quoted as posts — for them the chooser is
+  /// Repost / Undo only.
   Future<void> _repostChooser() async {
     final reposted = ref.read(interactionProvider(widget.entity)).reposted;
+    final quotable = widget.entity.type != EntityType.comment;
     final choice = await KSheet.show<_RepostChoice>(
       context: context,
       builder: (sheetContext) => Column(
@@ -126,12 +130,13 @@ class _KActionBarState extends ConsumerState<KActionBar> {
                 : 'Put this in front of your followers as-is.',
             onTap: () => Navigator.of(sheetContext).pop(_RepostChoice.repost),
           ),
-          _RepostOption(
-            icon: Icons.format_quote_rounded,
-            label: 'Quote',
-            detail: 'Say something about it in a post of your own.',
-            onTap: () => Navigator.of(sheetContext).pop(_RepostChoice.quote),
-          ),
+          if (quotable)
+            _RepostOption(
+              icon: Icons.format_quote_rounded,
+              label: 'Quote',
+              detail: 'Say something about it in a post of your own.',
+              onTap: () => Navigator.of(sheetContext).pop(_RepostChoice.quote),
+            ),
         ],
       ),
     );

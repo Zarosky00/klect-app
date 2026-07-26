@@ -136,6 +136,8 @@ class PulseTarget {
     this.likeCount = 0,
     this.createdAt,
     this.author,
+    this.parentType,
+    this.parentId,
   });
 
   /// Parses the envelope's `target` block.
@@ -157,6 +159,8 @@ class PulseTarget {
       likeCount: asInt(json['like_count']),
       createdAt: asDateOrNull(json['created_at']),
       author: author.isEmpty ? null : Profile.fromJson(author),
+      parentType: EntityType.tryParse(json['parent_type']),
+      parentId: asStringOrNull(json['parent_id']),
     );
   }
 
@@ -204,6 +208,13 @@ class PulseTarget {
 
   /// Who owns the target.
   final Profile? author;
+
+  /// For a comment target (0021): which entity level the discussion lives
+  /// under, so a reposted comment can deep-link to it.
+  final EntityType? parentType;
+
+  /// For a comment target: the id of the entity the comment sits on.
+  final String? parentId;
 
   /// Cover aspect ratio, or null when unknown.
   double? get coverAspect {

@@ -9,4 +9,4 @@
 /// this constant against the newest release tag. If this constant lags the
 /// pubspec, users are told to "update" to the build they already run; if it
 /// leads, they never hear about real updates.
-const String kAppVersion = '1.2.0';
+const String kAppVersion = '1.3.0';

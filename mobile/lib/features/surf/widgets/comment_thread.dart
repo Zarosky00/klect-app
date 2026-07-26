@@ -10,6 +10,7 @@ import '../../../core/models/models.dart';
 import '../../../core/supabase.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
+import '../../pulse/widgets/comment_action_bar.dart';
 import '../data/comments_controller.dart';
 
 /// One rendered line of the thread: a comment plus how far to indent it.
@@ -368,41 +369,31 @@ class _CommentRow extends ConsumerWidget {
         const SizedBox(height: Space.s1),
         Text(comment.body, style: text.body),
         const SizedBox(height: Space.s1),
-        Row(
-          children: <Widget>[
-            if (!comment.isPending)
-              _CommentLike(commentId: comment.id, seedCount: comment.likeCount),
-            const SizedBox(width: Space.s3),
-            if (!comment.isPending)
-              KPressable(
-                onTap: onReply,
-                enforceMinTapTarget: false,
-                semanticLabel: 'Reply',
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: Space.s1),
-                  child: Text(
-                    'Reply',
-                    style: text.micro.copyWith(color: colors.textSecondary),
+        if (!comment.isPending)
+          Row(
+            children: <Widget>[
+              // The 0021 compact bar: like · save · repost · reply · share —
+              // the same bar the post thread uses, so a comment behaves
+              // identically everywhere it appears.
+              Expanded(
+                child: CommentActionBar(comment: comment, onReply: onReply),
+              ),
+              if (isMine)
+                KPressable(
+                  onTap: () => unawaited(_confirmDelete(context)),
+                  enforceMinTapTarget: false,
+                  semanticLabel: 'Delete comment',
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: Space.s1),
+                    child: Icon(
+                      Icons.delete_outline_rounded,
+                      size: Space.s4,
+                      color: colors.textTertiary,
+                    ),
                   ),
                 ),
-              ),
-            const Spacer(),
-            if (isMine && !comment.isPending)
-              KPressable(
-                onTap: () => unawaited(_confirmDelete(context)),
-                enforceMinTapTarget: false,
-                semanticLabel: 'Delete comment',
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: Space.s1),
-                  child: Icon(
-                    Icons.delete_outline_rounded,
-                    size: Space.s4,
-                    color: colors.textTertiary,
-                  ),
-                ),
-              ),
-          ],
-        ),
+            ],
+          ),
       ],
     );
 
@@ -428,33 +419,6 @@ class _CommentRow extends ConsumerWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _CommentLike extends ConsumerWidget {
-  const _CommentLike({required this.commentId, required this.seedCount});
-
-  final String commentId;
-  final int seedCount;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final entity = EntityRef.comment(commentId);
-    final state = ref.watch(interactionProvider(entity));
-    return KCountPill(
-      icon: Icons.favorite_border_rounded,
-      activeIcon: Icons.favorite_rounded,
-      count: state.hydrated ? state.likeCount : seedCount,
-      active: state.liked,
-      activeColor: context.kc.actionLike,
-      showZero: false,
-      iconSize: Space.s4,
-      gap: Space.s1,
-      semanticLabel: '${state.liked ? 'Unlike' : 'Like'} comment, '
-          '${state.likeCount}',
-      onTap: () =>
-          unawaited(ref.read(interactionProvider(entity).notifier).toggleLike()),
     );
   }
 }

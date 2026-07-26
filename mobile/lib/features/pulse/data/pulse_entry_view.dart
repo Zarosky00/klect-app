@@ -44,6 +44,7 @@ class PulseItem {
     this.media = const <ItemMedia>[],
     this.target,
     this.replyToPostId,
+    this.cursorId,
   });
 
   /// Normalises one entry of the stream.
@@ -110,6 +111,7 @@ class PulseItem {
       media: entry.media,
       target: entry.target,
       replyToPostId: asStringOrNull(raw['reply_to_post_id']),
+      cursorId: entry.cursorId ?? postId ?? declaredId,
     );
   }
 
@@ -142,6 +144,12 @@ class PulseItem {
 
   /// Cursor value — the oldest one on screen is the next `p_before`.
   final DateTime? sortAt;
+
+  /// The 0021 composite-cursor id that rides with [sortAt]: pass the oldest
+  /// row's pair as `(p_before, p_before_id)` so a same-timestamp twin on the
+  /// page boundary is never skipped. Falls back to the row's own entity id
+  /// for pre-0021 payloads (offline cache pages).
+  final String? cursorId;
 
   /// The post's own photos, from the envelope's `media[]`.
   final List<ItemMedia> media;
