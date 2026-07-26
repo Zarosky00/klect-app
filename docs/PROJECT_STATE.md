@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-27 · Session: redesign — rebrand, Create, Pulse X-parity, mobile-web
+> Last updated: 2026-07-27 · Session: round 3 — P0 DB fixes, perf, thread-first Pulse, share, notifications, identity · shipped as v1.3.0
 
 ---
 
@@ -16,6 +16,7 @@
 | 5 | Next.js web + admin (`web/`) | ✅ **DONE (features)** | All 31 page routes + 3 auth route handlers + sitemap/robots implemented incl. intercepting closeup modal and full `/admin` — zero placeholders. `tsc` exit 0. Group *management* UI is mobile-only for now (web renders groups fine). |
 | 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | `verify.sh` fully green 2026-07-26 (tokens 3/3 · mobile pub get/analyze/test/build web · web tsc/lint/build). Manual CHECKLIST.md sections A–H (63 seen-it-work items) still to walk through. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **DONE & VERIFIED** | Migration **0017 applied to live DB** + all 5 group RPCs smoke-tested under JWT impersonation (incl. owner auto-transfer). Advisors: 0 ERROR. `database.types.ts` regenerated. |
+| 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
 
 **Verification (actually run, not assumed — full sweep 2026-07-26):**
