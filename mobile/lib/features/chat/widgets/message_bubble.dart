@@ -160,7 +160,9 @@ class MessageBubble extends StatelessWidget {
           ],
           if (message.message.hasSharedEntity) ...<Widget>[
             SizedBox(
-              width: maxWidth - Space.s6,
+              // Clamped: a zero-width host (first frame, tests) must never
+              // hand the card a negative constraint.
+              width: (maxWidth - Space.s6).clamp(0.0, double.maxFinite),
               child: SharedEntityCard(
                 entityType: message.message.sharedEntityType!,
                 entityId: message.message.sharedEntityId!,
@@ -169,15 +171,15 @@ class MessageBubble extends StatelessWidget {
             ),
             if (message.hasText) const SizedBox(height: Space.s2),
           ],
-          if (message.hasText)
-            Text(message.message.body!, style: text.body),
+          if (message.hasText) Text(message.message.body!, style: text.body),
         ],
       ),
     );
 
     final column = Column(
-      crossAxisAlignment:
-          isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isMine
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         if (showAuthorName && isFirstOfGroup && !isMine)
@@ -201,10 +203,7 @@ class MessageBubble extends StatelessWidget {
         if (reactions.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: Space.s1),
-            child: _ReactionRow(
-              summaries: reactions,
-              onTap: onReactionTap,
-            ),
+            child: _ReactionRow(summaries: reactions, onTap: onReactionTap),
           ),
         if (message.failed)
           _FailedFooter(onRetry: onRetry, onDiscard: onDiscard)
@@ -229,8 +228,9 @@ class MessageBubble extends StatelessWidget {
         child: _SwipeToReply(
           onReply: onSwipeReply,
           child: Row(
-            mainAxisAlignment:
-                isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+            mainAxisAlignment: isMine
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               if (!isMine) ...<Widget>[
@@ -319,11 +319,19 @@ class _SwipeToReplyState extends State<_SwipeToReply>
   /// it belongs in `tokens.json` the next time that file is regenerated.
   static const double _overdragResistance = 0.25;
 
-  late final AnimationController _offset =
-      AnimationController.unbounded(vsync: this);
+  // Created eagerly: a lazy `late final` here would be first touched by
+  // `dispose()` when the gesture is disabled (onReply == null skips build's
+  // read), and creating a ticker during unmount throws.
+  late final AnimationController _offset;
 
   double _raw = 0;
   bool _armed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _offset = AnimationController.unbounded(vsync: this);
+  }
 
   @override
   void dispose() {
@@ -442,7 +450,10 @@ class ChatDateSeparator extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Expanded(
-            child: Divider(color: colors.borderSubtle, height: Strokes.hairline),
+            child: Divider(
+              color: colors.borderSubtle,
+              height: Strokes.hairline,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: Space.s3),
@@ -452,7 +463,10 @@ class ChatDateSeparator extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Divider(color: colors.borderSubtle, height: Strokes.hairline),
+            child: Divider(
+              color: colors.borderSubtle,
+              height: Strokes.hairline,
+            ),
           ),
         ],
       ),
@@ -510,7 +524,8 @@ class CallEventRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.kc;
     final body = message.message.body ?? 'Call';
-    final missed = body.toLowerCase().contains('missed') ||
+    final missed =
+        body.toLowerCase().contains('missed') ||
         body.toLowerCase().contains('declined') ||
         body.toLowerCase().contains('failed');
     final tint = missed ? colors.semanticDanger : colors.textSecondary;
@@ -529,8 +544,7 @@ class CallEventRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: colors.surface2,
             borderRadius: BorderRadius.circular(Radii.full),
-            border:
-                Border.all(color: colors.borderSubtle, width: Strokes.thin),
+            border: Border.all(color: colors.borderSubtle, width: Strokes.thin),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -560,16 +574,16 @@ class SystemMessageRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Space.s6,
-          vertical: Space.s2,
-        ),
-        child: Text(
-          body,
-          textAlign: TextAlign.center,
-          style: context.kt.caption.copyWith(color: context.kc.textTertiary),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(
+      horizontal: Space.s6,
+      vertical: Space.s2,
+    ),
+    child: Text(
+      body,
+      textAlign: TextAlign.center,
+      style: context.kt.caption.copyWith(color: context.kc.textTertiary),
+    ),
+  );
 }
 
 class _ReplyQuote extends StatelessWidget {
@@ -595,10 +609,7 @@ class _ReplyQuote extends StatelessWidget {
         padding: const EdgeInsets.only(left: Space.s2),
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(
-              color: colors.accentDefault,
-              width: Strokes.thick,
-            ),
+            left: BorderSide(color: colors.accentDefault, width: Strokes.thick),
           ),
         ),
         child: Column(
@@ -638,7 +649,8 @@ class _ReactionRow extends StatelessWidget {
         for (final summary in summaries)
           KPressable(
             enforceMinTapTarget: false,
-            semanticLabel: '${summary.emoji} ${summary.count}'
+            semanticLabel:
+                '${summary.emoji} ${summary.count}'
                 '${summary.mine ? ', yours' : ''}',
             onTap: onTap == null ? null : () => onTap!(summary.emoji),
             child: AnimatedContainer(
@@ -652,8 +664,9 @@ class _ReactionRow extends StatelessWidget {
                 color: summary.mine ? colors.accentSubtle : colors.surface3,
                 borderRadius: BorderRadius.circular(Radii.full),
                 border: Border.all(
-                  color:
-                      summary.mine ? colors.accentDefault : colors.borderSubtle,
+                  color: summary.mine
+                      ? colors.accentDefault
+                      : colors.borderSubtle,
                   width: Strokes.thin,
                 ),
               ),
@@ -701,7 +714,11 @@ class _MetaFooter extends StatelessWidget {
     final time = TimeOfDay.fromDateTime(message.createdAt).format(context);
 
     return Padding(
-      padding: const EdgeInsets.only(top: Space.s05, left: Space.s1, right: Space.s1),
+      padding: const EdgeInsets.only(
+        top: Space.s05,
+        left: Space.s1,
+        right: Space.s1,
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[

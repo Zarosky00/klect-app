@@ -17,10 +17,11 @@ const FIRST_PAGE = 25;
 
 /**
  * Pulse is a signed-in surface — middleware already gated it, and `pulse_feed`
- * refuses the anon role anyway. The first Following page is resolved on the
- * server so the stream paints complete; since migration 0018 the envelope
- * embeds each entry's media and target, so no client-side attachment
- * resolution is needed. For-you is fetched on first tab switch.
+ * refuses the anon role anyway. The first For-you page is resolved on the
+ * server so the stream paints complete (For-you is the default tab, matching
+ * mobile); since migration 0018 the envelope embeds each entry's media and
+ * target, so no client-side attachment resolution is needed. Following is
+ * fetched on first tab switch.
  */
 export default async function PulsePage() {
   const supabase = await createClient();
@@ -28,7 +29,7 @@ export default async function PulsePage() {
   let entries: PulseEntry[] = [];
 
   try {
-    entries = await pulseFeed(supabase, { limit: FIRST_PAGE });
+    entries = await pulseFeed(supabase, { limit: FIRST_PAGE, mode: 'foryou' });
   } catch {
     // The client owns the retry surface; an empty first page is recoverable.
     entries = [];

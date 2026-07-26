@@ -72,12 +72,12 @@ class SharedEntityCard extends ConsumerWidget {
   }
 
   static String _label(EntityType type) => switch (type) {
-        EntityType.collection => 'collection',
-        EntityType.subcollection => 'subcollection',
-        EntityType.item => 'item',
-        EntityType.post => 'post',
-        EntityType.comment => 'comment',
-      };
+    EntityType.collection => 'collection',
+    EntityType.subcollection => 'subcollection',
+    EntityType.item => 'item',
+    EntityType.post => 'post',
+    EntityType.comment => 'comment',
+  };
 }
 
 class _Body extends ConsumerWidget {
@@ -91,8 +91,11 @@ class _Body extends ConsumerWidget {
     final text = context.kt;
     final url = ref.watch(chatApiProvider).publicUrl(preview.coverPath);
 
+    // `center`, never `stretch`: the card sits inside a shrink-wrapping
+    // bubble Column (and ultimately a ListView), where the incoming height is
+    // unbounded — stretch would force the children to an infinite height.
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
         SizedBox(
           width: Space.s16,
@@ -111,6 +114,7 @@ class _Body extends ConsumerWidget {
               vertical: Space.s25,
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -156,31 +160,32 @@ class _Loading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const KShimmer(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            SizedBox(
-              width: Space.s16,
-              height: Space.s16,
-              child: KSkeleton(borderRadius: BorderRadius.zero),
-            ),
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.all(Space.s3),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    KSkeleton.text(width: Space.s12),
-                    SizedBox(height: Space.s2),
-                    KSkeleton.text(width: Space.s20),
-                  ],
-                ),
-              ),
-            ),
-          ],
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        SizedBox(
+          width: Space.s16,
+          height: Space.s16,
+          child: KSkeleton(borderRadius: BorderRadius.zero),
         ),
-      );
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.all(Space.s3),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                KSkeleton.text(width: Space.s12),
+                SizedBox(height: Space.s2),
+                KSkeleton.text(width: Space.s20),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _Missing extends StatelessWidget {

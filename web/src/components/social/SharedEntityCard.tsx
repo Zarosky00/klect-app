@@ -5,13 +5,15 @@ import { cn } from '@/lib/cn';
 import { ENTITY_LABEL, entityHref } from '@/lib/entities';
 import { compactCount, plural } from '@/lib/format';
 import { mediaUrl } from '@/lib/storage';
+import { Avatar } from '@/components/ui/Avatar';
 import { BlurhashImage } from '@/components/ui/BlurhashImage';
 import { Icon } from '@/components/ui/Icon';
 import type { EntitySummary } from './queries';
 
 /**
- * A collection, subcollection or item shared into a conversation, rendered as a
- * rich card rather than a bare link. The same shape serves all three levels.
+ * A collection, subcollection, item or post shared into a conversation,
+ * rendered as a rich card rather than a bare link. The same shape serves all
+ * four; posts get their own words-first layout below.
  */
 export function SharedEntityCard({
   summary,
@@ -33,6 +35,8 @@ export function SharedEntityCard({
       </div>
     );
   }
+
+  if (summary.type === 'post') return <SharedPostCard summary={summary} className={className} />;
 
   const childLabel =
     summary.type === 'item'
@@ -70,6 +74,74 @@ export function SharedEntityCard({
           </span>
           <span aria-hidden>·</span>
           <span className="tabular">{childLabel}</span>
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+/** A shared post: author byline, body excerpt, first photo — words first. */
+function SharedPostCard({
+  summary,
+  className,
+}: {
+  summary: EntitySummary;
+  className?: string;
+}) {
+  const author = summary.author ?? null;
+  return (
+    <Link
+      href={entityHref('post', summary.id)}
+      className={cn(
+        'focus-ring flex w-64 flex-col gap-2 rounded-lg border border-line bg-surface-1 p-3',
+        'transition-colors dur-fast ease-standard hover:border-accent',
+        className,
+      )}
+    >
+      <span className="flex items-center gap-2">
+        <Avatar
+          path={author?.avatarPath}
+          name={author?.displayName}
+          username={author?.username}
+          size="xs"
+          verified={author?.isVerified ?? false}
+        />
+        <span className="min-w-0">
+          <span className="block truncate text-callout font-medium text-ink">
+            {author?.displayName ?? 'Collector'}
+          </span>
+          <span className="block truncate text-micro text-ink-3">
+            @{author?.username ?? 'unknown'}
+          </span>
+        </span>
+      </span>
+
+      {summary.body ? (
+        <span className="line-clamp-4 whitespace-pre-wrap break-words text-body text-ink-2">
+          {summary.body}
+        </span>
+      ) : null}
+
+      {summary.coverPath ? (
+        <span className="block overflow-hidden rounded-md border border-line-subtle">
+          <BlurhashImage
+            src={mediaUrl(summary.coverPath)}
+            alt=""
+            width={summary.width}
+            height={summary.height}
+            blurhash={summary.coverBlurhash}
+            fallbackAspect={1.6}
+            sizes="232px"
+          />
+        </span>
+      ) : null}
+
+      <span className="flex items-center gap-2 text-caption text-ink-3">
+        <span className="text-micro uppercase tracking-widest">{ENTITY_LABEL.post}</span>
+        <span aria-hidden>·</span>
+        <span className="tabular inline-flex items-center gap-1">
+          <Icon name="heart" size="xs" />
+          {compactCount(summary.likeCount)}
         </span>
       </span>
     </Link>

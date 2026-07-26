@@ -22,7 +22,8 @@ import { PulseComposer, type ComposerSubject } from './PulseComposer';
  * which is also correct for the ranked For-you pages, whose contract is
  * "pass min(sort_at) on screen as the next p_before" (migration 0018).
  *
- * The server renders the first Following page; For-you loads on first switch.
+ * For-you is the default tab (mobile parity) — the server renders its first
+ * page; Following loads on first switch.
  */
 
 const PAGE_SIZE = 25;
@@ -46,15 +47,15 @@ interface TabState {
 export function PulseStream({ initialEntries }: PulseStreamProps) {
   const { supabase, user } = useSession();
 
-  const [mode, setMode] = useState<PulseMode>('following');
+  const [mode, setMode] = useState<PulseMode>('foryou');
   const [tabs, setTabs] = useState<Record<PulseMode, TabState>>(() => ({
-    following: {
+    foryou: {
       entries: initialEntries,
       exhausted: initialEntries.length < PAGE_SIZE,
       initialised: true,
       error: null,
     },
-    foryou: { entries: [], exhausted: false, initialised: false, error: null },
+    following: { entries: [], exhausted: false, initialised: false, error: null },
   }));
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState<ComposerSubject | null>(null);
@@ -68,8 +69,8 @@ export function PulseStream({ initialEntries }: PulseStreamProps) {
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const seen = useRef<Record<PulseMode, Set<string>>>({
-    following: new Set(initialEntries.map(entryKey)),
-    foryou: new Set(),
+    foryou: new Set(initialEntries.map(entryKey)),
+    following: new Set(),
   });
 
   const tab = tabs[mode];

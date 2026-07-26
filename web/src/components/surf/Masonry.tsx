@@ -79,6 +79,14 @@ export function useMasonryColumns(
   ref: React.RefObject<HTMLElement | null>,
   columnsOverride?: number,
 ): number {
+  return useMasonryLayout(ref, columnsOverride).columnCount;
+}
+
+/** Column count plus the measured container width (for intrinsic-size math). */
+export function useMasonryLayout(
+  ref: React.RefObject<HTMLElement | null>,
+  columnsOverride?: number,
+): { columnCount: number; width: number } {
   const [width, setWidth] = useState(0);
 
   useIsomorphicLayoutEffect(() => {
@@ -96,9 +104,11 @@ export function useMasonryColumns(
     return () => observer.disconnect();
   }, [ref]);
 
-  if (width <= 0) return 0;
-  if (columnsOverride && columnsOverride > 0) return columnsOverride;
-  return masonryColumns(width);
+  if (width <= 0) return { columnCount: 0, width: 0 };
+  if (columnsOverride && columnsOverride > 0) {
+    return { columnCount: columnsOverride, width };
+  }
+  return { columnCount: masonryColumns(width), width };
 }
 
 export interface MasonryProps<T> {
@@ -123,7 +133,16 @@ export function Masonry<T>({
   onColumnsChange,
 }: MasonryProps<T>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const columnCount = useMasonryColumns(containerRef, columnsOverride);
+  const { columnCount, width } = useMasonryLayout(containerRef, columnsOverride);
+
+  // Pixel width of one column — the known tile aspect turns this into a known
+  // tile height, which is what lets `content-visibility: auto` skip offscreen
+  // tiles without the scrollbar jumping (`contain-intrinsic-size` reserves the
+  // exact box the tile would occupy).
+  const columnWidth =
+    columnCount > 0
+      ? (width - (columnCount - 1) * layout.masonryGutter) / columnCount
+      : 0;
 
   const notify = useCallback(
     (value: number) => onColumnsChange?.(value),
@@ -172,7 +191,25 @@ export function Masonry<T>({
         >
           {column.map((entry) => {
             const key = keyOf(entry);
-            return <div key={key}>{children(entry, indexByKey.get(key) ?? 0)}</div>;
+            // Far-offscreen tiles are retained in state but skipped by the
+            // renderer: layout, paint and style cost ~nothing until they
+            // scroll near. The reserved height comes from the same clamped
+            // ratio the packing pass used, so skipping cannot shift columns.
+            const reservedHeight = Math.max(
+              1,
+              Math.round(columnWidth / Math.max(ratioOf(entry), aspect.gridMin)),
+            );
+            return (
+              <div
+                key={key}
+                style={{
+                  contentVisibility: 'auto',
+                  containIntrinsicSize: `auto ${reservedHeight}px`,
+                }}
+              >
+                {children(entry, indexByKey.get(key) ?? 0)}
+              </div>
+            );
           })}
         </div>
       ))}

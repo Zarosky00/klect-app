@@ -5,10 +5,10 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Portal, useEscape } from '@/components/ui/overlay';
 import { ReportDialog } from '@/components/ui/ReportDialog';
+import { ShareMenu } from '@/components/social/ShareMenu';
 import { curve, reducedTransition, springy } from '@/design/motion';
 import { cn } from '@/lib/cn';
-import { entityHref, type EntityType } from '@/lib/entities';
-import { SITE_URL } from '@/lib/env';
+import type { EntityType } from '@/lib/entities';
 import { useEntitySocial } from '@/providers/interactions-provider';
 import { useSession } from '@/providers/session-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -54,8 +54,9 @@ const BUTTON_STEPS = 12; // × --k-space-1 (4px) = 48px
 export function PeekMenu({ target, position, onClose }: PeekMenuProps) {
   const open = target !== null && position !== null;
   const { user } = useSession();
-  const { toast, success, fromError } = useToast();
+  const { toast } = useToast();
   const [reporting, setReporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const reduced = useReducedMotion();
 
@@ -79,22 +80,6 @@ export function PeekMenu({ target, position, onClose }: PeekMenuProps) {
     });
     return false;
   }, [toast, user]);
-
-  const share = useCallback(async () => {
-    if (!target) return;
-    const url = `${SITE_URL}${entityHref(target.type, target.id)}`;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        await navigator.share({ title: target.title, url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      success('Link copied');
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') return;
-      fromError(error);
-    }
-  }, [fromError, success, target]);
 
   const actions = useMemo<PeekAction[]>(() => {
     if (!target) return [];
@@ -138,7 +123,7 @@ export function PeekMenu({ target, position, onClose }: PeekMenuProps) {
         label: 'Share',
         tone: 'text-share',
         hoverTone: 'hover:text-share',
-        run: () => void share(),
+        run: () => setSharing(true),
       },
       {
         key: 'report',
@@ -151,7 +136,7 @@ export function PeekMenu({ target, position, onClose }: PeekMenuProps) {
         },
       },
     ];
-  }, [requireAuth, share, social, target]);
+  }, [requireAuth, social, target]);
 
   // Focus the first action so the peek is operable from the keyboard too.
   useEffect(() => {
@@ -245,7 +230,9 @@ export function PeekMenu({ target, position, onClose }: PeekMenuProps) {
                       }
                       onClick={() => {
                         action.run();
-                        if (action.key !== 'report') onClose();
+                        // Report and share open a follow-up surface that lives
+                        // on `target` — closing now would unmount it.
+                        if (action.key !== 'report' && action.key !== 'share') onClose();
                       }}
                       className={cn(
                         'focus-ring glass absolute grid -translate-x-1/2 -translate-y-1/2 place-items-center',
@@ -269,15 +256,27 @@ export function PeekMenu({ target, position, onClose }: PeekMenuProps) {
       </Portal>
 
       {target ? (
-        <ReportDialog
-          open={reporting}
-          onClose={() => {
-            setReporting(false);
-            onClose();
-          }}
-          target={{ kind: 'entity', type: target.type, id: target.id }}
-          subject={target.title}
-        />
+        <>
+          <ReportDialog
+            open={reporting}
+            onClose={() => {
+              setReporting(false);
+              onClose();
+            }}
+            target={{ kind: 'entity', type: target.type, id: target.id }}
+            subject={target.title}
+          />
+          <ShareMenu
+            open={sharing}
+            onClose={() => {
+              setSharing(false);
+              onClose();
+            }}
+            type={target.type}
+            id={target.id}
+            title={target.title}
+          />
+        </>
       ) : null}
     </>
   );

@@ -386,6 +386,8 @@ export type Database = {
           like_count: number
           parent_id: string | null
           reply_count: number
+          repost_count: number
+          save_count: number
           updated_at: string
         }
         Insert: {
@@ -402,6 +404,8 @@ export type Database = {
           like_count?: number
           parent_id?: string | null
           reply_count?: number
+          repost_count?: number
+          save_count?: number
           updated_at?: string
         }
         Update: {
@@ -418,6 +422,8 @@ export type Database = {
           like_count?: number
           parent_id?: string | null
           reply_count?: number
+          repost_count?: number
+          save_count?: number
           updated_at?: string
         }
         Relationships: [
@@ -2010,6 +2016,15 @@ export type Database = {
         Args: { p_force?: boolean; p_limit?: number }
         Returns: Json
       }
+      get_post_thread: {
+        Args: {
+          p_before?: string
+          p_limit?: number
+          p_post: string
+          p_sort?: string
+        }
+        Returns: Json
+      }
       has_role: {
         Args: { p_role: Database["public"]["Enums"]["app_role"] }
         Returns: boolean
@@ -2046,7 +2061,12 @@ export type Database = {
         Returns: undefined
       }
       pulse_feed: {
-        Args: { p_before?: string; p_limit?: number; p_mode?: string }
+        Args: {
+          p_before?: string
+          p_before_id?: string
+          p_limit?: number
+          p_mode?: string
+        }
         Returns: Json
       }
       pulse_post_envelope: {
@@ -2054,6 +2074,17 @@ export type Database = {
         Returns: Json
       }
       pulse_post_media: { Args: { p_post: string }; Returns: Json }
+      pulse_repost_envelope: {
+        Args: {
+          p_at: string
+          p_id: string
+          p_quote: string
+          p_reposter: string
+          p_type: Database["public"]["Enums"]["entity_type"]
+          p_viewer: string
+        }
+        Returns: Json
+      }
       pulse_target_payload: {
         Args: {
           p_id: string
@@ -2087,6 +2118,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      slugify: { Args: { p_text: string }; Returns: string }
       start_dm: { Args: { p_other: string }; Returns: string }
       submit_report: {
         Args: {
@@ -2146,6 +2178,10 @@ export type Database = {
           p_title?: string
         }
         Returns: undefined
+      }
+      user_posts: {
+        Args: { p_before?: string; p_limit?: number; p_user: string }
+        Returns: Json
       }
       visible_to_me: {
         Args: {

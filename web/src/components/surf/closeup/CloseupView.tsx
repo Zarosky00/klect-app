@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { ActionBar } from '@/components/ui/ActionBar';
 import { BlurhashImage } from '@/components/ui/BlurhashImage';
@@ -21,10 +22,9 @@ import {
 import { useRealtimeEntity, useRecordView } from '@/providers/interactions-provider';
 import { useSession } from '@/providers/session-provider';
 import {
-  ImmersiveViewer,
-  photosFromMedia,
+  photosFromPayload,
   type ImmersiveSource,
-} from '../ImmersiveViewer';
+} from '../immersive-source';
 import { TileGrid } from '../TileGrid';
 import {
   tileFromChildItem,
@@ -36,8 +36,20 @@ import {
 import { CommentThread } from './CommentThread';
 import { ItemFacts } from './ItemFacts';
 import { MediaPager } from './MediaPager';
-import { OverflowSheet } from './OverflowSheet';
 import { OwnerRow } from './OwnerRow';
+
+/**
+ * The double-tap escalation and the overflow sheet are heavyweight and rarely
+ * used — both load on first request instead of riding in the closeup bundle.
+ */
+const ImmersiveViewer = dynamic(
+  () => import('../ImmersiveViewer').then((module) => module.ImmersiveViewer),
+  { ssr: false },
+);
+const OverflowSheet = dynamic(
+  () => import('./OverflowSheet').then((module) => module.OverflowSheet),
+  { ssr: false },
+);
 
 /**
  * The Closeup — the single-tap detail view.
@@ -83,6 +95,9 @@ export function CloseupView({
 
   const [immersive, setImmersive] = useState<ImmersiveSource | null>(null);
   const [overflow, setOverflow] = useState(false);
+  /** Latch: the lazy chunks mount on first use and stay mounted after. */
+  const [immersiveRequested, setImmersiveRequested] = useState(false);
+  const [overflowRequested, setOverflowRequested] = useState(false);
 
   const isOwner = viewer.is_owner === true || (user !== null && user.id === owner.id);
 
@@ -99,12 +114,17 @@ export function CloseupView({
   const media = payload.entity_type === 'item' ? payload.media : [];
 
   const openImmersive = (startIndex: number): void => {
+    setImmersiveRequested(true);
+    // The payload already holds the full photo set — an item's media, or a
+    // shelf's own cover + children covers (mobile `immersiveMediaOf` parity) —
+    // so the viewer opens complete, no second `get_closeup` round trip.
+    const photos = photosFromPayload(payload, title);
     setImmersive({
       type,
       id,
       title,
       cover: { path: cover.path, width: cover.width, height: cover.height },
-      photos: media.length > 0 ? photosFromMedia(media, title) : undefined,
+      photos: photos.length > 0 ? photos : undefined,
       startIndex,
     });
   };
@@ -226,7 +246,10 @@ export function CloseupView({
                 label="More actions"
                 size="sm"
                 variant="ghost"
-                onClick={() => setOverflow(true)}
+                onClick={() => {
+                  setOverflowRequested(true);
+                  setOverflow(true);
+                }}
               />
             </div>
 
@@ -333,21 +356,25 @@ export function CloseupView({
         ) : null}
       </article>
 
-      <ImmersiveViewer source={immersive} onClose={() => setImmersive(null)} />
+      {immersiveRequested ? (
+        <ImmersiveViewer source={immersive} onClose={() => setImmersive(null)} />
+      ) : null}
 
-      <OverflowSheet
-        open={overflow}
-        onClose={() => setOverflow(false)}
-        type={type}
-        id={id}
-        title={title}
-        owner={{
-          id: owner.id,
-          username: owner.username,
-          displayName: owner.display_name,
-        }}
-        isOwner={isOwner}
-      />
+      {overflowRequested ? (
+        <OverflowSheet
+          open={overflow}
+          onClose={() => setOverflow(false)}
+          type={type}
+          id={id}
+          title={title}
+          owner={{
+            id: owner.id,
+            username: owner.username,
+            displayName: owner.display_name,
+          }}
+          isOwner={isOwner}
+        />
+      ) : null}
     </>
   );
 }

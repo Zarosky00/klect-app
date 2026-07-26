@@ -2,14 +2,30 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { closeupHref } from '@/lib/routes';
 import { cn } from '@/lib/cn';
-import { ImmersiveViewer, type ImmersiveSource } from './ImmersiveViewer';
+import type { ImmersiveSource } from './immersive-source';
 import { Masonry, masonrySizes, tileRatio } from './Masonry';
-import { PeekMenu, type PeekTarget } from './PeekMenu';
+import type { PeekTarget } from './PeekMenu';
 import { SurfTile } from './SurfTile';
 import { tileKey, type TileCard } from './tile-card';
+
+/**
+ * The two gesture escalations are heavyweight (framer-motion, the closeup API,
+ * the social engine) and most sessions never trigger them — they load on the
+ * first double-tap / long-press instead of riding in the feed bundle. Once
+ * requested they stay mounted, so exit animations keep working.
+ */
+const ImmersiveViewer = dynamic(
+  () => import('./ImmersiveViewer').then((module) => module.ImmersiveViewer),
+  { ssr: false },
+);
+const PeekMenu = dynamic(
+  () => import('./PeekMenu').then((module) => module.PeekMenu),
+  { ssr: false },
+);
 
 /**
  * The masonry plus the whole gesture layer, reusable anywhere a set of tiles
@@ -98,6 +114,9 @@ export function TileGrid({
     position: { x: number; y: number };
   } | null>(null);
   const [immersive, setImmersive] = useState<ImmersiveSource | null>(null);
+  /** Latch: the lazy chunks mount on first use and stay mounted after. */
+  const [peekRequested, setPeekRequested] = useState(false);
+  const [immersiveRequested, setImmersiveRequested] = useState(false);
 
   const openCloseup = useCallback(
     (card: TileCard) => {
@@ -107,6 +126,7 @@ export function TileGrid({
   );
 
   const openImmersive = useCallback((card: TileCard) => {
+    setImmersiveRequested(true);
     setImmersive({
       type: card.type,
       id: card.id,
@@ -117,6 +137,7 @@ export function TileGrid({
 
   const openPeek = useCallback(
     (card: TileCard, position: { x: number; y: number }) => {
+      setPeekRequested(true);
       setPeek({
         target: {
           type: card.type,
@@ -196,13 +217,17 @@ export function TileGrid({
         )}
       </Masonry>
 
-      <PeekMenu
-        target={peek?.target ?? null}
-        position={peek?.position ?? null}
-        onClose={() => setPeek(null)}
-      />
+      {peekRequested ? (
+        <PeekMenu
+          target={peek?.target ?? null}
+          position={peek?.position ?? null}
+          onClose={() => setPeek(null)}
+        />
+      ) : null}
 
-      <ImmersiveViewer source={immersive} onClose={() => setImmersive(null)} />
+      {immersiveRequested ? (
+        <ImmersiveViewer source={immersive} onClose={() => setImmersive(null)} />
+      ) : null}
     </div>
   );
 }

@@ -5,18 +5,29 @@ import 'models/models.dart';
 /// Mobile routes and web URLs use the same paths, so a shared link opens the
 /// right screen on either client.
 abstract final class KlectLinks {
-  /// Public web origin. Point this at the production domain when it is live;
-  /// it is the only place the host appears.
-  static const String webOrigin = 'https://klect.app';
+  /// Public web origin. Overridable per build with
+  /// `--dart-define=KLECT_WEB_ORIGIN=https://…`; it is the only place the
+  /// host appears.
+  static const String webOrigin = String.fromEnvironment(
+    'KLECT_WEB_ORIGIN',
+    defaultValue: 'https://klect-web.vercel.app',
+  );
+
+  /// The origin without its scheme — for human-facing copy like
+  /// "your profile lives at …".
+  static final String displayOrigin = webOrigin.replaceFirst(
+    RegExp('^https?://'),
+    '',
+  );
 
   /// In-app path for an entity.
   static String pathFor(EntityType type, String id) => switch (type) {
-        EntityType.collection => '/c/$id',
-        EntityType.subcollection => '/s/$id',
-        EntityType.item => '/i/$id',
-        EntityType.post => '/closeup/post/$id',
-        EntityType.comment => '/closeup/comment/$id',
-      };
+    EntityType.collection => '/c/$id',
+    EntityType.subcollection => '/s/$id',
+    EntityType.item => '/i/$id',
+    EntityType.post => '/closeup/post/$id',
+    EntityType.comment => '/closeup/comment/$id',
+  };
 
   /// In-app path for a profile.
   static String profilePath(String username) => '/u/$username';

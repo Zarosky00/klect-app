@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/cn';
-import { entityHref, type EntityType } from '@/lib/entities';
-import { SITE_URL } from '@/lib/env';
+import { type EntityType } from '@/lib/entities';
 import type { SocialSeed } from '@/lib/interactions';
 import { useEntitySocial } from '@/providers/interactions-provider';
 import { useSession } from '@/providers/session-provider';
@@ -12,7 +12,21 @@ import { CountPill } from './CountPill';
 import { Icon } from './Icon';
 import { IconButton } from './Button';
 import { useEscape } from './overlay';
-import { ReportDialog } from './ReportDialog';
+
+/**
+ * The report flow (Modal + framer-motion + the reports API) rides on every
+ * ActionBar — which is every tile in the masonry. Loading it on first use
+ * keeps all of that out of the surf bundle. The share chooser gets the same
+ * treatment: it pulls in the messaging queries.
+ */
+const ReportDialog = dynamic(
+  () => import('./ReportDialog').then((module) => module.ReportDialog),
+  { ssr: false },
+);
+const ShareMenu = dynamic(
+  () => import('@/components/social/ShareMenu').then((module) => module.ShareMenu),
+  { ssr: false },
+);
 
 /**
  * The one action bar. Same code path for a collection, a subcollection, an
@@ -61,9 +75,24 @@ export function ActionBar({
 }: ActionBarProps) {
   const social = useEntitySocial(type, id, seed);
   const { user } = useSession();
-  const { toast, success, fromError } = useToast();
+  const { toast } = useToast();
   const [reporting, setReporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  /** Latches on first tap: mounts the lazy chunk and keeps it mounted
+      afterwards so its close animation still runs. */
+  const [reportRequested, setReportRequested] = useState(false);
+  const [shareRequested, setShareRequested] = useState(false);
   const [choosing, setChoosing] = useState(false);
+
+  const openReport = useCallback(() => {
+    setReportRequested(true);
+    setReporting(true);
+  }, []);
+
+  const openShare = useCallback(() => {
+    setShareRequested(true);
+    setSharing(true);
+  }, []);
 
   useEscape(choosing, () => setChoosing(false));
 
@@ -80,30 +109,17 @@ export function ActionBar({
     return false;
   }, [toast, user]);
 
-  const share = useCallback(async () => {
-    const url = `${SITE_URL}${entityHref(type, id)}`;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        await navigator.share({ title: title ?? 'Klect', url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      success('Link copied');
-    } catch (error) {
-      // A cancelled share sheet throws AbortError; that is not a failure.
-      if (error instanceof Error && error.name === 'AbortError') return;
-      fromError(error);
-    }
-  }, [fromError, id, success, title, type]);
-
   return (
     <>
       <div
         className={cn(
           'flex items-center',
           compact ? 'gap-0.5' : 'gap-1',
+          // Flat token fill, not the `glass` utility: this variant mounts on
+          // every tile on touch, and a per-tile backdrop-filter re-blurs the
+          // feed on every scroll frame. Glass stays on the two chrome bars.
           variant === 'overlay' &&
-            'glass rounded-full border border-line px-1 py-0.5 shadow-mid',
+            'rounded-full border border-line bg-glass px-1 py-0.5 shadow-mid',
           className,
         )}
       >
@@ -245,7 +261,7 @@ export function ActionBar({
             label="Share"
             size="sm"
             variant="ghost"
-            onClick={() => void share()}
+            onClick={openShare}
           />
         ) : null}
 
@@ -256,18 +272,30 @@ export function ActionBar({
             size="sm"
             variant="ghost"
             onClick={() => {
-              if (requireAuth()) setReporting(true);
+              if (requireAuth()) openReport();
             }}
           />
         ) : null}
       </div>
 
-      <ReportDialog
-        open={reporting}
-        onClose={() => setReporting(false)}
-        target={{ kind: 'entity', type, id }}
-        {...(title === undefined ? {} : { subject: title })}
-      />
+      {reportRequested ? (
+        <ReportDialog
+          open={reporting}
+          onClose={() => setReporting(false)}
+          target={{ kind: 'entity', type, id }}
+          {...(title === undefined ? {} : { subject: title })}
+        />
+      ) : null}
+
+      {shareRequested ? (
+        <ShareMenu
+          open={sharing}
+          onClose={() => setSharing(false)}
+          type={type}
+          id={id}
+          title={title}
+        />
+      ) : null}
     </>
   );
 }

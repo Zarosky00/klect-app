@@ -128,6 +128,8 @@ export function MessageThread({ summary, viewerId, initialMessages }: MessageThr
   const [membership, setMembership] = useState<ConversationMemberRow | null>(summary.membership);
   const [viewer, setViewer] = useState<{ photos: ImmersivePhoto[]; index: number } | null>(null);
   const [sending, setSending] = useState(false);
+  /** Optimistic rows awaiting their server echo — rendered as "Sending…". */
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set());
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -348,42 +350,88 @@ export function MessageThread({ summary, viewerId, initialMessages }: MessageThr
       const trimmed = input.body.trim();
       if (!trimmed && input.attachments.length === 0 && !input.sharedEntity) return;
 
+      const kind = input.sharedEntity
+        ? 'entity_share'
+        : input.attachments.length > 0
+          ? 'image'
+          : 'text';
+      const attachments = input.attachments.map((attachment) => ({
+        path: attachment.path,
+        width: attachment.width,
+        height: attachment.height,
+        blurhash: attachment.blurhash,
+        mime: attachment.mime,
+        bytes: attachment.bytes,
+      }));
+
+      // Optimistic pending bubble (mobile parity): the message appears the
+      // instant Send is pressed, marked "Sending…", and is reconciled against
+      // the insert's return — or the realtime echo, whichever lands first.
+      // A real UUID keeps the metadata hydrators (uuid columns) happy.
+      const tempId = crypto.randomUUID();
+      const stamp = new Date().toISOString();
+      const optimistic: MessageRow = {
+        id: tempId,
+        conversation_id: conversationId,
+        author_id: viewerId,
+        kind,
+        body: trimmed || null,
+        call_id: null,
+        reply_to_id: replyTo?.id ?? null,
+        attachments,
+        shared_entity_type: input.sharedEntity?.type ?? null,
+        shared_entity_id: input.sharedEntity?.id ?? null,
+        created_at: stamp,
+        updated_at: stamp,
+        edited_at: null,
+        deleted_at: null,
+      };
+      if (input.sharedEntity) {
+        // Seed the card immediately — no tombstone flash while hydrate runs.
+        const entity = input.sharedEntity;
+        setShared((current) => {
+          const next = new Map(current);
+          next.set(`${entity.type}:${entity.id}`, entity);
+          return next;
+        });
+      }
+      setPendingIds((current) => new Set(current).add(tempId));
+      setMessages((current) => [...current, optimistic]);
+
       setSending(true);
       try {
-        const kind = input.sharedEntity
-          ? 'entity_share'
-          : input.attachments.length > 0
-            ? 'image'
-            : 'text';
-
         const row = await sendMessage(supabase, {
           conversation_id: conversationId,
           author_id: viewerId,
           kind,
           body: trimmed || null,
           reply_to_id: replyTo?.id ?? null,
-          attachments: input.attachments.map((attachment) => ({
-            path: attachment.path,
-            width: attachment.width,
-            height: attachment.height,
-            blurhash: attachment.blurhash,
-            mime: attachment.mime,
-            bytes: attachment.bytes,
-          })),
+          attachments,
           shared_entity_type: input.sharedEntity?.type ?? null,
           shared_entity_id: input.sharedEntity?.id ?? null,
         });
 
-        if (!knownIds.current.has(row.id)) {
+        if (knownIds.current.has(row.id)) {
+          // The realtime echo beat the return — the row is already on screen.
+          setMessages((current) => current.filter((message) => message.id !== tempId));
+        } else {
           knownIds.current.add(row.id);
-          setMessages((current) => [...current, row]);
+          setMessages((current) =>
+            current.map((message) => (message.id === tempId ? row : message)),
+          );
         }
         setReplyTo(null);
       } catch (error) {
+        setMessages((current) => current.filter((message) => message.id !== tempId));
         // The composer keeps the draft — the caller never loses typed text.
         fromError(error);
         throw error;
       } finally {
+        setPendingIds((current) => {
+          const next = new Set(current);
+          next.delete(tempId);
+          return next;
+        });
         setSending(false);
       }
     },
@@ -667,6 +715,7 @@ export function MessageThread({ summary, viewerId, initialMessages }: MessageThr
                       (receipt) =>
                         receipt.message_id === message.id && receipt.user_id !== viewerId,
                     )}
+                    pending={pendingIds.has(message.id)}
                     sharedEntity={
                       message.shared_entity_type && message.shared_entity_id
                         ? (shared.get(
@@ -838,6 +887,8 @@ interface MessageBubbleProps {
   reactions: MessageReactionRow[];
   viewerId: string;
   readByOthers: boolean;
+  /** Optimistic — inserted locally, still awaiting the server echo. */
+  pending?: boolean;
   /** `undefined` = nothing shared. `null` = shared but no longer visible. */
   sharedEntity: EntitySummary | null | undefined;
   signedUrls: Map<string, string>;
@@ -863,6 +914,7 @@ function MessageBubble({
   reactions,
   viewerId,
   readByOthers,
+  pending = false,
   sharedEntity,
   signedUrls,
   editing,
@@ -941,7 +993,14 @@ function MessageBubble({
         ) : null}
       </span>
 
-      <div className={cn('flex min-w-0 max-w-[min(36rem,78%)] flex-col', mine && 'items-end')}>
+      <div
+        className={cn(
+          'flex min-w-0 max-w-[min(36rem,78%)] flex-col',
+          mine && 'items-end',
+          // The pending bubble reads as "on its way" without layout shift.
+          pending && 'opacity-[var(--k-opacity-disabled)]',
+        )}
+      >
         {replyTarget ? (
           <span
             className={cn(
@@ -1012,14 +1071,21 @@ function MessageBubble({
           </time>
           {message.edited_at ? <span>· edited</span> : null}
           {mine ? (
-            <span
-              className={cn('inline-flex items-center', readByOthers && 'text-accent')}
-              title={readByOthers ? 'Read' : 'Sent'}
-              aria-label={readByOthers ? 'Read' : 'Sent'}
-            >
-              <Icon name="check" size="xs" />
-              {readByOthers ? <Icon name="check" size="xs" className="-ml-1.5" /> : null}
-            </span>
+            pending ? (
+              <span className="inline-flex items-center gap-1" aria-label="Sending">
+                <Icon name="spinner" size="xs" />
+                Sending…
+              </span>
+            ) : (
+              <span
+                className={cn('inline-flex items-center', readByOthers && 'text-accent')}
+                title={readByOthers ? 'Read' : 'Sent'}
+                aria-label={readByOthers ? 'Read' : 'Sent'}
+              >
+                <Icon name="check" size="xs" />
+                {readByOthers ? <Icon name="check" size="xs" className="-ml-1.5" /> : null}
+              </span>
+            )
           ) : null}
         </span>
 

@@ -18,6 +18,7 @@ import type {
   ItemRow,
   MessageRow,
   NotificationRow,
+  PostRow,
   ProfileRow,
   SubcollectionRow,
 } from '@/lib/types';
@@ -45,10 +46,11 @@ function one<T>(result: { data: T | null; error: unknown }): T {
 /**
  * The one shape every grid in this surface renders. Collections, subcollections
  * and items all normalise into it, which is what lets a single card component
- * serve all three levels of the hierarchy.
+ * serve all three levels of the hierarchy. Posts join for the shared-into-chat
+ * card only — they never appear in a masonry grid.
  */
 export interface EntitySummary {
-  type: SurfaceEntityType;
+  type: SurfaceEntityType | 'post';
   id: string;
   ownerId: string;
   title: string;
@@ -66,6 +68,15 @@ export interface EntitySummary {
   childCount: number;
   createdAt: string;
   visibility: Visibility | null;
+  /** Post only: the full body text — cards render an excerpt. */
+  body?: string | null;
+  /** Post only: the author byline for the shared-post card. */
+  author?: {
+    username: string;
+    displayName: string;
+    avatarPath: string | null;
+    isVerified: boolean;
+  } | null;
 }
 
 export function collectionSummary(row: CollectionRow): EntitySummary {
@@ -134,6 +145,50 @@ export function itemSummary(row: ItemRow): EntitySummary {
     childCount: row.media_count,
     createdAt: row.created_at,
     visibility: row.visibility,
+  };
+}
+
+/** The first `post_media` photo, hydrated alongside the post row. */
+interface PostThumb {
+  storage_path: string;
+  blurhash: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+export function postSummary(
+  row: PostRow,
+  author: ProfileRow | null,
+  thumb: PostThumb | null,
+): EntitySummary {
+  return {
+    type: 'post',
+    id: row.id,
+    ownerId: row.author_id,
+    title: row.body?.trim() ? row.body : 'Post',
+    subtitle: author ? `@${author.username}` : null,
+    coverPath: thumb?.storage_path ?? null,
+    coverBlurhash: thumb?.blurhash ?? null,
+    width: thumb?.width ?? null,
+    height: thumb?.height ?? null,
+    accentColor: null,
+    likeCount: row.like_count,
+    saveCount: row.save_count,
+    repostCount: row.repost_count,
+    commentCount: row.comment_count,
+    viewCount: row.view_count,
+    childCount: 0,
+    createdAt: row.created_at,
+    visibility: row.visibility,
+    body: row.body,
+    author: author
+      ? {
+          username: author.username,
+          displayName: author.display_name,
+          avatarPath: author.avatar_path,
+          isVerified: author.is_verified,
+        }
+      : null,
   };
 }
 
@@ -566,9 +621,12 @@ export async function fetchSharedEntities(
   const collectionIds = idsOf('collection');
   const subcollectionIds = idsOf('subcollection');
   const itemIds = idsOf('item');
-  if (!collectionIds.length && !subcollectionIds.length && !itemIds.length) return map;
+  const postIds = idsOf('post');
+  if (!collectionIds.length && !subcollectionIds.length && !itemIds.length && !postIds.length) {
+    return map;
+  }
 
-  const [collections, subcollections, items] = await Promise.all([
+  const [collections, subcollections, items, posts] = await Promise.all([
     collectionIds.length
       ? client.from('collections').select('*').in('id', collectionIds).is('deleted_at', null)
       : Promise.resolve({ data: [] as CollectionRow[], error: null }),
@@ -582,6 +640,9 @@ export async function fetchSharedEntities(
     itemIds.length
       ? client.from('items').select('*').in('id', itemIds).is('deleted_at', null)
       : Promise.resolve({ data: [] as ItemRow[], error: null }),
+    postIds.length
+      ? client.from('posts').select('*').in('id', postIds).is('deleted_at', null)
+      : Promise.resolve({ data: [] as PostRow[], error: null }),
   ]);
 
   for (const row of rows<CollectionRow>(collections)) {
@@ -592,6 +653,36 @@ export async function fetchSharedEntities(
   }
   for (const row of rows<ItemRow>(items)) {
     map.set(`item:${row.id}`, itemSummary(row));
+  }
+
+  // Posts need two side lookups the entity tables carry inline: the author
+  // byline and the first `post_media` photo. Both are batched, never per-row.
+  const postRows = rows<PostRow>(posts);
+  if (postRows.length > 0) {
+    const [authors, media] = await Promise.all([
+      fetchProfiles(
+        client,
+        postRows.map((row) => row.author_id),
+      ),
+      client
+        .from('post_media')
+        .select('post_id, storage_path, blurhash, width, height, position')
+        .in(
+          'post_id',
+          postRows.map((row) => row.id),
+        )
+        .order('position', { ascending: true }),
+    ]);
+    const thumbs = new Map<string, PostThumb>();
+    for (const entry of rows<PostThumb & { post_id: string; position: number }>(media)) {
+      if (!thumbs.has(entry.post_id)) thumbs.set(entry.post_id, entry);
+    }
+    for (const row of postRows) {
+      map.set(
+        `post:${row.id}`,
+        postSummary(row, authors.get(row.author_id) ?? null, thumbs.get(row.id) ?? null),
+      );
+    }
   }
   return map;
 }

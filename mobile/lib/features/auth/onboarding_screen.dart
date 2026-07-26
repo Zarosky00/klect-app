@@ -13,8 +13,7 @@ import '../../ui/ui.dart';
 import 'auth_controller.dart';
 
 /// The interest templates offered in step 2.
-final onboardingTemplatesProvider =
-    FutureProvider<List<CollectionTemplate>>(
+final onboardingTemplatesProvider = FutureProvider<List<CollectionTemplate>>(
   (ref) => ref.watch(klectApiProvider).fetchCollectionTemplates(),
   name: 'onboardingTemplates',
 );
@@ -52,6 +51,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final TextEditingController _username = TextEditingController();
   final Set<String> _interests = <String>{};
   final Set<String> _follows = <String>{};
+
+  /// Template ids whose collection was already created, so a retry after a
+  /// mid-flight failure never duplicates a shelf.
+  final Set<String> _createdTemplates = <String>{};
+
+  /// Users already followed by a previous attempt, for the same reason.
+  final Set<String> _followed = <String>{};
 
   int _step = 0;
   bool _busy = false;
@@ -105,7 +111,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     if (_step == 0) {
       final name = _displayName.text.trim();
       setState(
-        () => _nameError = name.length >= 2 ? null : 'Tell us what to call you.',
+        () =>
+            _nameError = name.length >= 2 ? null : 'Tell us what to call you.',
       );
       final usernameOk = await _checkUsername();
       if (!mounted || _nameError != null || !usernameOk) return;
@@ -125,6 +132,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     setState(() => _step -= 1);
   }
 
+  /// Finishes onboarding. **Idempotent**: created template ids and applied
+  /// follows are tracked, so a retry after a partial failure only performs
+  /// what is still missing — no duplicate shelves, no un-followed follows.
   Future<void> _finish() async {
     if (_busy) return;
     setState(() {
@@ -139,26 +149,30 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       );
 
       // Each chosen interest becomes a real collection, so the new account
-      // opens onto shelves rather than an empty state.
+      // opens onto shelves rather than an empty state. The creations are
+      // independent of each other, so they run in parallel.
       final templates =
           ref.read(onboardingTemplatesProvider).value ??
-              const <CollectionTemplate>[];
-      for (final template in templates) {
-        if (!_interests.contains(template.id)) continue;
-        await api.createCollection(
-          name: template.name,
-          description: template.description,
-          templateId: template.id,
-          accentColor: template.accentColor,
-        );
-      }
+          const <CollectionTemplate>[];
+      await Future.wait(<Future<void>>[
+        for (final template in templates)
+          if (_interests.contains(template.id) &&
+              !_createdTemplates.contains(template.id))
+            api
+                .createCollection(
+                  name: template.name,
+                  description: template.description,
+                  templateId: template.id,
+                  accentColor: template.accentColor,
+                )
+                .then((_) => _createdTemplates.add(template.id)),
+      ]);
 
       // Follows converge: only toggle when the relationship is missing.
-      for (final userId in _follows) {
-        if (!await api.hasFollowed(userId)) {
-          await api.toggleFollow(userId);
-        }
-      }
+      await Future.wait(<Future<void>>[
+        for (final userId in _follows)
+          if (!_followed.contains(userId)) _follow(api, userId),
+      ]);
 
       ref.invalidate(myProfileProvider);
     } on KlectError catch (error) {
@@ -169,11 +183,31 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
+  Future<void> _follow(KlectApi api, String userId) async {
+    if (!await api.hasFollowed(userId)) {
+      await api.toggleFollow(userId);
+    }
+    _followed.add(userId);
+  }
+
+  /// The escape hatch: onboarding must never trap an account. Signing out
+  /// returns to the auth screen via the router's guard.
+  Future<void> _signOut() async {
+    final confirmed = await KConfirmDialog.show(
+      context,
+      title: 'Sign out?',
+      message: 'You can finish setting up next time you sign in.',
+      confirmLabel: 'Sign out',
+    );
+    if (!confirmed || !mounted) return;
+    await ref.read(authControllerProvider.notifier).signOut();
+  }
+
   bool get _canAdvance => switch (_step) {
-        0 => !_checkingUsername,
-        1 => _interests.length >= OnboardingScreen.minimumInterests,
-        _ => true,
-      };
+    0 => !_checkingUsername,
+    1 => _interests.length >= OnboardingScreen.minimumInterests,
+    _ => true,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -209,6 +243,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       ),
                     ),
                   ],
+                  const SizedBox(width: Space.s3),
+                  KIconButton(
+                    icon: Icons.logout_rounded,
+                    semanticLabel: 'Sign out',
+                    onPressed: _busy ? null : () => unawaited(_signOut()),
+                  ),
                 ],
               ),
             ),
@@ -220,25 +260,25 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   key: ValueKey<int>(_step),
                   child: switch (_step) {
                     0 => _IdentityStep(
-                        displayName: _displayName,
-                        username: _username,
-                        nameError: _nameError,
-                        usernameError: _usernameError,
-                        checking: _checkingUsername,
-                        onUsernameChanged: _onUsernameChanged,
-                      ),
+                      displayName: _displayName,
+                      username: _username,
+                      nameError: _nameError,
+                      usernameError: _usernameError,
+                      checking: _checkingUsername,
+                      onUsernameChanged: _onUsernameChanged,
+                    ),
                     1 => _InterestsStep(
-                        selected: _interests,
-                        onToggle: (id) => setState(() {
-                          if (!_interests.remove(id)) _interests.add(id);
-                        }),
-                      ),
+                      selected: _interests,
+                      onToggle: (id) => setState(() {
+                        if (!_interests.remove(id)) _interests.add(id);
+                      }),
+                    ),
                     _ => _FollowStep(
-                        selected: _follows,
-                        onToggle: (id) => setState(() {
-                          if (!_follows.remove(id)) _follows.add(id);
-                        }),
-                      ),
+                      selected: _follows,
+                      onToggle: (id) => setState(() {
+                        if (!_follows.remove(id)) _follows.add(id);
+                      }),
+                    ),
                   },
                 ),
               ),
@@ -380,7 +420,7 @@ class _InterestsStep extends ConsumerWidget {
           Text(
             remaining > 0
                 ? 'Pick at least $remaining more. Each one becomes a shelf you '
-                    'can fill straight away.'
+                      'can fill straight away.'
                 : 'Nice. Add more any time.',
             style: context.kt.body.copyWith(color: colors.textSecondary),
           ),
@@ -458,7 +498,8 @@ class _FollowStep extends ConsumerWidget {
             data: (people) => people.isEmpty
                 ? const KEmptyState(
                     title: 'You are early',
-                    message: 'Nobody to suggest yet — you get first pick of '
+                    message:
+                        'Nobody to suggest yet — you get first pick of '
                         'the handles.',
                     compact: true,
                   )

@@ -4,101 +4,35 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { markNotificationsRead } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { entityHref, isEntityType, type NotificationType } from '@/lib/entities';
 import { calendarDate, shortTimeAgo } from '@/lib/format';
-import { closeupHref, conversationHref, profileHref, routes } from '@/lib/routes';
-import type { NotificationRow } from '@/lib/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { Icon, type IconName } from '@/components/ui/Icon';
+import { Icon } from '@/components/ui/Icon';
 import { SkeletonRow } from '@/components/ui/Skeleton';
+import { useNotifications } from '@/providers/notifications-provider';
 import { useSession } from '@/providers/session-provider';
 import { useToast } from '@/providers/toast-provider';
-import { hydrateNotification, listNotificationEntries, type NotificationEntry } from './queries';
+import {
+  NOTIFICATION_FALLBACK_TEXT,
+  NOTIFICATION_TYPE_ICON,
+  NOTIFICATION_TYPE_TONE,
+  notificationTargetHref,
+} from './notification-meta';
+import { listNotificationEntries, type NotificationEntry } from './queries';
 
 /**
  * Everything that happened to your collections while you were away.
  *
- * Grouped by day, colour-coded per type, and live: a realtime INSERT on
- * `notifications` filtered to your own id slides new rows in at the top without
- * a refetch. Reading one marks just that one; "Mark all read" calls
+ * Grouped by day, colour-coded per type, and live: arrivals come from the
+ * shell-level `NotificationsProvider` channel (one channel per session, shared
+ * with the badge and the banner) and slide in at the top without a refetch.
+ * Reading one marks just that one; "Mark all read" calls
  * `mark_notifications_read(null)`.
  */
 
 const PAGE_SIZE = 40;
-
-const TYPE_ICON: Record<NotificationType, IconName> = {
-  like: 'heart',
-  save: 'bookmark',
-  repost: 'repost',
-  comment: 'comment',
-  reply: 'comment',
-  mention: 'comment',
-  follow: 'user',
-  message: 'mail',
-  call: 'activity',
-  match: 'users',
-  system: 'bell',
-  moderation: 'shield',
-};
-
-/** Action colours are semantic and never swapped (DESIGN_SYSTEM §1). */
-const TYPE_TONE: Record<NotificationType, string> = {
-  like: 'text-like bg-like-subtle',
-  save: 'text-save bg-save-subtle',
-  repost: 'text-repost bg-repost-subtle',
-  comment: 'text-comment bg-comment-subtle',
-  reply: 'text-comment bg-comment-subtle',
-  mention: 'text-comment bg-comment-subtle',
-  follow: 'text-accent bg-accent-subtle',
-  message: 'text-info bg-comment-subtle',
-  call: 'text-info bg-comment-subtle',
-  match: 'text-accent bg-accent-subtle',
-  system: 'text-ink-2 bg-surface-3',
-  moderation: 'text-warning bg-danger-subtle',
-};
-
-const FALLBACK_TEXT: Record<NotificationType, string> = {
-  like: 'liked something of yours',
-  save: 'saved something of yours',
-  repost: 'reposted something of yours',
-  comment: 'commented on your collection',
-  reply: 'replied to you',
-  mention: 'mentioned you',
-  follow: 'started following you',
-  message: 'sent you a message',
-  call: 'called you',
-  match: 'is a strong taste match',
-  system: 'Klect has an update for you',
-  moderation: 'A moderator acted on your content',
-};
-
-function targetHref(entry: NotificationEntry): string {
-  const { notification, actor } = entry;
-  switch (notification.type) {
-    case 'follow':
-    case 'match':
-      return actor ? profileHref(actor.username) : routes.matches;
-    case 'message':
-    case 'call':
-      return notification.conversation_id
-        ? conversationHref(notification.conversation_id)
-        : routes.messages;
-    case 'comment':
-    case 'reply':
-    case 'mention':
-      // Comments live inside the closeup of whatever they hang off.
-      return isEntityType(notification.entity_type) && notification.entity_id
-        ? closeupHref(notification.entity_type, notification.entity_id)
-        : routes.notifications;
-    default:
-      return isEntityType(notification.entity_type) && notification.entity_id
-        ? entityHref(notification.entity_type, notification.entity_id)
-        : routes.notifications;
-  }
-}
 
 function dayKey(iso: string): string {
   const date = new Date(iso);
@@ -119,9 +53,10 @@ export interface NotificationsFeedProps {
   viewerId: string;
 }
 
-export function NotificationsFeed({ initialEntries, viewerId }: NotificationsFeedProps) {
+export function NotificationsFeed({ initialEntries }: NotificationsFeedProps) {
   const { supabase } = useSession();
   const { fromError, success } = useToast();
+  const { subscribe } = useNotifications();
 
   const [entries, setEntries] = useState(initialEntries);
   const [loading, setLoading] = useState(false);
@@ -129,33 +64,16 @@ export function NotificationsFeed({ initialEntries, viewerId }: NotificationsFee
   const [failure, setFailure] = useState<unknown>(null);
   const seen = useRef(new Set(initialEntries.map((entry) => entry.notification.id)));
 
-  /* Realtime arrival. One channel for the whole page — never one per row. */
-  useEffect(() => {
-    const channel = supabase
-      .channel(`notifications:${viewerId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${viewerId}`,
-        },
-        (payload) => {
-          const row = payload.new as NotificationRow;
-          if (seen.current.has(row.id)) return;
-          seen.current.add(row.id);
-          void hydrateNotification(supabase, row).then((entry) =>
-            setEntries((current) => [entry, ...current]),
-          );
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [supabase, viewerId]);
+  /* Realtime arrival — via the one shell channel, already hydrated. */
+  useEffect(
+    () =>
+      subscribe((entry) => {
+        if (seen.current.has(entry.notification.id)) return;
+        seen.current.add(entry.notification.id);
+        setEntries((current) => [entry, ...current]);
+      }),
+    [subscribe],
+  );
 
   const loadMore = useCallback(async () => {
     const oldest = entries[entries.length - 1]?.notification.created_at;
@@ -298,8 +216,8 @@ function NotificationRowView({
 }) {
   const { notification, actor } = entry;
   const unread = notification.read_at === null;
-  const href = targetHref(entry);
-  const text = notification.body ?? FALLBACK_TEXT[notification.type];
+  const href = notificationTargetHref(entry);
+  const text = notification.body ?? NOTIFICATION_FALLBACK_TEXT[notification.type];
 
   return (
     <Link
@@ -328,10 +246,10 @@ function NotificationRowView({
         <span
           className={cn(
             'absolute -bottom-1 -right-1 grid size-5 place-items-center rounded-full ring-2 ring-base',
-            TYPE_TONE[notification.type],
+            NOTIFICATION_TYPE_TONE[notification.type],
           )}
         >
-          <Icon name={TYPE_ICON[notification.type]} size="xs" filled />
+          <Icon name={NOTIFICATION_TYPE_ICON[notification.type]} size="xs" filled />
         </span>
       </span>
 

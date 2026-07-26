@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../core/api/klect_api.dart';
-import '../../core/links.dart';
 import '../../core/models/models.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
@@ -12,6 +11,7 @@ import '../profile/fill_viewport.dart';
 import '../profile/profile_queries.dart';
 import '../profile/user_actions.dart';
 import '../settings/notification_settings_screen.dart';
+import 'notification_copy.dart';
 import 'notification_preferences.dart';
 import 'notifications_controller.dart';
 
@@ -319,54 +319,11 @@ class NotificationRow extends ConsumerWidget {
     );
   }
 
-  String _actorLabel() {
-    final actor = notification.actor;
-    if (actor == null) return 'KLECT';
-    if (notification.isGrouped) {
-      final others = notification.count - 1;
-      return '${actor.name} and $others other${others == 1 ? '' : 's'}';
-    }
-    return actor.name;
-  }
+  String _actorLabel() => notificationActorLabel(notification);
 
-  String _entityNoun() => switch (notification.entityType) {
-        EntityType.collection => 'collection',
-        EntityType.subcollection => 'subcollection',
-        EntityType.item => 'item',
-        EntityType.post => 'post',
-        EntityType.comment => 'comment',
-        null => 'work',
-      };
+  String _phrase() => notificationPhrase(notification);
 
-  String _phrase() => switch (notification.type) {
-        NotificationType.like => 'liked your ${_entityNoun()}',
-        NotificationType.save => 'saved your ${_entityNoun()}',
-        NotificationType.repost => 'reposted your ${_entityNoun()}',
-        NotificationType.comment => 'commented on your ${_entityNoun()}',
-        NotificationType.reply => 'replied to your comment',
-        NotificationType.mention => 'mentioned you',
-        NotificationType.follow => 'started following you',
-        NotificationType.message => 'sent you a message',
-        NotificationType.call => 'called you',
-        NotificationType.match => 'collects what you collect',
-        NotificationType.system => notification.body == null
-            ? 'has an update for you'
-            : 'from the KLECT team',
-      };
-
-  String? _preview() {
-    final body = notification.body;
-    if (body == null || body.isEmpty) return null;
-    return switch (notification.type) {
-      NotificationType.comment ||
-      NotificationType.reply ||
-      NotificationType.mention ||
-      NotificationType.message ||
-      NotificationType.system =>
-        body,
-      _ => null,
-    };
-  }
+  String? _preview() => notificationPreview(notification);
 
   String _semanticLabel() {
     final when = notification.createdAt == null
@@ -379,32 +336,9 @@ class NotificationRow extends ConsumerWidget {
   Future<void> _open(BuildContext context, WidgetRef ref) async {
     await ref.read(notificationsProvider.notifier).markRead(notification.id);
     if (!context.mounted) return;
-    final destination = _destination();
+    final destination = notificationDestination(notification);
     if (destination == null) return;
     await context.push(destination);
-  }
-
-  /// Where this notification points. Null means "nothing to open".
-  String? _destination() => switch (notification.type) {
-        NotificationType.message || NotificationType.call =>
-          notification.conversationId == null
-              ? null
-              : '/messages/${notification.conversationId}',
-        NotificationType.follow || NotificationType.match =>
-          notification.actor == null
-              ? null
-              : KlectLinks.profilePath(notification.actor!.username),
-        _ => _entityDestination(),
-      };
-
-  String? _entityDestination() {
-    final type = notification.entityType;
-    final id = notification.entityId;
-    if (type == null || id == null) return null;
-    // A comment lives inside the thing it is about; without the parent there is
-    // nowhere sensible to land.
-    if (type == EntityType.comment) return null;
-    return KlectLinks.closeupPath(type, id);
   }
 }
 

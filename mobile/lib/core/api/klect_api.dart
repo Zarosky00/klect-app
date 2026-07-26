@@ -52,56 +52,60 @@ class KlectApi {
 
   /// `toggle_like(p_type, p_id)` → authoritative `{active, count}`.
   Future<ToggleResult> toggleLike(EntityType type, String id) async =>
-      ToggleResult.fromJson(asMap(
-        await _rpc('toggle_like', <String, dynamic>{
-          'p_type': type.wire,
-          'p_id': id,
-        }),
-      ));
+      ToggleResult.fromJson(
+        asMap(
+          await _rpc('toggle_like', <String, dynamic>{
+            'p_type': type.wire,
+            'p_id': id,
+          }),
+        ),
+      );
 
   /// `toggle_save(p_type, p_id, p_note)` → authoritative `{active, count}`.
   Future<ToggleResult> toggleSave(
     EntityType type,
     String id, {
     String? note,
-  }) async =>
-      ToggleResult.fromJson(asMap(
-        await _rpc('toggle_save', <String, dynamic>{
-          'p_type': type.wire,
-          'p_id': id,
-          'p_note': note,
-        }),
-      ));
+  }) async => ToggleResult.fromJson(
+    asMap(
+      await _rpc('toggle_save', <String, dynamic>{
+        'p_type': type.wire,
+        'p_id': id,
+        'p_note': note,
+      }),
+    ),
+  );
 
   /// `toggle_repost(p_type, p_id, p_quote)` → authoritative `{active, count}`.
   Future<ToggleResult> toggleRepost(
     EntityType type,
     String id, {
     String? quote,
-  }) async =>
-      ToggleResult.fromJson(asMap(
-        await _rpc('toggle_repost', <String, dynamic>{
-          'p_type': type.wire,
-          'p_id': id,
-          'p_quote': quote,
-        }),
-      ));
+  }) async => ToggleResult.fromJson(
+    asMap(
+      await _rpc('toggle_repost', <String, dynamic>{
+        'p_type': type.wire,
+        'p_id': id,
+        'p_quote': quote,
+      }),
+    ),
+  );
 
   /// `toggle_follow(p_user)` → `{active, count}` where `count` is the
   /// **target's** follower count.
   Future<ToggleResult> toggleFollow(String userId) async =>
-      ToggleResult.fromJson(asMap(
-        await _rpc('toggle_follow', <String, dynamic>{'p_user': userId}),
-      ));
+      ToggleResult.fromJson(
+        asMap(await _rpc('toggle_follow', <String, dynamic>{'p_user': userId})),
+      );
 
   /// `record_view(p_type, p_id)` → the new view count. Deduped per viewer
   /// per day server-side, so calling it on every impression is safe.
   Future<int> recordView(EntityType type, String id) async => asInt(
-        await _rpc('record_view', <String, dynamic>{
-          'p_type': type.wire,
-          'p_id': id,
-        }),
-      );
+    await _rpc('record_view', <String, dynamic>{
+      'p_type': type.wire,
+      'p_id': id,
+    }),
+  );
 
   /// `add_comment(p_type, p_id, p_body, p_parent)` → `{id, count}`.
   Future<CommentResult> addComment({
@@ -109,15 +113,16 @@ class KlectApi {
     required String id,
     required String body,
     String? parentId,
-  }) async =>
-      CommentResult.fromJson(asMap(
-        await _rpc('add_comment', <String, dynamic>{
-          'p_type': type.wire,
-          'p_id': id,
-          'p_body': body,
-          'p_parent': parentId,
-        }),
-      ));
+  }) async => CommentResult.fromJson(
+    asMap(
+      await _rpc('add_comment', <String, dynamic>{
+        'p_type': type.wire,
+        'p_id': id,
+        'p_body': body,
+        'p_parent': parentId,
+      }),
+    ),
+  );
 
   /// `delete_comment(p_comment)` → the parent entity's new comment count.
   Future<int> deleteComment(String commentId) async {
@@ -138,17 +143,18 @@ class KlectApi {
     String? userId,
     String? messageId,
     String? details,
-  }) async =>
-      ReportResult.fromJson(asMap(
-        await _rpc('submit_report', <String, dynamic>{
-          'p_reason': reason.wire,
-          'p_type': type?.wire,
-          'p_id': entityId,
-          'p_user': userId,
-          'p_message': messageId,
-          'p_details': details,
-        }),
-      ));
+  }) async => ReportResult.fromJson(
+    asMap(
+      await _rpc('submit_report', <String, dynamic>{
+        'p_reason': reason.wire,
+        'p_type': type?.wire,
+        'p_id': entityId,
+        'p_user': userId,
+        'p_message': messageId,
+        'p_details': details,
+      }),
+    ),
+  );
 
   // ───────────────────────────────────────────────── feeds and discovery ──
 
@@ -210,16 +216,18 @@ class KlectApi {
     String? replyTo,
   }) async {
     try {
-      return PulseEntry.fromJson(asMap(
-        await _rpc('create_post', <String, dynamic>{
-          'p_body': body,
-          'p_kind': kind.wire,
-          'p_entity_type': entityType?.wire,
-          'p_entity_id': entityId,
-          'p_media': media,
-          'p_reply_to': replyTo,
-        }),
-      ));
+      return PulseEntry.fromJson(
+        asMap(
+          await _rpc('create_post', <String, dynamic>{
+            'p_body': body,
+            'p_kind': kind.wire,
+            'p_entity_type': entityType?.wire,
+            'p_entity_id': entityId,
+            'p_media': media,
+            'p_reply_to': replyTo,
+          }),
+        ),
+      );
     } on KlectError catch (error) {
       throw _mapCreatePostError(error);
     }
@@ -228,56 +236,56 @@ class KlectApi {
   /// Translates `create_post`'s stable snake_case error texts (see the 0018
   /// migration header) into copy a person can act on.
   KlectError _mapCreatePostError(KlectError error) {
-    final code = error.message.trim();
+    final code = error.raw.trim();
     return switch (code) {
       'body_too_long' => KlectError(
-          KlectErrorKind.unknown,
-          'Posts are capped at 2,000 characters.',
-          code: error.code,
-          cause: error,
-        ),
+        KlectErrorKind.unknown,
+        'Posts are capped at 2,000 characters.',
+        code: error.code,
+        cause: error,
+      ),
       'body_or_attachment_required' => KlectError(
-          KlectErrorKind.unknown,
-          'Say something, or attach a photo or something you own.',
-          code: error.code,
-          cause: error,
-        ),
+        KlectErrorKind.unknown,
+        'Say something, or attach a photo or something you own.',
+        code: error.code,
+        cause: error,
+      ),
       'bad_target' => KlectError(
-          KlectErrorKind.unknown,
-          'That attachment could not be used.',
-          code: error.code,
-          cause: error,
-        ),
+        KlectErrorKind.unknown,
+        'That attachment could not be used.',
+        code: error.code,
+        cause: error,
+      ),
       'entity_not_found' => KlectError(
-          KlectErrorKind.notFound,
-          'What you attached is no longer available.',
-          code: error.code,
-          cause: error,
-        ),
+        KlectErrorKind.notFound,
+        'What you attached is no longer available.',
+        code: error.code,
+        cause: error,
+      ),
       'reply_not_found' => KlectError(
-          KlectErrorKind.notFound,
-          'The post you are replying to is gone.',
-          code: error.code,
-          cause: error,
-        ),
+        KlectErrorKind.notFound,
+        'The post you are replying to is gone.',
+        code: error.code,
+        cause: error,
+      ),
       'blocked' => KlectError(
-          KlectErrorKind.forbidden,
-          'You cannot interact with this account.',
-          code: error.code,
-          cause: error,
-        ),
+        KlectErrorKind.forbidden,
+        'You cannot interact with this account.',
+        code: error.code,
+        cause: error,
+      ),
       'bad_media' || 'media_not_yours' => KlectError(
-          KlectErrorKind.storage,
-          'One of the photos could not be attached. Try again.',
-          code: error.code,
-          cause: error,
-        ),
+        KlectErrorKind.storage,
+        'One of the photos could not be attached. Try again.',
+        code: error.code,
+        cause: error,
+      ),
       'too_many_media' => KlectError(
-          KlectErrorKind.unknown,
-          'A post can carry up to four photos.',
-          code: error.code,
-          cause: error,
-        ),
+        KlectErrorKind.unknown,
+        'A post can carry up to four photos.',
+        code: error.code,
+        cause: error,
+      ),
       _ => error,
     };
   }
@@ -310,21 +318,25 @@ class KlectApi {
 
   /// `get_closeup(p_type, p_id)` — the single-tap detail payload.
   Future<Closeup> getCloseup(EntityType type, String id) async =>
-      Closeup.fromJson(asMap(
-        await _rpc('get_closeup', <String, dynamic>{
-          'p_type': type.wire,
-          'p_id': id,
-        }),
-      ));
+      Closeup.fromJson(
+        asMap(
+          await _rpc('get_closeup', <String, dynamic>{
+            'p_type': type.wire,
+            'p_id': id,
+          }),
+        ),
+      );
 
   /// `search_all(p_q, p_limit)` → people, collections, items, tags.
   Future<SearchResults> searchAll(String query, {int limit = 20}) async =>
-      SearchResults.fromJson(asMap(
-        await _rpc('search_all', <String, dynamic>{
-          'p_q': query,
-          'p_limit': limit,
-        }),
-      ));
+      SearchResults.fromJson(
+        asMap(
+          await _rpc('search_all', <String, dynamic>{
+            'p_q': query,
+            'p_limit': limit,
+          }),
+        ),
+      );
 
   /// `get_matches(p_limit)` — collectors ranked by taste overlap. Recomputes
   /// server-side on every call.
@@ -382,37 +394,37 @@ class KlectApi {
 
   /// Blocks a user. Blocking is bidirectional and immediate server-side.
   Future<void> blockUser(String userId) => _guard(
-        () => _client.from('blocks').upsert(<String, dynamic>{
-          'blocker_id': requireUserId,
-          'blocked_id': userId,
-        }),
-      );
+    () => _client.from('blocks').upsert(<String, dynamic>{
+      'blocker_id': requireUserId,
+      'blocked_id': userId,
+    }),
+  );
 
   /// Lifts a block.
   Future<void> unblockUser(String userId) => _guard(
-        () => _client
-            .from('blocks')
-            .delete()
-            .eq('blocker_id', requireUserId)
-            .eq('blocked_id', userId),
-      );
+    () => _client
+        .from('blocks')
+        .delete()
+        .eq('blocker_id', requireUserId)
+        .eq('blocked_id', userId),
+  );
 
   /// Mutes a user — their content stops surfacing, they are not told.
   Future<void> muteUser(String userId) => _guard(
-        () => _client.from('mutes').upsert(<String, dynamic>{
-          'muter_id': requireUserId,
-          'muted_id': userId,
-        }),
-      );
+    () => _client.from('mutes').upsert(<String, dynamic>{
+      'muter_id': requireUserId,
+      'muted_id': userId,
+    }),
+  );
 
   /// Unmutes a user.
   Future<void> unmuteUser(String userId) => _guard(
-        () => _client
-            .from('mutes')
-            .delete()
-            .eq('muter_id', requireUserId)
-            .eq('muted_id', userId),
-      );
+    () => _client
+        .from('mutes')
+        .delete()
+        .eq('muter_id', requireUserId)
+        .eq('muted_id', userId),
+  );
 
   /// Everyone the viewer has blocked, newest first.
   Future<List<Profile>> fetchBlockedUsers() async {
@@ -456,11 +468,13 @@ class KlectApi {
     return _embeddedProfiles(rows, 'profiles');
   }
 
-  List<Profile> _embeddedProfiles(List<Map<String, dynamic>> rows, String key) =>
-      <Profile>[
-        for (final row in rows)
-          if (asMap(row[key]).isNotEmpty) Profile.fromJson(asMap(row[key])),
-      ];
+  List<Profile> _embeddedProfiles(
+    List<Map<String, dynamic>> rows,
+    String key,
+  ) => <Profile>[
+    for (final row in rows)
+      if (asMap(row[key]).isNotEmpty) Profile.fromJson(asMap(row[key])),
+  ];
 
   // ───────────────────────────────────────────────────────────── profiles ──
 
@@ -487,7 +501,11 @@ class KlectApi {
   /// True when [username] is free (or already belongs to the viewer).
   Future<bool> isUsernameAvailable(String username) async {
     final rows = await _guard(
-      () => _client.from('profiles').select('id').eq('username', username).limit(1),
+      () => _client
+          .from('profiles')
+          .select('id')
+          .eq('username', username)
+          .limit(1),
     );
     if (rows.isEmpty) return true;
     return asString(rows.first['id']) == currentUserId;
@@ -510,21 +528,21 @@ class KlectApi {
   Future<Profile> completeOnboarding({
     required String displayName,
     required String username,
-  }) =>
-      updateMyProfile(<String, dynamic>{
-        'display_name': displayName,
-        'username': username,
-        'onboarded_at': DateTime.now().toUtc().toIso8601String(),
-      });
+  }) => updateMyProfile(<String, dynamic>{
+    'display_name': displayName,
+    'username': username,
+    'onboarded_at': DateTime.now().toUtc().toIso8601String(),
+  });
 
   /// Suggested collectors for the onboarding follow step: the most-followed
-  /// public accounts, excluding the viewer.
+  /// public accounts, excluding the viewer and anyone suspended.
   Future<List<Profile>> fetchSuggestedCollectors({int limit = 12}) async {
     final me = currentUserId;
     var query = _client
         .from('profiles')
         .select()
-        .eq('account_visibility', AccountVisibility.public.wire);
+        .eq('account_visibility', AccountVisibility.public.wire)
+        .eq('is_suspended', false);
     if (me != null) query = query.neq('id', me);
     final rows = await _guard(
       () => query.order('follower_count', ascending: false).limit(limit),
@@ -824,14 +842,13 @@ class KlectApi {
         .isFilter('parent_id', null)
         .isFilter('deleted_at', null);
     final ordered = switch (sort) {
-      CommentSort.top => query
-          .order('like_count', ascending: false)
-          .order('created_at', ascending: true),
+      CommentSort.top =>
+        query
+            .order('like_count', ascending: false)
+            .order('created_at', ascending: true),
       CommentSort.newest => query.order('created_at', ascending: false),
     };
-    final rows = await _guard(
-      () => ordered.range(offset, offset + limit - 1),
-    );
+    final rows = await _guard(() => ordered.range(offset, offset + limit - 1));
     return <CommentModel>[for (final row in rows) CommentModel.fromJson(row)];
   }
 
@@ -891,21 +908,22 @@ class KlectApi {
   }
 
   /// How many notifications are unread — for the tab badge.
-  Future<int> fetchUnreadNotificationCount() async {
-    final rows = await _guard(
-      () => _client
-          .from('notifications')
-          .select('id')
-          .eq('user_id', requireUserId)
-          .isFilter('read_at', null),
-    );
-    return rows.length;
-  }
+  ///
+  /// A `HEAD` request with `count=exact`: Postgres counts, nothing is
+  /// materialised or shipped — the badge costs the same whether 3 or 3000
+  /// rows are unread.
+  Future<int> fetchUnreadNotificationCount() => _guard(
+    () => _client
+        .from('notifications')
+        .count(CountOption.exact)
+        .eq('user_id', requireUserId)
+        .isFilter('read_at', null),
+  );
 
   /// `mark_notifications_read(p_ids)` — null marks everything read.
   Future<int> markNotificationsRead({List<String>? ids}) async => asInt(
-        await _rpc('mark_notifications_read', <String, dynamic>{'p_ids': ids}),
-      );
+    await _rpc('mark_notifications_read', <String, dynamic>{'p_ids': ids}),
+  );
 
   // ──────────────────────────────────────────────────────────── messaging ──
 
@@ -914,8 +932,8 @@ class KlectApi {
   /// Throws [KlectErrorKind.messagesBlocked] when the recipient's
   /// `allow_messages_from` refuses.
   Future<String> startDm(String otherUserId) async => asString(
-        await _rpc('start_dm', <String, dynamic>{'p_other': otherUserId}),
-      );
+    await _rpc('start_dm', <String, dynamic>{'p_other': otherUserId}),
+  );
 
   /// `mark_conversation_read(p_conversation)` — zeroes unread and clears the
   /// matching message notifications.
@@ -1022,22 +1040,22 @@ class KlectApi {
 
   /// Adds an emoji reaction to a message.
   Future<void> reactToMessage(String messageId, String emoji) => _guard(
-        () => _client.from('message_reactions').upsert(<String, dynamic>{
-          'message_id': messageId,
-          'user_id': requireUserId,
-          'emoji': emoji,
-        }),
-      );
+    () => _client.from('message_reactions').upsert(<String, dynamic>{
+      'message_id': messageId,
+      'user_id': requireUserId,
+      'emoji': emoji,
+    }),
+  );
 
   /// Removes an emoji reaction.
   Future<void> unreactToMessage(String messageId, String emoji) => _guard(
-        () => _client
-            .from('message_reactions')
-            .delete()
-            .eq('message_id', messageId)
-            .eq('user_id', requireUserId)
-            .eq('emoji', emoji),
-      );
+    () => _client
+        .from('message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', requireUserId)
+        .eq('emoji', emoji),
+  );
 
   // ──────────────────────────────────────────────────────────────── calls ──
 
@@ -1076,9 +1094,10 @@ class KlectApi {
     CallStatus status, {
     int? durationSeconds,
     String? endReason,
-  }) =>
-      _guard(
-        () => _client.from('calls').update(<String, dynamic>{
+  }) => _guard(
+    () => _client
+        .from('calls')
+        .update(<String, dynamic>{
           'status': status.wire,
           if (status == CallStatus.active)
             'started_at': DateTime.now().toUtc().toIso8601String(),
@@ -1086,28 +1105,29 @@ class KlectApi {
             'ended_at': DateTime.now().toUtc().toIso8601String(),
           'duration_seconds': ?durationSeconds,
           'end_reason': ?endReason,
-        }).eq('id', callId),
-      );
+        })
+        .eq('id', callId),
+  );
 
   /// Records that the viewer joined the media session.
   Future<void> joinCall(String callId) => _guard(
-        () => _client.from('call_participants').upsert(<String, dynamic>{
-          'call_id': callId,
-          'user_id': requireUserId,
-          'joined_at': DateTime.now().toUtc().toIso8601String(),
-        }),
-      );
+    () => _client.from('call_participants').upsert(<String, dynamic>{
+      'call_id': callId,
+      'user_id': requireUserId,
+      'joined_at': DateTime.now().toUtc().toIso8601String(),
+    }),
+  );
 
   /// Records that the viewer left the media session.
   Future<void> leaveCall(String callId) => _guard(
-        () => _client
-            .from('call_participants')
-            .update(<String, dynamic>{
-              'left_at': DateTime.now().toUtc().toIso8601String(),
-            })
-            .eq('call_id', callId)
-            .eq('user_id', requireUserId),
-      );
+    () => _client
+        .from('call_participants')
+        .update(<String, dynamic>{
+          'left_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('call_id', callId)
+        .eq('user_id', requireUserId),
+  );
 
   /// Sends one WebRTC signal. Signals are applied in `created_at` order.
   Future<void> sendCallSignal({
@@ -1115,16 +1135,15 @@ class KlectApi {
     required CallSignalType type,
     required Map<String, dynamic> payload,
     String? recipientId,
-  }) =>
-      _guard(
-        () => _client.from('call_signals').insert(<String, dynamic>{
-          'call_id': callId,
-          'sender_id': requireUserId,
-          'recipient_id': recipientId,
-          'type': type.wire,
-          'payload': payload,
-        }),
-      );
+  }) => _guard(
+    () => _client.from('call_signals').insert(<String, dynamic>{
+      'call_id': callId,
+      'sender_id': requireUserId,
+      'recipient_id': recipientId,
+      'type': type.wire,
+      'payload': payload,
+    }),
+  );
 
   // ────────────────────────────────────────────────────────────── storage ──
 
@@ -1134,7 +1153,10 @@ class KlectApi {
   ///  * an absolute URL — returned unchanged;
   ///  * a bucket-prefixed path (`media/…`) — split and resolved;
   ///  * a bare object key — resolved against [bucket].
-  String? publicUrl(String? path, {StorageBucket bucket = StorageBucket.media}) {
+  String? publicUrl(
+    String? path, {
+    StorageBucket bucket = StorageBucket.media,
+  }) {
     if (path == null || path.isEmpty) return null;
     if (path.startsWith('http://') || path.startsWith('https://')) return path;
     var resolved = bucket;
@@ -1155,13 +1177,10 @@ class KlectApi {
     String path, {
     StorageBucket bucket = StorageBucket.chat,
     int expiresInSeconds = 3600,
-  }) =>
-      _guard(
-        () => _client.storage.from(bucket.id).createSignedUrl(
-              path,
-              expiresInSeconds,
-            ),
-      );
+  }) => _guard(
+    () =>
+        _client.storage.from(bucket.id).createSignedUrl(path, expiresInSeconds),
+  );
 
   /// Uploads bytes and returns the object key.
   ///
@@ -1179,7 +1198,9 @@ class KlectApi {
         ? objectPath
         : '$userId/$objectPath';
     await _guard(
-      () => _client.storage.from(bucket.id).uploadBinary(
+      () => _client.storage
+          .from(bucket.id)
+          .uploadBinary(
             key,
             bytes,
             fileOptions: FileOptions(contentType: contentType, upsert: upsert),
@@ -1189,8 +1210,9 @@ class KlectApi {
   }
 
   /// Deletes an uploaded object.
-  Future<void> removeUpload(StorageBucket bucket, String objectPath) =>
-      _guard(() => _client.storage.from(bucket.id).remove(<String>[objectPath]));
+  Future<void> removeUpload(StorageBucket bucket, String objectPath) => _guard(
+    () => _client.storage.from(bucket.id).remove(<String>[objectPath]),
+  );
 
   // ───────────────────────────────────────────────────────────── realtime ──
 
@@ -1202,68 +1224,72 @@ class KlectApi {
     required EntityType type,
     required String id,
     required void Function(Map<String, dynamic> row) onRow,
-  }) =>
-      _client.channel('counters:${type.wire}:$id').onPostgresChanges(
-            event: PostgresChangeEvent.update,
-            schema: 'public',
-            table: type.table,
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'id',
-              value: id,
-            ),
-            callback: (payload) => onRow(payload.newRecord),
-          );
+  }) => _client
+      .channel('counters:${type.wire}:$id')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: type.table,
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'id',
+          value: id,
+        ),
+        callback: (payload) => onRow(payload.newRecord),
+      );
 
   /// A channel of the viewer's incoming notifications.
   RealtimeChannel notificationsChannel({
     required void Function(Map<String, dynamic> row) onInsert,
-  }) =>
-      _client.channel('notifications:$requireUserId').onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'notifications',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'user_id',
-              value: requireUserId,
-            ),
-            callback: (payload) => onInsert(payload.newRecord),
-          );
+  }) => _client
+      .channel('notifications:$requireUserId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'notifications',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'user_id',
+          value: requireUserId,
+        ),
+        callback: (payload) => onInsert(payload.newRecord),
+      );
 
   /// A channel of new messages in one conversation.
   RealtimeChannel messagesChannel({
     required String conversationId,
     required void Function(Map<String, dynamic> row) onInsert,
-  }) =>
-      _client.channel('messages:$conversationId').onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'messages',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'conversation_id',
-              value: conversationId,
-            ),
-            callback: (payload) => onInsert(payload.newRecord),
-          );
+  }) => _client
+      .channel('messages:$conversationId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'conversation_id',
+          value: conversationId,
+        ),
+        callback: (payload) => onInsert(payload.newRecord),
+      );
 
   /// A channel of WebRTC signals for one call.
   RealtimeChannel callSignalsChannel({
     required String callId,
     required void Function(Map<String, dynamic> row) onSignal,
-  }) =>
-      _client.channel('call:$callId').onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'call_signals',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'call_id',
-              value: callId,
-            ),
-            callback: (payload) => onSignal(payload.newRecord),
-          );
+  }) => _client
+      .channel('call:$callId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'call_signals',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'call_id',
+          value: callId,
+        ),
+        callback: (payload) => onSignal(payload.newRecord),
+      );
 
   /// Tears a channel down.
   Future<void> removeChannel(RealtimeChannel channel) async {
@@ -1294,12 +1320,13 @@ class KlectApi {
     String status = 'open',
     int limit = 50,
     int offset = 0,
-  }) async =>
-      asMapList(await _rpc('admin_list_reports', <String, dynamic>{
-        'p_status': status,
-        'p_limit': limit,
-        'p_offset': offset,
-      }));
+  }) async => asMapList(
+    await _rpc('admin_list_reports', <String, dynamic>{
+      'p_status': status,
+      'p_limit': limit,
+      'p_offset': offset,
+    }),
+  );
 
   /// `admin_resolve_report(...)`. Resolving one report auto-resolves every
   /// other open report about the same target.
@@ -1308,13 +1335,14 @@ class KlectApi {
     required String action,
     String? reason,
     int? suspendDays,
-  }) async =>
-      asMap(await _rpc('admin_resolve_report', <String, dynamic>{
-        'p_report': reportId,
-        'p_action': action,
-        'p_reason': reason,
-        'p_suspend_days': suspendDays,
-      }));
+  }) async => asMap(
+    await _rpc('admin_resolve_report', <String, dynamic>{
+      'p_report': reportId,
+      'p_action': action,
+      'p_reason': reason,
+      'p_suspend_days': suspendDays,
+    }),
+  );
 
   /// `admin_moderate_entity(...)`.
   Future<Map<String, dynamic>> adminModerateEntity({
@@ -1322,13 +1350,14 @@ class KlectApi {
     required String entityId,
     required bool hidden,
     String? reason,
-  }) async =>
-      asMap(await _rpc('admin_moderate_entity', <String, dynamic>{
-        'p_type': type.wire,
-        'p_id': entityId,
-        'p_hidden': hidden,
-        'p_reason': reason,
-      }));
+  }) async => asMap(
+    await _rpc('admin_moderate_entity', <String, dynamic>{
+      'p_type': type.wire,
+      'p_id': entityId,
+      'p_hidden': hidden,
+      'p_reason': reason,
+    }),
+  );
 
   /// `admin_set_user_state(...)`.
   Future<Map<String, dynamic>> adminSetUserState({
@@ -1336,41 +1365,43 @@ class KlectApi {
     required bool suspended,
     int? days,
     String? reason,
-  }) async =>
-      asMap(await _rpc('admin_set_user_state', <String, dynamic>{
-        'p_user': userId,
-        'p_suspended': suspended,
-        'p_days': days,
-        'p_reason': reason,
-      }));
+  }) async => asMap(
+    await _rpc('admin_set_user_state', <String, dynamic>{
+      'p_user': userId,
+      'p_suspended': suspended,
+      'p_days': days,
+      'p_reason': reason,
+    }),
+  );
 
   /// `admin_set_verified(p_user, p_verified)`.
   Future<Map<String, dynamic>> adminSetVerified({
     required String userId,
     required bool verified,
-  }) async =>
-      asMap(await _rpc('admin_set_verified', <String, dynamic>{
-        'p_user': userId,
-        'p_verified': verified,
-      }));
+  }) async => asMap(
+    await _rpc('admin_set_verified', <String, dynamic>{
+      'p_user': userId,
+      'p_verified': verified,
+    }),
+  );
 
   /// `admin_set_role(p_user, p_role, p_grant)` — superadmin only.
   Future<Map<String, dynamic>> adminSetRole({
     required String userId,
     required String role,
     required bool grant,
-  }) async =>
-      asMap(await _rpc('admin_set_role', <String, dynamic>{
-        'p_user': userId,
-        'p_role': role,
-        'p_grant': grant,
-      }));
+  }) async => asMap(
+    await _rpc('admin_set_role', <String, dynamic>{
+      'p_user': userId,
+      'p_role': role,
+      'p_grant': grant,
+    }),
+  );
 
   /// `admin_user_detail(p_user)`.
-  Future<Map<String, dynamic>> adminUserDetail(String userId) async =>
-      asMap(await _rpc('admin_user_detail', <String, dynamic>{
-        'p_user': userId,
-      }));
+  Future<Map<String, dynamic>> adminUserDetail(String userId) async => asMap(
+    await _rpc('admin_user_detail', <String, dynamic>{'p_user': userId}),
+  );
 }
 
 /// The app-wide API instance.

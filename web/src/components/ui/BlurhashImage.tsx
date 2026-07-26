@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import Image from 'next/image';
 import { decode } from 'blurhash';
 import { aspect } from '@/design/tokens.g';
 import { cn } from '@/lib/cn';
+import { isOptimizableImageSrc } from '@/lib/storage';
 
 /**
  * The masonry workhorse.
@@ -116,23 +118,24 @@ export function BlurhashImage({
       ) : null}
 
       {src ? (
-        /* eslint-disable-next-line @next/next/no-img-element -- covers come from
-           user-supplied hosts that change per environment; next/image's loader
-           would need a remotePattern per host. The blurhash + reserved box give
-           us the CLS win next/image exists for. */
-        <img
+        /* `fill` inside the aspect-ratio box the blurhash already reserved:
+           next/image serves a srcset scaled to `sizes` (a 180px masonry tile
+           downloads a ~256px webp instead of the 2048px original), while the
+           reserved box keeps CLS at zero exactly as before. Hosts outside
+           `remotePatterns` fall back to the original file rather than crash. */
+        <Image
           src={src}
           alt={alt}
+          fill
           sizes={sizes}
-          loading={priority ? 'eager' : 'lazy'}
-          decoding="async"
-          fetchPriority={priority ? 'high' : 'auto'}
+          priority={priority}
+          unoptimized={!isOptimizableImageSrc(src)}
           onLoad={() => {
             setLoaded(true);
             onLoad?.();
           }}
           className={cn(
-            'absolute inset-0 size-full object-cover transition-opacity dur-fast ease-standard',
+            'object-cover transition-opacity dur-fast ease-standard',
             loaded ? 'opacity-100' : 'opacity-0',
             imageClassName,
           )}

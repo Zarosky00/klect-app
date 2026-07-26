@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
+import '../../core/offline/feed_page_cache.dart';
 import '../../core/supabase.dart';
 import 'chat_api.dart';
 import 'chat_models.dart';
@@ -30,15 +31,15 @@ class ChatInboxState {
 
   /// Rows that belong in the main list.
   List<ChatInboxEntry> get active => <ChatInboxEntry>[
-        for (final entry in entries)
-          if (!entry.isArchived) entry,
-      ];
+    for (final entry in entries)
+      if (!entry.isArchived) entry,
+  ];
 
   /// Rows the viewer archived.
   List<ChatInboxEntry> get archived => <ChatInboxEntry>[
-        for (final entry in entries)
-          if (entry.isArchived) entry,
-      ];
+    for (final entry in entries)
+      if (entry.isArchived) entry,
+  ];
 
   /// Unread messages across every unarchived, unmuted-or-not conversation —
   /// the number the inbox entry point badges.
@@ -57,12 +58,11 @@ class ChatInboxState {
     bool? loading,
     Object? error,
     bool clearError = false,
-  }) =>
-      ChatInboxState(
-        entries: entries ?? this.entries,
-        loading: loading ?? this.loading,
-        error: clearError ? null : (error ?? this.error),
-      );
+  }) => ChatInboxState(
+    entries: entries ?? this.entries,
+    loading: loading ?? this.loading,
+    error: clearError ? null : (error ?? this.error),
+  );
 }
 
 /// The live inbox.
@@ -114,11 +114,80 @@ class ChatInboxController extends Notifier<ChatInboxState> {
       final entries = await _api.fetchInbox();
       if (_disposed) return;
       state = ChatInboxState(entries: entries, loading: false);
+      unawaited(
+        ref.read(feedPageCacheProvider).write(_cacheKey, _snapshot(entries)),
+      );
     } catch (error) {
       if (_disposed) return;
-      state = state.copyWith(loading: false, error: KlectError.from(error));
+      final normalised = KlectError.from(error);
+      if (state.entries.isEmpty &&
+          normalised.isRetryable &&
+          _hydrateFromCache()) {
+        return;
+      }
+      state = state.copyWith(loading: false, error: normalised);
     }
   }
+
+  // ─────────────────────────────────────────────────── offline first page ──
+
+  String get _cacheKey =>
+      'chat.inbox.${ref.read(currentUserIdProvider) ?? 'anon'}';
+
+  /// Rebuilds the inbox from the cached snapshot when the first load fails
+  /// offline. No error is set: these rows render fine, realtime will catch up
+  /// the moment the socket returns, and pull-to-refresh forces it.
+  bool _hydrateFromCache() {
+    final rows = ref.read(feedPageCacheProvider).read(_cacheKey);
+    if (rows == null) return false;
+    final entries = <ChatInboxEntry>[
+      for (final row in rows)
+        if (asMap(row['conversations']).isNotEmpty)
+          ChatInboxEntry(
+            conversation: Conversation.fromJson(asMap(row['conversations'])),
+            pinned: asBool(row['pinned']),
+            archivedAt: asDateOrNull(row['archived_at']),
+            mutedUntil: asDateOrNull(row['muted_until']),
+            lastReadAt: asDateOrNull(row['last_read_at']),
+          ),
+    ]..sort(ChatInboxEntry.compare);
+    if (entries.isEmpty) return false;
+    state = ChatInboxState(entries: entries, loading: false);
+    return true;
+  }
+
+  /// The wire-shaped snapshot the cache stores — only what an inbox row
+  /// renders, keyed exactly how [Conversation.fromJson] reads it back.
+  List<Map<String, dynamic>> _snapshot(List<ChatInboxEntry> entries) =>
+      <Map<String, dynamic>>[
+        for (final entry in entries)
+          <String, dynamic>{
+            'pinned': entry.pinned,
+            'archived_at': entry.archivedAt?.toIso8601String(),
+            'muted_until': entry.mutedUntil?.toIso8601String(),
+            'last_read_at': entry.lastReadAt?.toIso8601String(),
+            'conversations': <String, dynamic>{
+              'id': entry.conversation.id,
+              'kind': entry.conversation.kind.wire,
+              'title': entry.conversation.title,
+              'description': entry.conversation.description,
+              'avatar_path': entry.conversation.avatarPath,
+              'last_message_at': entry.conversation.lastMessageAt
+                  ?.toIso8601String(),
+              'last_message_preview': entry.conversation.lastMessagePreview,
+              'created_at': entry.conversation.createdAt?.toIso8601String(),
+              'unread_count': entry.conversation.unreadCount,
+              if (entry.conversation.otherMember != null)
+                'other_member': <String, dynamic>{
+                  'id': entry.conversation.otherMember!.id,
+                  'username': entry.conversation.otherMember!.username,
+                  'display_name': entry.conversation.otherMember!.displayName,
+                  'avatar_path': entry.conversation.otherMember!.avatarPath,
+                  'is_verified': entry.conversation.otherMember!.isVerified,
+                },
+            },
+          },
+      ];
 
   /// Reloads from the server — pull-to-refresh and the error retry.
   Future<void> refresh() async {
@@ -173,8 +242,9 @@ class ChatInboxController extends Notifier<ChatInboxState> {
     _replace(
       index,
       ChatInboxEntry(
-        conversation:
-            existing.conversation.copyWith(unreadCount: asInt(row['unread_count'])),
+        conversation: existing.conversation.copyWith(
+          unreadCount: asInt(row['unread_count']),
+        ),
         pinned: asBool(row['pinned']),
         archivedAt: asDateOrNull(row['archived_at']),
         mutedUntil: asDateOrNull(row['muted_until']),
@@ -202,38 +272,34 @@ class ChatInboxController extends Notifier<ChatInboxState> {
 
   /// Pins or unpins, optimistically.
   Future<void> togglePin(String conversationId) => _optimistic(
-        conversationId,
-        (entry) => entry.copyWith(pinned: !entry.pinned),
-        (entry) => _api.setPinned(conversationId, pinned: !entry.pinned),
-      );
+    conversationId,
+    (entry) => entry.copyWith(pinned: !entry.pinned),
+    (entry) => _api.setPinned(conversationId, pinned: !entry.pinned),
+  );
 
   /// Archives or un-archives, optimistically.
   Future<void> toggleArchive(String conversationId) => _optimistic(
-        conversationId,
-        (entry) => entry.isArchived
-            ? entry.copyWith(clearArchived: true)
-            : entry.copyWith(archivedAt: DateTime.now()),
-        (entry) => _api.setArchived(
-          conversationId,
-          archived: !entry.isArchived,
-        ),
-      );
+    conversationId,
+    (entry) => entry.isArchived
+        ? entry.copyWith(clearArchived: true)
+        : entry.copyWith(archivedAt: DateTime.now()),
+    (entry) => _api.setArchived(conversationId, archived: !entry.isArchived),
+  );
 
   /// Mutes for [duration], or unmutes when already muted.
   Future<void> toggleMute(
     String conversationId, {
     Duration duration = const Duration(days: 7),
-  }) =>
-      _optimistic(
-        conversationId,
-        (entry) => entry.isMuted
-            ? entry.copyWith(clearMuted: true)
-            : entry.copyWith(mutedUntil: DateTime.now().add(duration)),
-        (entry) => _api.setMuted(
-          conversationId,
-          duration: entry.isMuted ? null : duration,
-        ),
-      );
+  }) => _optimistic(
+    conversationId,
+    (entry) => entry.isMuted
+        ? entry.copyWith(clearMuted: true)
+        : entry.copyWith(mutedUntil: DateTime.now().add(duration)),
+    (entry) => _api.setMuted(
+      conversationId,
+      duration: entry.isMuted ? null : duration,
+    ),
+  );
 
   /// Leaves a conversation and drops it from the inbox.
   ///
@@ -316,8 +382,7 @@ class ChatInboxController extends Notifier<ChatInboxState> {
 }
 
 /// The live inbox.
-final chatInboxProvider =
-    NotifierProvider<ChatInboxController, ChatInboxState>(
+final chatInboxProvider = NotifierProvider<ChatInboxController, ChatInboxState>(
   ChatInboxController.new,
   name: 'chatInbox',
 );

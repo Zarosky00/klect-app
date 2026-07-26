@@ -35,37 +35,39 @@ class SurfCard {
     this.viewerSaved = false,
     this.viewerReposted = false,
     this.viewerFollows = false,
+    this.raw = const <String, dynamic>{},
   });
 
   /// Parses one `surf_card` row.
   factory SurfCard.fromJson(Map<String, dynamic> json) => SurfCard(
-        entityType: EntityType.parse(json['entity_type']),
-        entityId: asString(json['entity_id']),
-        ownerId: asString(json['owner_id']),
-        username: asString(json['username']),
-        displayName: asStringOrNull(json['display_name']),
-        avatarPath: asStringOrNull(json['avatar_path']),
-        isVerified: asBool(json['is_verified']),
-        title: asStringOrNull(json['title']),
-        subtitle: asStringOrNull(json['subtitle']),
-        coverPath: asStringOrNull(json['cover_path']),
-        coverBlurhash: asStringOrNull(json['cover_blurhash']),
-        width: asIntOrNull(json['width']),
-        height: asIntOrNull(json['height']),
-        accentColor: asStringOrNull(json['accent_color']),
-        likeCount: asInt(json['like_count']),
-        saveCount: asInt(json['save_count']),
-        repostCount: asInt(json['repost_count']),
-        commentCount: asInt(json['comment_count']),
-        viewCount: asInt(json['view_count']),
-        childCount: asInt(json['child_count']),
-        createdAt: asDateOrNull(json['created_at']),
-        score: asDouble(json['score']),
-        viewerLiked: asBool(json['viewer_liked']),
-        viewerSaved: asBool(json['viewer_saved']),
-        viewerReposted: asBool(json['viewer_reposted']),
-        viewerFollows: asBool(json['viewer_follows']),
-      );
+    entityType: EntityType.parse(json['entity_type']),
+    entityId: asString(json['entity_id']),
+    ownerId: asString(json['owner_id']),
+    username: asString(json['username']),
+    displayName: asStringOrNull(json['display_name']),
+    avatarPath: asStringOrNull(json['avatar_path']),
+    isVerified: asBool(json['is_verified']),
+    title: asStringOrNull(json['title']),
+    subtitle: asStringOrNull(json['subtitle']),
+    coverPath: asStringOrNull(json['cover_path']),
+    coverBlurhash: asStringOrNull(json['cover_blurhash']),
+    width: asIntOrNull(json['width']),
+    height: asIntOrNull(json['height']),
+    accentColor: asStringOrNull(json['accent_color']),
+    likeCount: asInt(json['like_count']),
+    saveCount: asInt(json['save_count']),
+    repostCount: asInt(json['repost_count']),
+    commentCount: asInt(json['comment_count']),
+    viewCount: asInt(json['view_count']),
+    childCount: asInt(json['child_count']),
+    createdAt: asDateOrNull(json['created_at']),
+    score: asDouble(json['score']),
+    viewerLiked: asBool(json['viewer_liked']),
+    viewerSaved: asBool(json['viewer_saved']),
+    viewerReposted: asBool(json['viewer_reposted']),
+    viewerFollows: asBool(json['viewer_follows']),
+    raw: json,
+  );
 
   /// Which of the three levels this tile represents.
   final EntityType entityType;
@@ -144,6 +146,10 @@ class SurfCard {
 
   /// Whether the viewer follows the owner.
   final bool viewerFollows;
+
+  /// The untouched `surf_card` row — what the offline first-page cache
+  /// persists, so a cached card round-trips through [SurfCard.fromJson].
+  final Map<String, dynamic> raw;
 
   /// Owner's display name, falling back to the handle.
   String get ownerName =>

@@ -3,12 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
-import '../../../core/links.dart';
 import '../../../design/motion.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
@@ -149,11 +147,19 @@ class _QuickActionsBodyState extends ConsumerState<_QuickActionsBody> {
       ref.read(interactionProvider(widget.entity).notifier);
 
   Future<void> _share() async {
-    final url = KlectLinks.urlFor(widget.entity.type, widget.entity.id);
-    await SharePlus.instance.share(
-      ShareParams(text: '${widget.title}\n$url', subject: widget.title),
+    // Take the navigator before popping — the chooser outlives this sheet.
+    final navigator = Navigator.of(context);
+    final entity = widget.entity;
+    final title = widget.title;
+    await navigator.maybePop();
+    final host = navigator.context;
+    if (!host.mounted) return;
+    await KShareSheet.show(
+      host,
+      entityType: entity.type,
+      entityId: entity.id,
+      title: title,
     );
-    if (mounted) await Navigator.of(context).maybePop();
   }
 
   void _report() {
@@ -307,8 +313,9 @@ class _OwnerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    final tint =
-        action.destructive ? colors.semanticDanger : colors.textPrimary;
+    final tint = action.destructive
+        ? colors.semanticDanger
+        : colors.textPrimary;
     return KPressable(
       onTap: onTap,
       semanticLabel: action.label,

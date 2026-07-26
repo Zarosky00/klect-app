@@ -107,10 +107,9 @@ class ChatApi {
     }
     if (entries.isEmpty) return entries;
 
-    final counterparts = await _fetchCounterparts(
-      <String>[for (final entry in entries) entry.id],
-      me,
-    );
+    final counterparts = await _fetchCounterparts(<String>[
+      for (final entry in entries) entry.id,
+    ], me);
     final resolved = <ChatInboxEntry>[
       for (final entry in entries)
         entry.copyWith(
@@ -142,8 +141,9 @@ class ChatApi {
     conversationJson['unread_count'] = asInt(row['unread_count']);
     final counterparts = await _fetchCounterparts(<String>[conversationId], me);
     return ChatInboxEntry(
-      conversation: Conversation.fromJson(conversationJson)
-          .copyWith(otherMember: counterparts[conversationId]),
+      conversation: Conversation.fromJson(
+        conversationJson,
+      ).copyWith(otherMember: counterparts[conversationId]),
       pinned: asBool(row['pinned']),
       archivedAt: asDateOrNull(row['archived_at']),
       mutedUntil: asDateOrNull(row['muted_until']),
@@ -202,14 +202,13 @@ class ChatApi {
   Future<void> _patchMembership(
     String conversationId,
     Map<String, dynamic> patch,
-  ) =>
-      _guard(
-        () => _client
-            .from('conversation_members')
-            .update(patch)
-            .eq('conversation_id', conversationId)
-            .eq('user_id', requireUserId),
-      );
+  ) => _guard(
+    () => _client
+        .from('conversation_members')
+        .update(patch)
+        .eq('conversation_id', conversationId)
+        .eq('user_id', requireUserId),
+  );
 
   /// Members of one conversation, with profiles. Ordered by `joined_at` —
   /// `conversation_members` has no `created_at`.
@@ -261,15 +260,14 @@ class ChatApi {
     required List<String> memberIds,
     String? description,
     String? avatarPath,
-  }) async =>
-      asString(
-        await _rpc('create_group', <String, dynamic>{
-          'p_title': title,
-          'p_members': memberIds,
-          'p_description': description,
-          'p_avatar_path': avatarPath,
-        }),
-      );
+  }) async => asString(
+    await _rpc('create_group', <String, dynamic>{
+      'p_title': title,
+      'p_members': memberIds,
+      'p_description': description,
+      'p_avatar_path': avatarPath,
+    }),
+  );
 
   /// `add_group_members(p_conversation, p_members)` — admin/owner only.
   ///
@@ -278,13 +276,12 @@ class ChatApi {
   Future<int> addGroupMembers(
     String conversationId,
     List<String> memberIds,
-  ) async =>
-      asInt(
-        await _rpc('add_group_members', <String, dynamic>{
-          'p_conversation': conversationId,
-          'p_members': memberIds,
-        }),
-      );
+  ) async => asInt(
+    await _rpc('add_group_members', <String, dynamic>{
+      'p_conversation': conversationId,
+      'p_members': memberIds,
+    }),
+  );
 
   /// `remove_group_member(p_conversation, p_member)`.
   ///
@@ -471,9 +468,8 @@ class ChatApi {
     final destination =
         '$requireUserId/$targetConversationId/${newId()}$extension';
     await _guard(
-      () => _client.storage
-          .from(StorageBucket.chat.id)
-          .copy(source, destination),
+      () =>
+          _client.storage.from(StorageBucket.chat.id).copy(source, destination),
     );
     return ChatAttachment(
       storagePath: destination,
@@ -487,22 +483,22 @@ class ChatApi {
 
   /// Rewrites the body of the viewer's own message and stamps `edited_at`.
   Future<void> editMessage(String messageId, String body) => _guard(
-        () => _client
-            .from('messages')
-            .update(<String, dynamic>{'body': body, 'edited_at': _now()})
-            .eq('id', messageId)
-            .eq('author_id', requireUserId),
-      );
+    () => _client
+        .from('messages')
+        .update(<String, dynamic>{'body': body, 'edited_at': _now()})
+        .eq('id', messageId)
+        .eq('author_id', requireUserId),
+  );
 
   /// Soft-deletes the viewer's own message. Threads filter on
   /// `deleted_at is null`, so the bubble disappears on both sides.
   Future<void> deleteMessage(String messageId) => _guard(
-        () => _client
-            .from('messages')
-            .update(<String, dynamic>{'deleted_at': _now(), 'body': null})
-            .eq('id', messageId)
-            .eq('author_id', requireUserId),
-      );
+    () => _client
+        .from('messages')
+        .update(<String, dynamic>{'deleted_at': _now(), 'body': null})
+        .eq('id', messageId)
+        .eq('author_id', requireUserId),
+  );
 
   /// Adds an emoji reaction.
   Future<void> react(String messageId, String emoji) =>
@@ -514,10 +510,11 @@ class ChatApi {
 
   // ──────────────────────────────────────────────────────── shared entity ──
 
-  /// The lite card shown for a shared collection / subcollection / item.
+  /// The lite card shown for a shared collection / subcollection / item /
+  /// post.
   ///
-  /// Posts and comments are not shareable into a thread, so they resolve to
-  /// null rather than inventing a shape.
+  /// Comments are not shareable into a thread, so they resolve to null rather
+  /// than inventing a shape.
   Future<SharedEntityPreview?> fetchEntityPreview(
     EntityType type,
     String id,
@@ -527,8 +524,10 @@ class ChatApi {
         final row = await _guard(
           () => _client
               .from('collections')
-              .select('id, name, description, cover_path, cover_blurhash, '
-                  'item_count, subcollection_count')
+              .select(
+                'id, name, description, cover_path, cover_blurhash, '
+                'item_count, subcollection_count',
+              )
               .eq('id', id)
               .maybeSingle(),
         );
@@ -547,8 +546,10 @@ class ChatApi {
         final row = await _guard(
           () => _client
               .from('subcollections')
-              .select('id, name, description, cover_path, cover_blurhash, '
-                  'item_count')
+              .select(
+                'id, name, description, cover_path, cover_blurhash, '
+                'item_count',
+              )
               .eq('id', id)
               .maybeSingle(),
         );
@@ -579,6 +580,37 @@ class ChatApi {
           coverBlurhash: asStringOrNull(row['cover_blurhash']),
         );
       case EntityType.post:
+        final row = await _guard(
+          () => _client
+              .from('posts')
+              .select(
+                'id, body, author:profiles!author_id(*), '
+                'media:post_media(storage_path, blurhash, position)',
+              )
+              .eq('id', id)
+              .isFilter('deleted_at', null)
+              .maybeSingle(),
+        );
+        if (row == null) return null;
+        final author = asMap(row['author']);
+        final media = asMapList(
+          row['media'],
+        )..sort((a, b) => asInt(a['position']).compareTo(asInt(b['position'])));
+        final cover = media.isEmpty ? null : media.first;
+        final body = asStringOrNull(row['body'])?.trim();
+        final by = author.isEmpty ? null : Profile.fromJson(author);
+        return SharedEntityPreview(
+          entityType: type,
+          entityId: id,
+          title: body == null || body.isEmpty ? 'A post on KLECT' : body,
+          subtitle: by == null ? null : 'by ${by.name}',
+          coverPath: cover == null
+              ? null
+              : asStringOrNull(cover['storage_path']),
+          coverBlurhash: cover == null
+              ? null
+              : asStringOrNull(cover['blurhash']),
+        );
       case EntityType.comment:
         return null;
     }
@@ -615,14 +647,13 @@ class ChatApi {
   /// A time-limited URL for a `chat` object. The bucket is private, so this is
   /// the only way an attachment renders.
   Future<String> signedUrl(String path, {int expiresInSeconds = 3600}) =>
-      _api.signedUrl(
-        path,
-        expiresInSeconds: expiresInSeconds,
-      );
+      _api.signedUrl(path, expiresInSeconds: expiresInSeconds);
 
   /// Resolves a public path (avatars, covers) to an absolute URL.
-  String? publicUrl(String? path, {StorageBucket bucket = StorageBucket.media}) =>
-      _api.publicUrl(path, bucket: bucket);
+  String? publicUrl(
+    String? path, {
+    StorageBucket bucket = StorageBucket.media,
+  }) => _api.publicUrl(path, bucket: bucket);
 
   // ──────────────────────────────────────────────────────────────── calls ──
 
@@ -630,8 +661,7 @@ class ChatApi {
   Future<CallModel> createCall({
     required String conversationId,
     CallKind kind = CallKind.audio,
-  }) =>
-      _api.createCall(conversationId: conversationId, kind: kind);
+  }) => _api.createCall(conversationId: conversationId, kind: kind);
 
   /// Reads one call.
   Future<CallModel?> fetchCall(String callId) => _api.fetchCall(callId);
@@ -642,13 +672,12 @@ class ChatApi {
     CallStatus status, {
     int? durationSeconds,
     String? endReason,
-  }) =>
-      _api.updateCallStatus(
-        callId,
-        status,
-        durationSeconds: durationSeconds,
-        endReason: endReason,
-      );
+  }) => _api.updateCallStatus(
+    callId,
+    status,
+    durationSeconds: durationSeconds,
+    endReason: endReason,
+  );
 
   /// Records that the viewer joined the media session.
   Future<void> joinCall(String callId) => _api.joinCall(callId);
@@ -662,13 +691,12 @@ class ChatApi {
     required CallSignalType type,
     required Map<String, dynamic> payload,
     String? recipientId,
-  }) =>
-      _api.sendCallSignal(
-        callId: callId,
-        type: type,
-        payload: payload,
-        recipientId: recipientId,
-      );
+  }) => _api.sendCallSignal(
+    callId: callId,
+    type: type,
+    payload: payload,
+    recipientId: recipientId,
+  );
 
   /// Every signal for a call, oldest first.
   ///
@@ -829,46 +857,45 @@ class ChatApi {
   RealtimeChannel callsChannel({
     required void Function(Map<String, dynamic> row) onInsert,
     required void Function(Map<String, dynamic> row) onUpdate,
-  }) =>
-      _client
-          .channel('calls:$requireUserId')
-          .onPostgresChanges(
-            event: PostgresChangeEvent.insert,
-            schema: 'public',
-            table: 'calls',
-            callback: (payload) => onInsert(payload.newRecord),
-          )
-          .onPostgresChanges(
-            event: PostgresChangeEvent.update,
-            schema: 'public',
-            table: 'calls',
-            callback: (payload) => onUpdate(payload.newRecord),
-          );
+  }) => _client
+      .channel('calls:$requireUserId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'calls',
+        callback: (payload) => onInsert(payload.newRecord),
+      )
+      .onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'calls',
+        callback: (payload) => onUpdate(payload.newRecord),
+      );
 
   /// UPDATEs on one call row — how each side learns the other answered,
   /// declined or hung up.
   RealtimeChannel callChannel({
     required String callId,
     required void Function(Map<String, dynamic> row) onUpdate,
-  }) =>
-      _client.channel('call-state:$callId').onPostgresChanges(
-            event: PostgresChangeEvent.update,
-            schema: 'public',
-            table: 'calls',
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'id',
-              value: callId,
-            ),
-            callback: (payload) => onUpdate(payload.newRecord),
-          );
+  }) => _client
+      .channel('call-state:$callId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'calls',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'id',
+          value: callId,
+        ),
+        callback: (payload) => onUpdate(payload.newRecord),
+      );
 
   /// WebRTC signals for one call.
   RealtimeChannel callSignalsChannel({
     required String callId,
     required void Function(Map<String, dynamic> row) onSignal,
-  }) =>
-      _api.callSignalsChannel(callId: callId, onSignal: onSignal);
+  }) => _api.callSignalsChannel(callId: callId, onSignal: onSignal);
 
   /// Tears a channel down.
   Future<void> removeChannel(RealtimeChannel channel) =>

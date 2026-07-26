@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { ReportDialog } from '@/components/ui/ReportDialog';
 import { Sheet } from '@/components/ui/Sheet';
+import { ShareMenu } from '@/components/social/ShareMenu';
 import { blockUser, muteUser } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { entityHref, type EntityType } from '@/lib/entities';
@@ -52,18 +53,9 @@ export function OverflowSheet({
   const { success, fromError, toast } = useToast();
   const [reporting, setReporting] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const url = `${SITE_URL}${entityHref(type, id)}`;
-
-  const copyLink = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      success('Link copied');
-    } catch (error) {
-      fromError(error);
-    }
-    onClose();
-  }, [fromError, onClose, success, url]);
 
   const requireAuth = useCallback((): boolean => {
     if (user) return true;
@@ -101,11 +93,11 @@ export function OverflowSheet({
 
   const rows: Row[] = [
     {
-      key: 'copy',
-      icon: 'link',
-      label: 'Copy link',
+      key: 'share',
+      icon: 'share',
+      label: 'Share',
       description: url.replace(/^https?:\/\//, ''),
-      run: () => void copyLink(),
+      run: () => setSharing(true),
     },
     {
       key: 'open',
@@ -192,6 +184,17 @@ export function OverflowSheet({
           ))}
         </ul>
       </Sheet>
+
+      <ShareMenu
+        open={sharing}
+        onClose={() => {
+          setSharing(false);
+          onClose();
+        }}
+        type={type}
+        id={id}
+        title={title}
+      />
 
       <ReportDialog
         open={reporting}

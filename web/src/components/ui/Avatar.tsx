@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { cn } from '@/lib/cn';
 import { initials } from '@/lib/format';
-import { avatarUrl } from '@/lib/storage';
+import { avatarUrl, isOptimizableImageSrc } from '@/lib/storage';
 import { Icon } from './Icon';
 
 export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
@@ -15,6 +16,17 @@ const sizeClasses: Record<AvatarSize, string> = {
   lg: 'size-12 text-body-strong',
   xl: 'size-16 text-title2',
   '2xl': 'size-24 text-display3',
+};
+
+/** CSS pixel box per size — the `sizes` hint, so a 40px circle never
+    downloads the original upload. Mirrors `sizeClasses` (token space ramp). */
+const sizePx: Record<AvatarSize, number> = {
+  xs: 24,
+  sm: 32,
+  md: 40,
+  lg: 48,
+  xl: 64,
+  '2xl': 96,
 };
 
 const badgeSizeClasses: Record<AvatarSize, string> = {
@@ -55,21 +67,20 @@ export function Avatar({
     <span className={cn('relative inline-flex shrink-0', className)}>
       <span
         className={cn(
-          'inline-flex items-center justify-center overflow-hidden rounded-full',
+          'relative inline-flex items-center justify-center overflow-hidden rounded-full',
           'bg-surface-3 text-ink-2 font-sans font-semibold uppercase',
           ring && 'ring-2 ring-accent ring-offset-2 ring-offset-base',
           sizeClasses[size],
         )}
       >
         {src && !failed ? (
-          /* eslint-disable-next-line @next/next/no-img-element -- avatars come
-             from arbitrary storage hosts; see BlurhashImage for the rationale. */
-          <img
+          <Image
             src={src}
             alt=""
-            className="size-full object-cover"
-            loading="lazy"
-            decoding="async"
+            fill
+            sizes={`${sizePx[size]}px`}
+            unoptimized={!isOptimizableImageSrc(src)}
+            className="object-cover"
             onError={() => setFailed(true)}
           />
         ) : name || username ? (

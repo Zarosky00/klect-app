@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
         hostname: supabaseHost,
         pathname: '/storage/v1/**',
       },
+      // Seeded demo media are absolute picsum URLs (PROJECT_STATE). The bare
+      // host issues a redirect to the fastly host, so both must be allowed.
+      { protocol: 'https', hostname: 'picsum.photos' },
+      { protocol: 'https', hostname: 'fastly.picsum.photos' },
     ],
     // Blurhash placeholders are painted by <BlurhashImage/>, so Next's own
     // blur placeholder is redundant.

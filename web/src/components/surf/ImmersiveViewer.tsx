@@ -3,12 +3,14 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from 'react';
+import Image from 'next/image';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -16,10 +18,13 @@ import { Portal, useEscape, useLockBodyScroll } from '@/components/ui/overlay';
 import { curve, duration, gesture, reducedTransition } from '@/design/motion';
 import { getCloseup } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import type { EntityType } from '@/lib/entities';
-import { mediaUrl } from '@/lib/storage';
+import { isOptimizableImageSrc, mediaUrl } from '@/lib/storage';
 import { useSession } from '@/providers/session-provider';
-import type { CloseupMedia, CloseupPayload } from '@/lib/types';
+import {
+  photosFromPayload,
+  type ImmersivePhoto,
+  type ImmersiveSource,
+} from './immersive-source';
 
 /**
  * The immersive fullscreen viewer — the double-tap half of the gesture
@@ -33,6 +38,12 @@ import type { CloseupMedia, CloseupPayload } from '@/lib/types';
  * upgrades to the entity's full photo set as soon as `get_closeup` lands. For a
  * collection or a subcollection the "photo set" is its children's covers, so a
  * double tap on a shelf sweeps through the shelf.
+ *
+ * Gesture transforms (pinch scale, pan, swipe drag) are written straight to
+ * `element.style` through refs — never through React state — so a pinch is a
+ * compositor-only update instead of a render per pointer event. State is
+ * reserved for discrete changes: the photo index, chrome visibility, and
+ * whether the image is zoomed at all (which flips cursor/behaviour).
  */
 
 /** Zoom limits. Behavioural, not visual — no design token describes them. */
@@ -43,59 +54,8 @@ const DOUBLE_TAP_SCALE = 2.5;
 /** "Chrome auto-hides after 2s" (§4), expressed against the duration ramp. */
 const CHROME_IDLE_MS = duration.deliberate * 4;
 
-export interface ImmersivePhoto {
-  id: string;
-  src: string | null;
-  alt: string;
-  width: number | null;
-  height: number | null;
-}
-
-export interface ImmersiveSource {
-  type: EntityType;
-  id: string;
-  title: string;
-  /** Shown immediately, before the full set arrives. */
-  cover: { path: string | null; width: number | null; height: number | null };
-  /** Supplied by the closeup, which already holds the media array. */
-  photos?: ImmersivePhoto[];
-  startIndex?: number;
-}
-
-export function photosFromMedia(media: CloseupMedia[], title: string): ImmersivePhoto[] {
-  return media.map((photo, index) => ({
-    id: photo.id,
-    src: mediaUrl(photo.storage_path),
-    alt: photo.alt_text ?? `${title} — photo ${index + 1} of ${media.length}`,
-    width: photo.width,
-    height: photo.height,
-  }));
-}
-
-function photosFromPayload(payload: CloseupPayload, title: string): ImmersivePhoto[] {
-  switch (payload.entity_type) {
-    case 'item':
-      return photosFromMedia(payload.media, title);
-    case 'subcollection':
-      return payload.items.map((item) => ({
-        id: item.id,
-        src: mediaUrl(item.cover_path),
-        alt: item.title,
-        width: item.cover_width,
-        height: item.cover_height,
-      }));
-    case 'collection':
-      return payload.items.map((item) => ({
-        id: item.id,
-        src: mediaUrl(item.cover_path),
-        alt: item.title,
-        width: item.cover_width,
-        height: item.cover_height,
-      }));
-    default:
-      return [];
-  }
-}
+export type { ImmersivePhoto, ImmersiveSource } from './immersive-source';
+export { photosFromMedia } from './immersive-source';
 
 interface Transform {
   scale: number;
@@ -117,12 +77,18 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
 
   const [fetched, setFetched] = useState<ImmersivePhoto[] | null>(null);
   const [index, setIndex] = useState(0);
-  const [transform, setTransform] = useState<Transform>(IDENTITY);
-  const [dragX, setDragX] = useState(0);
-  const [dragging, setDragging] = useState(false);
+  /** Discrete zoom mode — flips only when the scale crosses 1. */
+  const [zoomed, setZoomed] = useState(false);
   const [chrome, setChrome] = useState(true);
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const activeImageRef = useRef<HTMLImageElement | null>(null);
+  /** The continuous gesture values live here, never in state. */
+  const transformRef = useRef<Transform>(IDENTITY);
+  const dragXRef = useRef(0);
+  const indexRef = useRef(0);
+  const stripEverApplied = useRef(false);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; scale: number } | null>(null);
   const panStart = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
@@ -131,6 +97,66 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
 
   useLockBodyScroll(open);
   useEscape(open, onClose);
+
+  /* ── direct style writers (compositor-speed, no re-render) ─────────────── */
+
+  const applyStrip = useCallback(
+    (animated: boolean) => {
+      const strip = stripRef.current;
+      if (!strip) return;
+      strip.style.transition =
+        animated && !reduced
+          ? 'transform var(--k-dur-medium) var(--k-ease-emphasized)'
+          : 'none';
+      strip.style.transform = `translate3d(calc(${-indexRef.current * 100}% + ${dragXRef.current}px), 0, 0)`;
+    },
+    [reduced],
+  );
+
+  const applyImageTransform = useCallback(
+    (animated: boolean) => {
+      const img = activeImageRef.current;
+      if (!img) return;
+      const t = transformRef.current;
+      img.style.transition =
+        animated && !reduced
+          ? 'transform var(--k-dur-base) var(--k-ease-standard)'
+          : 'none';
+      img.style.transform = `translate3d(${t.x}px, ${t.y}px, 0) scale(${t.scale})`;
+      img.style.cursor = t.scale > MIN_SCALE ? 'grab' : 'zoom-in';
+    },
+    [reduced],
+  );
+
+  /** Callback ref for the active slide's <img>. React calls it with null for
+      the outgoing element first, which is when its inline transform is wiped —
+      a neighbour in the ±1 window must not keep a stale zoom. */
+  const setActiveImage = useCallback(
+    (element: HTMLImageElement | null) => {
+      if (element === null) {
+        const previous = activeImageRef.current;
+        if (previous) {
+          previous.style.transform = '';
+          previous.style.transition = '';
+          previous.style.cursor = '';
+        }
+        activeImageRef.current = null;
+        return;
+      }
+      activeImageRef.current = element;
+      applyImageTransform(false);
+    },
+    [applyImageTransform],
+  );
+
+  const resetTransform = useCallback(
+    (animated = false) => {
+      transformRef.current = IDENTITY;
+      applyImageTransform(animated);
+      setZoomed(false);
+    },
+    [applyImageTransform],
+  );
 
   /* ── the photo set ──────────────────────────────────────────────────────── */
 
@@ -159,7 +185,7 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
       return;
     }
     setIndex(Math.min(source.startIndex ?? 0, Math.max(photos.length - 1, 0)));
-    setTransform(IDENTITY);
+    resetTransform();
     // The caller already handed us the full set; no round trip needed.
     if (source.photos && source.photos.length > 0) return;
 
@@ -178,7 +204,20 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
     };
     // `photos.length` intentionally excluded: it changes as a *result* of this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, supabase]);
+  }, [source, supabase, resetTransform]);
+
+  /** The strip position follows the discrete index. Animated except on the
+      very first paint, where a startIndex > 0 must not sweep across the set. */
+  useLayoutEffect(() => {
+    if (!open) {
+      stripEverApplied.current = false;
+      return;
+    }
+    indexRef.current = index;
+    dragXRef.current = 0;
+    applyStrip(stripEverApplied.current);
+    stripEverApplied.current = true;
+  }, [applyStrip, index, open, photos.length]);
 
   /* ── chrome auto-hide ───────────────────────────────────────────────────── */
 
@@ -208,18 +247,22 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
         if (next < 0 || next > photos.length - 1) return current;
         return next;
       });
-      setTransform(IDENTITY);
+      resetTransform();
       wakeChrome();
     },
-    [photos.length, wakeChrome],
+    [photos.length, resetTransform, wakeChrome],
   );
 
-  const zoomTo = useCallback((scale: number) => {
-    const clamped = Math.min(Math.max(scale, MIN_SCALE), MAX_SCALE);
-    setTransform((current) =>
-      clamped === MIN_SCALE ? IDENTITY : { ...current, scale: clamped },
-    );
-  }, []);
+  const zoomTo = useCallback(
+    (scale: number, animated = true) => {
+      const clamped = Math.min(Math.max(scale, MIN_SCALE), MAX_SCALE);
+      transformRef.current =
+        clamped === MIN_SCALE ? IDENTITY : { ...transformRef.current, scale: clamped };
+      applyImageTransform(animated);
+      setZoomed(clamped > MIN_SCALE);
+    },
+    [applyImageTransform],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -236,25 +279,25 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
         case 'Home':
           event.preventDefault();
           setIndex(0);
-          setTransform(IDENTITY);
+          resetTransform();
           break;
         case 'End':
           event.preventDefault();
           setIndex(photos.length - 1);
-          setTransform(IDENTITY);
+          resetTransform();
           break;
         case '+':
         case '=':
           event.preventDefault();
-          zoomTo(transform.scale * 1.5);
+          zoomTo(transformRef.current.scale * 1.5);
           break;
         case '-':
           event.preventDefault();
-          zoomTo(transform.scale / 1.5);
+          zoomTo(transformRef.current.scale / 1.5);
           break;
         case '0':
           event.preventDefault();
-          setTransform(IDENTITY);
+          resetTransform(true);
           break;
         default:
           return;
@@ -263,7 +306,7 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [go, open, photos.length, transform.scale, wakeChrome, zoomTo]);
+  }, [go, open, photos.length, resetTransform, wakeChrome, zoomTo]);
 
   /* ── pointer gestures ───────────────────────────────────────────────────── */
 
@@ -282,25 +325,31 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
       wakeChrome();
 
       if (pointers.current.size === 2) {
-        pinch.current = { distance: distanceBetweenPointers(), scale: transform.scale };
+        pinch.current = {
+          distance: distanceBetweenPointers(),
+          scale: transformRef.current.scale,
+        };
         swipeStart.current = null;
         panStart.current = null;
+        // A swipe that escalates into a pinch must not leave the strip
+        // half-dragged.
+        dragXRef.current = 0;
+        applyStrip(false);
         return;
       }
 
-      if (transform.scale > MIN_SCALE) {
+      if (transformRef.current.scale > MIN_SCALE) {
         panStart.current = {
           x: event.clientX,
           y: event.clientY,
-          tx: transform.x,
-          ty: transform.y,
+          tx: transformRef.current.x,
+          ty: transformRef.current.y,
         };
       } else {
         swipeStart.current = { x: event.clientX, t: performance.now() };
-        setDragging(true);
       }
     },
-    [transform, wakeChrome],
+    [applyStrip, wakeChrome],
   );
 
   const onPointerMove = useCallback(
@@ -312,26 +361,28 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
         const distance = distanceBetweenPointers();
         if (pinch.current.distance > 0) {
           const ratio = distance / pinch.current.distance;
-          zoomTo(pinch.current.scale * ratio);
+          zoomTo(pinch.current.scale * ratio, false);
         }
         return;
       }
 
       if (panStart.current) {
         const start = panStart.current;
-        setTransform((current) => ({
-          ...current,
+        transformRef.current = {
+          ...transformRef.current,
           x: start.tx + (event.clientX - start.x),
           y: start.ty + (event.clientY - start.y),
-        }));
+        };
+        applyImageTransform(false);
         return;
       }
 
       if (swipeStart.current) {
-        setDragX(event.clientX - swipeStart.current.x);
+        dragXRef.current = event.clientX - swipeStart.current.x;
+        applyStrip(false);
       }
     },
-    [zoomTo],
+    [applyImageTransform, applyStrip, zoomTo],
   );
 
   const endGesture = useCallback(
@@ -346,12 +397,7 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
 
       const start = swipeStart.current;
       swipeStart.current = null;
-      setDragging(false);
-
-      if (!start) {
-        setDragX(0);
-        return;
-      }
+      if (!start) return;
 
       const travelled = event.clientX - start.x;
       const elapsed = Math.max(performance.now() - start.t, 1);
@@ -360,26 +406,29 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
         Math.abs(travelled) > gesture.sheetDismissPx ||
         (velocity > gesture.sheetDismissVelocity && Math.abs(travelled) > gesture.slopPx);
 
-      setDragX(0);
+      // Spring back (or on) immediately; if the swipe committed, `go` moves the
+      // index and the layout effect animates the strip to its new home.
+      dragXRef.current = 0;
+      applyStrip(true);
       if (committed) go(travelled < 0 ? 1 : -1);
     },
-    [go],
+    [applyStrip, go],
   );
 
   const onWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {
       if (photos.length === 0) return;
       wakeChrome();
-      const next = transform.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12);
+      const next = transformRef.current.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12);
       zoomTo(next);
     },
-    [photos.length, transform.scale, wakeChrome, zoomTo],
+    [photos.length, wakeChrome, zoomTo],
   );
 
   const toggleZoom = useCallback(() => {
-    zoomTo(transform.scale > MIN_SCALE ? MIN_SCALE : DOUBLE_TAP_SCALE);
+    zoomTo(transformRef.current.scale > MIN_SCALE ? MIN_SCALE : DOUBLE_TAP_SCALE);
     wakeChrome();
-  }, [transform.scale, wakeChrome, zoomTo]);
+  }, [wakeChrome, zoomTo]);
 
   /* ── render ─────────────────────────────────────────────────────────────── */
 
@@ -411,16 +460,9 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
               onDoubleClick={toggleZoom}
               onMouseMove={wakeChrome}
             >
-              <div
-                className="flex h-full w-full"
-                style={{
-                  transform: `translate3d(calc(${-index * 100}% + ${dragX}px), 0, 0)`,
-                  transition:
-                    dragging || reduced
-                      ? 'none'
-                      : `transform var(--k-dur-medium) var(--k-ease-emphasized)`,
-                }}
-              >
+              {/* Transform is owned by `applyStrip`, not JSX — React must never
+                  clobber a mid-gesture position on an unrelated re-render. */}
+              <div ref={stripRef} className="flex h-full w-full">
                 {photos.map((photo, position) => {
                   // Only a ±1 window is decoded, so memory stays flat on a long
                   // sweep through a big set (CHECKLIST D).
@@ -433,31 +475,26 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
                       aria-hidden={!active}
                     >
                       {near && photo.src ? (
-                        /* eslint-disable-next-line @next/next/no-img-element --
-                           immersive photography comes from arbitrary hosts and is
-                           sized by the viewport, not by a layout box; next/image
-                           would need a remotePattern per host and adds nothing
-                           here. */
-                        <img
-                          src={photo.src}
-                          alt={photo.alt}
-                          draggable={false}
-                          decoding="async"
-                          className="max-h-full max-w-full object-contain"
-                          style={
-                            active
-                              ? {
-                                  transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
-                                  transition:
-                                    panStart.current || pinch.current || reduced
-                                      ? 'none'
-                                      : 'transform var(--k-dur-base) var(--k-ease-standard)',
-                                  cursor:
-                                    transform.scale > MIN_SCALE ? 'grab' : 'zoom-in',
-                                }
-                              : undefined
-                          }
-                        />
+                        <span className="relative block h-full w-full">
+                          {/* Viewport-sized via `sizes`, so the viewer streams a
+                              screen-fit rendition instead of the original.
+                              Eager: the ±1 window sits off-viewport until the
+                              swipe, exactly when it is too late to start. */}
+                          <Image
+                            ref={active ? setActiveImage : undefined}
+                            src={photo.src}
+                            alt={photo.alt}
+                            fill
+                            sizes="100vw"
+                            loading="eager"
+                            draggable={false}
+                            unoptimized={!isOptimizableImageSrc(photo.src)}
+                            className={cn(
+                              'object-contain',
+                              active && !zoomed && 'cursor-zoom-in',
+                            )}
+                          />
+                        </span>
                       ) : (
                         <span className="size-full max-h-full rounded-lg bg-surface-1" />
                       )}
@@ -512,7 +549,7 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
                     variant="ghost"
                     onClick={() => go(-1)}
                     disabled={index === 0}
-                    className="glass rounded-full text-ink"
+                    className="rounded-full bg-glass text-ink"
                   />
                 </div>
                 <div
@@ -527,7 +564,7 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
                     variant="ghost"
                     onClick={() => go(1)}
                     disabled={index === total - 1}
-                    className="glass rounded-full text-ink"
+                    className="rounded-full bg-glass text-ink"
                   />
                 </div>
               </>
@@ -556,24 +593,26 @@ export function ImmersiveViewer({ source, onClose }: ImmersiveViewerProps) {
                       aria-label={`Photo ${position + 1} of ${total}`}
                       onClick={() => {
                         setIndex(position);
-                        setTransform(IDENTITY);
+                        resetTransform();
                         wakeChrome();
                       }}
                       className={cn(
-                        'focus-ring size-12 flex-none overflow-hidden rounded-sm border',
+                        'focus-ring relative size-12 flex-none overflow-hidden rounded-sm border',
                         position === index
                           ? 'border-accent'
                           : 'border-line opacity-[var(--k-opacity-hover)]',
                       )}
                     >
                       {photo.src ? (
-                        /* eslint-disable-next-line @next/next/no-img-element -- see above. */
-                        <img
+                        /* 48px box → 48px rendition. The rail must never pull
+                           the originals the main stage is already paying for. */
+                        <Image
                           src={photo.src}
                           alt=""
-                          loading="lazy"
-                          decoding="async"
-                          className="size-full object-cover"
+                          fill
+                          sizes="48px"
+                          unoptimized={!isOptimizableImageSrc(photo.src)}
+                          className="object-cover"
                         />
                       ) : (
                         <span className="grid size-full place-items-center bg-surface-2 text-ink-3">

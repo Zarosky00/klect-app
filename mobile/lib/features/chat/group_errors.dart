@@ -22,7 +22,7 @@ const Map<String, String> _groupErrorCopy = <String, String>{
 /// database that does not have the group RPCs yet (migration `0017` not
 /// applied) degrades to one honest line instead of a PostgREST stack trace.
 String groupErrorCopy(KlectError error) {
-  final mapped = _groupErrorCopy[error.message.trim()];
+  final mapped = _groupErrorCopy[error.raw.trim()];
   if (mapped != null) return mapped;
   if (error.kind == KlectErrorKind.network) {
     return 'You are offline — that change never reached the group.';

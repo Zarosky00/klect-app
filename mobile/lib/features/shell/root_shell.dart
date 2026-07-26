@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,8 @@ import '../../core/api/klect_api.dart';
 import '../../core/supabase.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
+import '../notifications/notification_events.dart';
+import '../notifications/notification_surfaces.dart';
 import 'update_banner.dart';
 
 /// Unread notification count, for the tab badge.
@@ -23,7 +26,12 @@ final unreadNotificationCountProvider = FutureProvider<int>(
 ///
 /// Each tab keeps its own navigation stack, so switching away and back returns
 /// you exactly where you were.
-class RootShell extends ConsumerWidget {
+///
+/// The shell also owns the app-wide notification surfaces: it keeps
+/// [notificationEventsProvider] (the one realtime channel) alive from the
+/// moment the signed-in shell exists, refreshes the tab badge per event, and
+/// hands each event to [NotificationPresenter] for the banner / tray.
+class RootShell extends ConsumerStatefulWidget {
   /// Wraps the branch navigator produced by `StatefulShellRoute`.
   const RootShell({required this.navigationShell, super.key});
 
@@ -31,20 +39,60 @@ class RootShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RootShell> createState() => _RootShellState();
+}
+
+class _RootShellState extends ConsumerState<RootShell> {
+  @override
+  void initState() {
+    super.initState();
+    // Channel creation + the Android 13 permission prompt must happen while
+    // foregrounded — by the time a tray notification is wanted we no longer
+    // may ask. Also resolves a cold start *from* a tray tap into its
+    // deep link.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_initLocalNotifications());
+    });
+  }
+
+  Future<void> _initLocalNotifications() async {
+    final local = ref.read(localNotificationsProvider);
+    await local.ensureReady();
+    final launchPath = await local.takeLaunchPayload();
+    if (launchPath != null && mounted) {
+      unawaited(GoRouter.of(context).push(launchPath));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.kc;
     final unread = ref.watch(unreadNotificationCountProvider).value ?? 0;
+
+    // Listening here (not in the Alerts tab) is what makes the badge, banner
+    // and tray live from app start rather than from the first Alerts visit.
+    ref.listen(notificationEventsProvider, (previous, next) {
+      // A rebuild of the events provider (sign-in change) re-emits its last
+      // value inside an AsyncLoading — only genuine stream events matter.
+      if (next.isLoading) return;
+      final incoming = next.value;
+      if (incoming == null) return;
+      ref.invalidate(unreadNotificationCountProvider);
+      unawaited(
+        ref.read(notificationPresenterProvider).present(context, incoming),
+      );
+    });
 
     return Scaffold(
       backgroundColor: colors.bgBase,
       extendBody: true,
-      body: navigationShell,
+      body: widget.navigationShell,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           // Sideloaded-build update prompt; renders nothing when up to date.
           const UpdateBanner(),
-          _BottomBar(navigationShell: navigationShell, unread: unread),
+          _BottomBar(navigationShell: widget.navigationShell, unread: unread),
         ],
       ),
     );

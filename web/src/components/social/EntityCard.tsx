@@ -3,11 +3,13 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
+import { getCloseup } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { ENTITY_LABEL, entityHref } from '@/lib/entities';
 import { compactCount, plural } from '@/lib/format';
 import { closeupHref } from '@/lib/routes';
 import { mediaUrl } from '@/lib/storage';
+import { photosFromPayload } from '@/components/surf/immersive-source';
 import { ActionBar } from '@/components/ui/ActionBar';
 import { BlurhashImage } from '@/components/ui/BlurhashImage';
 import { Icon } from '@/components/ui/Icon';
@@ -82,22 +84,31 @@ export function EntityCard({
     router.push(closeupHref(summary.type, summary.id));
   }, [router, summary.id, summary.type]);
 
-  /** The escalation: an item opens its whole photo set, not just the cover. */
+  /** The escalation: an item opens its whole photo set; a collection or
+      subcollection sweeps its children's covers (mobile `immersiveMediaOf`
+      parity) — never just the cover. */
   const openImmersive = useCallback(async () => {
     setImmersive(true);
-    if (photos || summary.type !== 'item') return;
+    if (photos) return;
     try {
-      const media = await listItemMedia(supabase, summary.id);
-      if (media.length === 0) return;
-      setPhotos(
-        media.map((entry, index) => ({
-          id: entry.id,
-          src: mediaUrl(entry.storage_path),
-          alt: entry.alt_text ?? `${summary.title} — photo ${index + 1} of ${media.length}`,
-          width: entry.width,
-          height: entry.height,
-        })),
-      );
+      if (summary.type === 'item') {
+        const media = await listItemMedia(supabase, summary.id);
+        if (media.length === 0) return;
+        setPhotos(
+          media.map((entry, index) => ({
+            id: entry.id,
+            src: mediaUrl(entry.storage_path),
+            alt: entry.alt_text ?? `${summary.title} — photo ${index + 1} of ${media.length}`,
+            width: entry.width,
+            height: entry.height,
+          })),
+        );
+        return;
+      }
+      const payload = await getCloseup(supabase, summary.type, summary.id);
+      if (!payload) return;
+      const set = photosFromPayload(payload, summary.title);
+      if (set.length > 0) setPhotos(set);
     } catch {
       // The cover is already on screen; a failed set fetch is not worth a toast.
     }

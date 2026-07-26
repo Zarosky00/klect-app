@@ -4,10 +4,8 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../core/interactions/interactions.dart';
-import '../../../core/links.dart';
 import '../../../design/motion.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
@@ -87,16 +85,15 @@ class _PeekRoute extends PopupRoute<void> {
     BuildContext context,
     Animation<double> animation,
     Animation<double> secondaryAnimation,
-  ) =>
-      _PeekBody(
-        entity: entity,
-        animation: animation,
-        title: title,
-        subtitle: subtitle,
-        imageUrl: imageUrl,
-        blurhash: blurhash,
-        aspectRatio: aspectRatio,
-      );
+  ) => _PeekBody(
+    entity: entity,
+    animation: animation,
+    title: title,
+    subtitle: subtitle,
+    imageUrl: imageUrl,
+    blurhash: blurhash,
+    aspectRatio: aspectRatio,
+  );
 }
 
 class _PeekAction {
@@ -142,12 +139,18 @@ class _PeekBody extends ConsumerWidget {
   /// Fraction of the entrance each action's spring is offset by.
   static const double _stagger = 0.08;
 
-  Future<void> _share(BuildContext context) async {
-    Navigator.of(context).pop();
-    final url = KlectLinks.urlFor(entity.type, entity.id);
-    final label = title;
-    await SharePlus.instance.share(
-      ShareParams(text: label == null ? url : '$label\n$url', subject: label),
+  void _share(BuildContext context) {
+    // Take the navigator's own context before popping: this route's context is
+    // about to deactivate, and the share chooser has to outlive the peek.
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    unawaited(
+      KShareSheet.show(
+        navigator.context,
+        entityType: entity.type,
+        entityId: entity.id,
+        title: title,
+      ),
     );
   }
 
@@ -215,7 +218,7 @@ class _PeekBody extends ConsumerWidget {
         activeIcon: Icons.ios_share_rounded,
         label: 'Share',
         color: colors.actionShare,
-        onTap: () => unawaited(_share(context)),
+        onTap: () => _share(context),
       ),
       _PeekAction(
         icon: Icons.flag_outlined,
@@ -258,8 +261,9 @@ class _PeekBody extends ConsumerWidget {
                     if (title != null) ...<Widget>[
                       const SizedBox(height: Space.s4),
                       Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: Space.s6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Space.s6,
+                        ),
                         child: Text(
                           title!,
                           textAlign: TextAlign.center,
@@ -273,21 +277,19 @@ class _PeekBody extends ConsumerWidget {
                       const SizedBox(height: Space.s1),
                       Text(
                         subtitle!,
-                        style:
-                            text.caption.copyWith(color: colors.textSecondary),
+                        style: text.caption.copyWith(
+                          color: colors.textSecondary,
+                        ),
                       ),
                     ],
                     const SizedBox(height: Space.s8),
                     Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: Space.s4),
+                      padding: const EdgeInsets.symmetric(horizontal: Space.s4),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          for (var index = 0;
-                              index < actions.length;
-                              index++)
+                          for (var index = 0; index < actions.length; index++)
                             _PeekActionButton(
                               action: actions[index],
                               animation: animation,
@@ -355,9 +357,10 @@ class _PeekPreview extends StatelessWidget {
 
     if (reduced) return preview;
     return ScaleTransition(
-      scale: Tween<double>(begin: KMotion.pressScale, end: 1).animate(
-        CurvedAnimation(parent: animation, curve: KCurves.overshoot),
-      ),
+      scale: Tween<double>(
+        begin: KMotion.pressScale,
+        end: 1,
+      ).animate(CurvedAnimation(parent: animation, curve: KCurves.overshoot)),
       child: preview,
     );
   }

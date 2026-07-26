@@ -7,6 +7,7 @@ import '../../core/api/klect_api.dart';
 import '../../core/models/models.dart';
 import '../../core/supabase.dart';
 import '../shell/root_shell.dart';
+import 'notification_events.dart';
 
 /// The viewer's notifications, kept live.
 ///
@@ -25,17 +26,19 @@ class NotificationsController extends AsyncNotifier<List<NotificationModel>> {
     if (userId == null) return const <NotificationModel>[];
 
     final api = ref.watch(klectApiProvider);
-    final channel = api.notificationsChannel(onInsert: _onInsert);
-    channel.subscribe();
-    ref.onDispose(() => unawaited(api.removeChannel(channel)));
+    // The realtime channel lives at shell level (notificationEventsProvider)
+    // so the badge and banner are live before this list is ever opened; here
+    // we only fold its events into the loaded list. The id-dedupe in
+    // [_onInsert] makes a replayed event harmless.
+    ref.listen(notificationEventsProvider, (previous, next) {
+      final incoming = next.value;
+      if (incoming != null) _onInsert(incoming);
+    });
 
     return api.fetchNotifications();
   }
 
-  void _onInsert(Map<String, dynamic> row) {
-    final incoming = NotificationModel.fromJson(row);
-    if (incoming.id.isEmpty) return;
-
+  void _onInsert(NotificationModel incoming) {
     final current = state.value ?? const <NotificationModel>[];
     if (current.any((existing) => existing.id == incoming.id)) return;
 

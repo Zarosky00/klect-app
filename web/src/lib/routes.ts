@@ -27,6 +27,7 @@ export const routes = {
 
   settings: '/settings',
   settingsPrivacy: '/settings/privacy',
+  settingsNotifications: '/settings/notifications',
   settingsBlocked: '/settings/blocked',
   settingsAppearance: '/settings/appearance',
 

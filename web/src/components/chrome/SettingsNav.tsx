@@ -9,6 +9,7 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 const links: Array<{ href: string; label: string; icon: IconName }> = [
   { href: routes.settings, label: 'Profile', icon: 'user' },
   { href: routes.settingsPrivacy, label: 'Privacy', icon: 'lock' },
+  { href: routes.settingsNotifications, label: 'Notifications', icon: 'bell' },
   { href: routes.settingsBlocked, label: 'Blocked', icon: 'shield' },
   { href: routes.settingsAppearance, label: 'Appearance', icon: 'sun' },
 ];

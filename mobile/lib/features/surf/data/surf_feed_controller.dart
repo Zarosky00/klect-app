@@ -7,6 +7,7 @@ import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/models/models.dart';
+import '../../../core/offline/feed_page_cache.dart';
 import '../../../core/supabase.dart';
 
 /// Everything the Surf grid needs to render one filter's infinite feed.
@@ -29,6 +30,7 @@ class SurfFeedState {
     this.hasMore = true,
     this.error,
     this.pageAnchor = 0,
+    this.fromCache = false,
   });
 
   /// Which filter chip this feed belongs to.
@@ -64,6 +66,10 @@ class SurfFeedState {
   /// not animate.
   final int pageAnchor;
 
+  /// True when [cards] were hydrated from the offline first-page cache. The
+  /// next retry then reloads from the top instead of paging under stale rows.
+  final bool fromCache;
+
   /// True when there is nothing to show and nothing on the way.
   bool get isEmpty => cards.isEmpty && !loading;
 
@@ -79,19 +85,20 @@ class SurfFeedState {
     KlectError? error,
     bool clearError = false,
     int? pageAnchor,
-  }) =>
-      SurfFeedState(
-        filter: filter,
-        cards: cards ?? this.cards,
-        aspects: aspects ?? this.aspects,
-        seed: seed ?? this.seed,
-        loading: loading ?? this.loading,
-        loadingMore: loadingMore ?? this.loadingMore,
-        refreshing: refreshing ?? this.refreshing,
-        hasMore: hasMore ?? this.hasMore,
-        error: clearError ? null : (error ?? this.error),
-        pageAnchor: pageAnchor ?? this.pageAnchor,
-      );
+    bool? fromCache,
+  }) => SurfFeedState(
+    filter: filter,
+    cards: cards ?? this.cards,
+    aspects: aspects ?? this.aspects,
+    seed: seed ?? this.seed,
+    loading: loading ?? this.loading,
+    loadingMore: loadingMore ?? this.loadingMore,
+    refreshing: refreshing ?? this.refreshing,
+    hasMore: hasMore ?? this.hasMore,
+    error: clearError ? null : (error ?? this.error),
+    pageAnchor: pageAnchor ?? this.pageAnchor,
+    fromCache: fromCache ?? this.fromCache,
+  );
 }
 
 /// The Surf feed, one instance per [SurfFilter].
@@ -133,6 +140,13 @@ class SurfFeedController extends Notifier<SurfFeedState> {
     return _nonce == 0 ? '$userId:$day' : '$userId:$day:$_nonce';
   }
 
+  /// Offline cache key — per user and per filter, so accounts never see each
+  /// other's cached grid.
+  String get _cacheKey {
+    final userId = ref.read(currentUserIdProvider) ?? 'anon';
+    return 'surf.${filter.wire}.$userId';
+  }
+
   /// Loads the first page, unless one is already loaded or in flight.
   Future<void> loadInitial() async {
     if (_busy || state.cards.isNotEmpty) return;
@@ -152,9 +166,12 @@ class SurfFeedController extends Notifier<SurfFeedState> {
     await _load(reset: false);
   }
 
-  /// Retries whatever failed last.
-  Future<void> retry() =>
-      state.cards.isEmpty ? _load(reset: true) : _load(reset: false);
+  /// Retries whatever failed last. A grid hydrated from the offline cache
+  /// retries from the top — its rows are a stale snapshot, not page one of a
+  /// live seed.
+  Future<void> retry() => state.cards.isEmpty || state.fromCache
+      ? _load(reset: true)
+      : _load(reset: false);
 
   Future<void> _load({required bool reset}) async {
     if (_busy) return;
@@ -175,7 +192,9 @@ class SurfFeedController extends Notifier<SurfFeedState> {
     final seed = reset ? _buildSeed() : state.seed;
 
     try {
-      final rows = await ref.read(klectApiProvider).surfFeed(
+      final rows = await ref
+          .read(klectApiProvider)
+          .surfFeed(
             limit: pageSize,
             offset: _offset,
             seed: seed,
@@ -213,7 +232,22 @@ class SurfFeedController extends Notifier<SurfFeedState> {
         hasMore: rows.length >= pageSize,
         pageAnchor: reset ? 0 : cards.length - fresh.length,
       );
+
+      if (reset && fresh.isNotEmpty) {
+        // Persist the first page so the next offline cold start still surfs.
+        unawaited(
+          ref.read(feedPageCacheProvider).write(
+            _cacheKey,
+            <Map<String, dynamic>>[for (final card in fresh) card.raw],
+          ),
+        );
+      }
     } on KlectError catch (error) {
+      if (state.cards.isEmpty &&
+          error.isRetryable &&
+          _hydrateFromCache(error)) {
+        return;
+      }
       state = state.copyWith(
         loading: false,
         loadingMore: false,
@@ -224,14 +258,43 @@ class SurfFeedController extends Notifier<SurfFeedState> {
       _busy = false;
     }
   }
+
+  /// Replaces the empty error state with the cached first page, keeping the
+  /// error so the footer says why the grid might look familiar. Returns false
+  /// when there is nothing cached.
+  bool _hydrateFromCache(KlectError error) {
+    final rows = ref.read(feedPageCacheProvider).read(_cacheKey);
+    if (rows == null) return false;
+
+    _seen.clear();
+    final cards = <SurfCard>[];
+    for (final row in rows) {
+      final card = SurfCard.fromJson(row);
+      if (_seen.add(card.key)) cards.add(card);
+    }
+    if (cards.isEmpty) return false;
+
+    ref.read(interactionSeedStoreProvider).putCards(cards);
+    state = SurfFeedState(
+      filter: filter,
+      cards: cards,
+      aspects: <double>[for (final card in cards) card.tileAspect],
+      seed: state.seed,
+      // The cache holds exactly one page; paging past it needs the network.
+      hasMore: false,
+      error: error,
+      fromCache: true,
+    );
+    return true;
+  }
 }
 
 /// The Surf feed, keyed by filter.
 final surfFeedProvider =
     NotifierProvider.family<SurfFeedController, SurfFeedState, SurfFilter>(
-  SurfFeedController.new,
-  name: 'surfFeed',
-);
+      SurfFeedController.new,
+      name: 'surfFeed',
+    );
 
 /// Which filter chip is selected.
 class SurfFilterController extends Notifier<SurfFilter> {
@@ -243,8 +306,7 @@ class SurfFilterController extends Notifier<SurfFilter> {
 }
 
 /// The selected Surf filter.
-final surfFilterProvider =
-    NotifierProvider<SurfFilterController, SurfFilter>(
+final surfFilterProvider = NotifierProvider<SurfFilterController, SurfFilter>(
   SurfFilterController.new,
   name: 'surfFilter',
 );

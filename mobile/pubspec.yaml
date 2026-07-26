@@ -50,11 +50,35 @@ dependencies:
   http: ^1.6.0
   url_launcher: ^6.3.2
 
+  # Notifications stage 1: system-tray notifications for realtime arrivals
+  # while the app is backgrounded-but-running. Real FCM push stays gated on a
+  # Firebase project (see supabase/functions/push-fanout) — no firebase
+  # packages here. Requires core-library desugaring on Android
+  # (android/app/build.gradle.kts).
+  flutter_local_notifications: ^22.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   mocktail: ^1.0.4
+  # Generates the Android adaptive/legacy mipmaps + iOS icon set from the
+  # programmatically rendered PNGs in assets/icon/ (see
+  # test/tools/render_app_icon_test.dart). Run:
+  #   flutter test test/tools/render_app_icon_test.dart
+  #   dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.3
+
+# App identity: the "K + shelf" mark, oxblood on noir (values from
+# packages/tokens/tokens.json via tokens.g.dart — the renderer imports them).
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "assets/icon/background.png"
+  adaptive_icon_foreground: "assets/icon/foreground.png"
+  adaptive_icon_monochrome: "assets/icon/monochrome.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true

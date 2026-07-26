@@ -7,6 +7,8 @@ import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/models/models.dart';
+import '../../../core/offline/feed_page_cache.dart';
+import '../../../core/supabase.dart';
 import 'pulse_entry_view.dart';
 
 /// The Pulse stream's paging state.
@@ -21,6 +23,7 @@ class PulseFeedState {
     this.hasMore = true,
     this.error,
     this.freshKey,
+    this.fromCache = false,
   });
 
   /// Normalised rows, newest first.
@@ -44,6 +47,10 @@ class PulseFeedState {
   /// Key of a just-composed row, so the screen can slide it in.
   final String? freshKey;
 
+  /// True when [items] were hydrated from the offline first-page cache. The
+  /// next retry then reloads from the top instead of paging under stale rows.
+  final bool fromCache;
+
   /// Nothing to show and nothing on the way.
   bool get isEmpty => items.isEmpty && !loading;
 
@@ -58,16 +65,17 @@ class PulseFeedState {
     bool clearError = false,
     String? freshKey,
     bool clearFresh = false,
-  }) =>
-      PulseFeedState(
-        items: items ?? this.items,
-        loading: loading ?? this.loading,
-        loadingMore: loadingMore ?? this.loadingMore,
-        refreshing: refreshing ?? this.refreshing,
-        hasMore: hasMore ?? this.hasMore,
-        error: clearError ? null : (error ?? this.error),
-        freshKey: clearFresh ? null : (freshKey ?? this.freshKey),
-      );
+    bool? fromCache,
+  }) => PulseFeedState(
+    items: items ?? this.items,
+    loading: loading ?? this.loading,
+    loadingMore: loadingMore ?? this.loadingMore,
+    refreshing: refreshing ?? this.refreshing,
+    hasMore: hasMore ?? this.hasMore,
+    error: clearError ? null : (error ?? this.error),
+    freshKey: clearFresh ? null : (freshKey ?? this.freshKey),
+    fromCache: fromCache ?? this.fromCache,
+  );
 }
 
 /// **Pulse** — the X-style stream, one controller per [PulseMode].
@@ -111,8 +119,9 @@ class PulseFeedController extends Notifier<PulseFeedState> {
     await _load(reset: false);
   }
 
-  /// Retries whatever failed last.
-  Future<void> retry() => _load(reset: state.items.isEmpty);
+  /// Retries whatever failed last. A stream hydrated from the offline cache
+  /// retries from the top — its rows are a stale snapshot, not a live cursor.
+  Future<void> retry() => _load(reset: state.items.isEmpty || state.fromCache);
 
   /// Puts a just-composed post at the top of the stream.
   ///
@@ -158,11 +167,9 @@ class PulseFeedController extends Notifier<PulseFeedState> {
     final before = reset ? null : _oldestOnScreen();
 
     try {
-      final rows = await ref.read(klectApiProvider).pulseFeed(
-            limit: pageSize,
-            before: before,
-            mode: mode,
-          );
+      final rows = await ref
+          .read(klectApiProvider)
+          .pulseFeed(limit: pageSize, before: before, mode: mode);
 
       if (reset) _seen.clear();
       final fresh = <PulseItem>[];
@@ -180,7 +187,9 @@ class PulseFeedController extends Notifier<PulseFeedState> {
       if (reset && hadItems) {
         // A refresh has to beat controllers that already exist.
         for (final item in fresh) {
-          ref.read(interactionProvider(item.entity).notifier).hydrate(item.seed);
+          ref
+              .read(interactionProvider(item.entity).notifier)
+              .hydrate(item.seed);
         }
       }
 
@@ -188,7 +197,22 @@ class PulseFeedController extends Notifier<PulseFeedState> {
         items: reset ? fresh : <PulseItem>[...state.items, ...fresh],
         hasMore: rows.length >= pageSize,
       );
+
+      if (reset && fresh.isNotEmpty) {
+        // Persist the first page so an offline cold start still has a Pulse.
+        unawaited(
+          ref.read(feedPageCacheProvider).write(
+            _cacheKey,
+            <Map<String, dynamic>>[for (final item in fresh) item.source.raw],
+          ),
+        );
+      }
     } on KlectError catch (error) {
+      if (state.items.isEmpty &&
+          error.isRetryable &&
+          _hydrateFromCache(error)) {
+        return;
+      }
       state = state.copyWith(
         loading: false,
         loadingMore: false,
@@ -199,14 +223,48 @@ class PulseFeedController extends Notifier<PulseFeedState> {
       _busy = false;
     }
   }
+
+  /// Offline cache key — per user and per mode.
+  String get _cacheKey {
+    final userId = ref.read(currentUserIdProvider) ?? 'anon';
+    return 'pulse.${mode.wire}.$userId';
+  }
+
+  /// Replaces the empty error state with the cached first page, keeping the
+  /// error so the footer says why. Returns false when nothing is cached.
+  bool _hydrateFromCache(KlectError error) {
+    final rows = ref.read(feedPageCacheProvider).read(_cacheKey);
+    if (rows == null) return false;
+
+    _seen.clear();
+    final items = <PulseItem>[];
+    for (final row in rows) {
+      final item = PulseItem.fromEntry(PulseEntry.fromJson(row));
+      if (_seen.add(item.key)) items.add(item);
+    }
+    if (items.isEmpty) return false;
+
+    final store = ref.read(interactionSeedStoreProvider);
+    for (final item in items) {
+      store.put(item.entity, item.seed);
+    }
+    state = PulseFeedState(
+      items: items,
+      // The cache holds exactly one page; paging past it needs the network.
+      hasMore: false,
+      error: error,
+      fromCache: true,
+    );
+    return true;
+  }
 }
 
 /// The Pulse stream, one instance per tab.
 final pulseFeedProvider =
     NotifierProvider.family<PulseFeedController, PulseFeedState, PulseMode>(
-  PulseFeedController.new,
-  name: 'pulseFeed',
-);
+      PulseFeedController.new,
+      name: 'pulseFeed',
+    );
 
 /// Which Pulse tab is on screen. Lives outside the screen so the composer can
 /// prepend into the feed the user is actually looking at.

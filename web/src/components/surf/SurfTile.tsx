@@ -3,12 +3,11 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import Link from 'next/link';
-import { motion, useReducedMotion } from 'framer-motion';
 import { ActionBar } from '@/components/ui/ActionBar';
 import { BlurhashImage } from '@/components/ui/BlurhashImage';
 import { Icon } from '@/components/ui/Icon';
 import { Pressable } from '@/components/ui/Pressable';
-import { curve, fadeRise, gridStaggerDelay, reducedTransition } from '@/design/motion';
+import { gridStaggerDelay } from '@/design/motion';
 import { cn } from '@/lib/cn';
 import { entityHref, ENTITY_LABEL } from '@/lib/entities';
 import { useCoarsePointer } from '@/lib/media-query';
@@ -73,7 +72,6 @@ export const SurfTile = memo(function SurfTile({
   onFocusTile,
   onTileKeyDown,
 }: SurfTileProps) {
-  const reduced = useReducedMotion();
   const [revealed, setRevealed] = useState(false);
   // Touch devices have no hover to reveal with — caption and actions stay on.
   const coarse = useCoarsePointer();
@@ -112,14 +110,13 @@ export const SurfTile = memo(function SurfTile({
   const isSet = card.type !== 'item';
 
   return (
-    <motion.div
-      className="group relative"
-      variants={fadeRise}
-      initial="hidden"
-      animate="visible"
-      transition={
-        reduced ? reducedTransition : { ...curve.enter, delay: gridStaggerDelay(index) }
-      }
+    /* Entrance is pure CSS (`k-feed-enter`, the Pulse pattern): one keyframe
+       animation staggered by an inline delay costs nothing at runtime, where a
+       per-tile framer-motion mount ran a JS spring for every tile on every
+       page append. Reduced motion is handled in globals.css. */
+    <div
+      className="k-feed-enter group relative"
+      style={{ animationDelay: `${gridStaggerDelay(index)}s` }}
       onMouseEnter={() => setRevealed(true)}
       onMouseLeave={() => setRevealed(false)}
     >
@@ -155,14 +152,17 @@ export const SurfTile = memo(function SurfTile({
           className="transition-transform dur-medium ease-emphasized group-hover:scale-[1.02] motion-reduce:group-hover:scale-100"
         />
 
-        {/* Chrome at rest: nothing but a whisper of structure on set tiles. */}
+        {/* Chrome at rest: nothing but a whisper of structure on set tiles.
+            Flat token fill (`bg-glass` = surface.glass at alpha), never the
+            `glass` utility: a backdrop-filter per tile forces the compositor
+            to re-blur every tile on every scroll frame. */}
         {isSet ? (
-          <span className="glass pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro uppercase tracking-widest text-ink">
+          <span className="pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-glass px-2 py-0.5 text-micro uppercase tracking-widest text-ink">
             <Icon name="grid" size="xs" />
             {ENTITY_LABEL[card.type]}
           </span>
         ) : card.counts.child > 1 ? (
-          <span className="glass pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro tabular text-ink">
+          <span className="pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-glass px-2 py-0.5 text-micro tabular text-ink">
             <Icon name="image" size="xs" />
             {card.counts.child}
           </span>
@@ -221,6 +221,6 @@ export const SurfTile = memo(function SurfTile({
       >
         {`Open ${card.title}`}
       </Link>
-    </motion.div>
+    </div>
   );
 });

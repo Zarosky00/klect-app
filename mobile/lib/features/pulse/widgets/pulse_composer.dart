@@ -8,6 +8,7 @@ import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/models/models.dart';
+import '../../../core/storage/key_value_store.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
 import '../../create/media/image_pipeline.dart';
@@ -63,13 +64,14 @@ abstract final class PulseComposer {
   /// Resolves with the new post's pulse envelope, or null when nothing was
   /// published. The envelope is also prepended to the Following stream, so
   /// callers only need the return value if they render the post themselves.
-  static Future<PulseEntry?> show(
-    BuildContext context, {
-    EntityRef? subject,
-  }) =>
+  static Future<PulseEntry?> show(BuildContext context, {EntityRef? subject}) =>
       KSheet.show<PulseEntry>(
         context: context,
         title: subject?.type == EntityType.post ? 'Quote' : 'Share to Pulse',
+        // Drag-to-dismiss pops the route without consulting PopScope, which
+        // would silently skip the "Discard post?" confirm — so the composer
+        // closes via back / barrier tap only, both of which PopScope guards.
+        enableDrag: false,
         builder: (sheetContext) => _ComposerBody(subject: subject),
       );
 }
@@ -98,6 +100,9 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
   /// `posts.body` is capped at 2,000 characters server-side.
   static const int maxBody = 2000;
 
+  /// Where the plain composer's body survives a close or a process death.
+  static const String draftKey = 'pulse.composer.draft';
+
   final TextEditingController _text = TextEditingController();
   final String _draftId = _uuid.v4();
   final List<_DraftPhoto> _photos = <_DraftPhoto>[];
@@ -114,11 +119,51 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
       _attachment != null ||
       widget.subject != null;
 
+  /// True when closing would lose something the user made here. A quote or
+  /// entity subject alone is not "content" — dismissing it loses nothing.
+  bool get _dirty =>
+      _text.text.trim().isNotEmpty || _photos.isNotEmpty || _attachment != null;
+
+  /// Drafts only apply to the plain composer; a quote's text belongs to the
+  /// thing being quoted and must not leak into the next plain post.
+  bool get _draftable => widget.subject == null;
+
+  KeyValueStore get _store => ref.read(keyValueStoreProvider);
+
   @override
   void initState() {
     super.initState();
-    // The publish button's enabled state follows the text.
-    _text.addListener(() => setState(() {}));
+    // The publish button's enabled state follows the text; the draft follows
+    // every keystroke so a killed process never loses words.
+    _text.addListener(_onTextChanged);
+    if (_draftable) {
+      final draft = _store.getString(draftKey);
+      if (draft != null && draft.trim().isNotEmpty) _text.text = draft;
+    }
+  }
+
+  void _onTextChanged() {
+    setState(() {});
+    if (!_draftable) return;
+    final body = _text.text;
+    if (body.trim().isEmpty) {
+      unawaited(_store.remove(draftKey));
+    } else {
+      unawaited(_store.setString(draftKey, body));
+    }
+  }
+
+  Future<void> _confirmDiscard() async {
+    final discard = await KConfirmDialog.show(
+      context,
+      title: 'Discard post?',
+      message: 'What you wrote here will be gone.',
+      confirmLabel: 'Discard',
+      destructive: true,
+    );
+    if (!discard || !mounted) return;
+    if (_draftable) unawaited(_store.remove(draftKey));
+    Navigator.of(context).pop();
   }
 
   @override
@@ -226,11 +271,10 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
 
       // 3. Prepend the returned envelope so the stream shows it instantly —
       //    own posts always belong to the Following feed.
-      ref
-          .read(pulseFeedProvider(PulseMode.following).notifier)
-          .prepend(entry);
+      ref.read(pulseFeedProvider(PulseMode.following).notifier).prepend(entry);
 
       if (!mounted) return;
+      if (_draftable) unawaited(_store.remove(draftKey));
       Navigator.of(context).pop(entry);
     } on KlectError catch (error) {
       // Best effort: a failed publish must not leave orphan blobs behind.
@@ -258,117 +302,125 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
     final attachment = _attachment;
     final isQuote = subject?.type == EntityType.post;
 
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          KTextField(
-            controller: _text,
-            hint: isQuote
-                ? 'Add your take'
-                : 'What is on your shelf today?',
-            maxLines: 6,
-            minLines: 3,
-            maxLength: maxBody,
-            autofocus: true,
-          ),
-          if (_photos.isNotEmpty || _preparing) ...<Widget>[
-            const SizedBox(height: Space.s3),
-            _PhotoTray(
-              photos: _photos,
-              preparing: _preparing,
-              onRemove: _busy ? null : _removePhoto,
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        unawaited(_confirmDiscard());
+      },
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            KTextField(
+              controller: _text,
+              hint: isQuote ? 'Add your take' : 'What is on your shelf today?',
+              maxLines: 6,
+              minLines: 3,
+              maxLength: maxBody,
+              autofocus: true,
             ),
-          ],
-          if (subject != null) ...<Widget>[
-            const SizedBox(height: Space.s3),
-            PulseTargetLoader(entity: subject, interactive: false),
-          ],
-          if (subject == null) ...<Widget>[
-            const SizedBox(height: Space.s3),
-            if (attachment == null)
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: KButton(
-                      label: 'Photos',
-                      icon: Icons.add_photo_alternate_outlined,
-                      variant: KButtonVariant.secondary,
-                      expand: true,
-                      onPressed: _photos.length >= maxPhotos || _busy
-                          ? null
-                          : () => unawaited(_addPhotos()),
-                    ),
-                  ),
-                  const SizedBox(width: Space.s2),
-                  Expanded(
-                    child: KButton(
-                      label: 'Something you own',
-                      icon: Icons.collections_bookmark_outlined,
-                      variant: KButtonVariant.secondary,
-                      expand: true,
-                      onPressed:
-                          _busy ? null : () => unawaited(_pickAttachment()),
-                    ),
-                  ),
-                ],
-              )
-            else ...<Widget>[
-              _AttachmentPreview(
-                attachment: attachment,
-                onRemove: () => setState(() => _attachment = null),
-                onChange: () => unawaited(_pickAttachment()),
+            if (_photos.isNotEmpty || _preparing) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              _PhotoTray(
+                photos: _photos,
+                preparing: _preparing,
+                onRemove: _busy ? null : _removePhoto,
               ),
-              const SizedBox(height: Space.s2),
+            ],
+            if (subject != null) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              PulseTargetLoader(entity: subject, interactive: false),
+            ],
+            if (subject == null) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              if (attachment == null)
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: KButton(
+                        label: 'Photos',
+                        icon: Icons.add_photo_alternate_outlined,
+                        variant: KButtonVariant.secondary,
+                        expand: true,
+                        onPressed: _photos.length >= maxPhotos || _busy
+                            ? null
+                            : () => unawaited(_addPhotos()),
+                      ),
+                    ),
+                    const SizedBox(width: Space.s2),
+                    Expanded(
+                      child: KButton(
+                        label: 'Something you own',
+                        icon: Icons.collections_bookmark_outlined,
+                        variant: KButtonVariant.secondary,
+                        expand: true,
+                        onPressed: _busy
+                            ? null
+                            : () => unawaited(_pickAttachment()),
+                      ),
+                    ),
+                  ],
+                )
+              else ...<Widget>[
+                _AttachmentPreview(
+                  attachment: attachment,
+                  onRemove: () => setState(() => _attachment = null),
+                  onChange: () => unawaited(_pickAttachment()),
+                ),
+                const SizedBox(height: Space.s2),
+                KButton(
+                  label: 'Add photos',
+                  icon: Icons.add_photo_alternate_outlined,
+                  variant: KButtonVariant.ghost,
+                  size: KButtonSize.small,
+                  onPressed: _photos.length >= maxPhotos || _busy
+                      ? null
+                      : () => unawaited(_addPhotos()),
+                ),
+              ],
+            ] else ...<Widget>[
+              const SizedBox(height: Space.s3),
               KButton(
                 label: 'Add photos',
                 icon: Icons.add_photo_alternate_outlined,
-                variant: KButtonVariant.ghost,
+                variant: KButtonVariant.secondary,
                 size: KButtonSize.small,
                 onPressed: _photos.length >= maxPhotos || _busy
                     ? null
                     : () => unawaited(_addPhotos()),
               ),
             ],
-          ] else ...<Widget>[
-            const SizedBox(height: Space.s3),
+            if (_error != null) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              Text(
+                _error!,
+                style: context.kt.caption.copyWith(
+                  color: colors.semanticDanger,
+                ),
+              ),
+            ],
+            if (_progress != null) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              Text(
+                _progress!,
+                style: context.kt.caption.copyWith(color: colors.textSecondary),
+              ),
+            ],
+            const SizedBox(height: Space.s5),
             KButton(
-              label: 'Add photos',
-              icon: Icons.add_photo_alternate_outlined,
-              variant: KButtonVariant.secondary,
-              size: KButtonSize.small,
-              onPressed: _photos.length >= maxPhotos || _busy
-                  ? null
-                  : () => unawaited(_addPhotos()),
+              label: isQuote ? 'Quote' : 'Post',
+              icon: Icons.bolt_rounded,
+              expand: true,
+              busy: _busy,
+              onPressed: _hasContent && !_preparing
+                  ? () => unawaited(_publish())
+                  : null,
             ),
+            SizedBox(height: MediaQuery.viewInsetsOf(context).bottom),
           ],
-          if (_error != null) ...<Widget>[
-            const SizedBox(height: Space.s3),
-            Text(
-              _error!,
-              style: context.kt.caption.copyWith(color: colors.semanticDanger),
-            ),
-          ],
-          if (_progress != null) ...<Widget>[
-            const SizedBox(height: Space.s3),
-            Text(
-              _progress!,
-              style:
-                  context.kt.caption.copyWith(color: colors.textSecondary),
-            ),
-          ],
-          const SizedBox(height: Space.s5),
-          KButton(
-            label: isQuote ? 'Quote' : 'Post',
-            icon: Icons.bolt_rounded,
-            expand: true,
-            busy: _busy,
-            onPressed:
-                _hasContent && !_preparing ? () => unawaited(_publish()) : null,
-          ),
-          SizedBox(height: MediaQuery.viewInsetsOf(context).bottom),
-        ],
+        ),
       ),
     );
   }
@@ -505,8 +557,9 @@ class _AttachmentPreview extends ConsumerWidget {
                       attachment.subtitle!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: context.kt.caption
-                          .copyWith(color: colors.textSecondary),
+                      style: context.kt.caption.copyWith(
+                        color: colors.textSecondary,
+                      ),
                     ),
                 ],
               ),
@@ -579,42 +632,42 @@ class _PickerBodyState extends ConsumerState<_PickerBody> {
   }
 
   Future<void> _loadCollections() => _run(() async {
-        final api = ref.read(klectApiProvider);
-        final userId = api.currentUserId;
-        if (userId == null) {
-          throw const KlectError(KlectErrorKind.auth, 'You need to sign in.');
-        }
-        final collections = await api.fetchCollections(userId);
-        if (!mounted) return;
-        setState(() {
-          _collections = collections;
-          _collection = null;
-          _subcollection = null;
-        });
-      });
+    final api = ref.read(klectApiProvider);
+    final userId = api.currentUserId;
+    if (userId == null) {
+      throw const KlectError(KlectErrorKind.auth, 'You need to sign in.');
+    }
+    final collections = await api.fetchCollections(userId);
+    if (!mounted) return;
+    setState(() {
+      _collections = collections;
+      _collection = null;
+      _subcollection = null;
+    });
+  });
 
   Future<void> _openCollection(CollectionModel collection) => _run(() async {
-        final subs = await ref
-            .read(klectApiProvider)
-            .fetchSubcollections(collection.id);
-        if (!mounted) return;
-        setState(() {
-          _collection = collection;
-          _subcollection = null;
-          _subcollections = subs;
-        });
-      });
+    final subs = await ref
+        .read(klectApiProvider)
+        .fetchSubcollections(collection.id);
+    if (!mounted) return;
+    setState(() {
+      _collection = collection;
+      _subcollection = null;
+      _subcollections = subs;
+    });
+  });
 
   Future<void> _openSubcollection(SubcollectionModel sub) => _run(() async {
-        final items = await ref
-            .read(klectApiProvider)
-            .fetchItems(subcollectionId: sub.id);
-        if (!mounted) return;
-        setState(() {
-          _subcollection = sub;
-          _items = items;
-        });
-      });
+    final items = await ref
+        .read(klectApiProvider)
+        .fetchItems(subcollectionId: sub.id);
+    if (!mounted) return;
+    setState(() {
+      _subcollection = sub;
+      _items = items;
+    });
+  });
 
   void _choose(PulseAttachment attachment) =>
       Navigator.of(context).pop(attachment);
@@ -761,7 +814,8 @@ class _PickerBodyState extends ConsumerState<_PickerBody> {
         final collection = _collections[index];
         return _PickerRow(
           title: collection.name,
-          subtitle: '${formatCount(collection.subcollectionCount)} shelves · '
+          subtitle:
+              '${formatCount(collection.subcollectionCount)} shelves · '
               '${formatCount(collection.itemCount)} things',
           coverPath: collection.coverPath,
           blurhash: collection.coverBlurhash,
@@ -783,13 +837,13 @@ class _PickerBodyState extends ConsumerState<_PickerBody> {
   }
 
   Widget _empty(String message) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: Space.s6),
-        child: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: context.kt.callout.copyWith(color: context.kc.textTertiary),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(vertical: Space.s6),
+    child: Text(
+      message,
+      textAlign: TextAlign.center,
+      style: context.kt.callout.copyWith(color: context.kc.textTertiary),
+    ),
+  );
 }
 
 class _PickerRow extends ConsumerWidget {
@@ -859,8 +913,9 @@ class _PickerRow extends ConsumerWidget {
                       subtitle!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: context.kt.caption
-                          .copyWith(color: colors.textSecondary),
+                      style: context.kt.caption.copyWith(
+                        color: colors.textSecondary,
+                      ),
                     ),
                 ],
               ),

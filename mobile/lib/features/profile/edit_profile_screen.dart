@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/api/api_error.dart';
 import '../../core/api/klect_api.dart';
+import '../../core/links.dart';
 import '../../core/models/models.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
@@ -46,16 +47,21 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   static final RegExp _usernamePattern = RegExp(r'^[a-z0-9_]{3,20}$');
   static const Uuid _uuid = Uuid();
 
-  late final TextEditingController _displayName =
-      TextEditingController(text: widget.profile.displayName ?? '');
-  late final TextEditingController _username =
-      TextEditingController(text: widget.profile.username);
-  late final TextEditingController _bio =
-      TextEditingController(text: widget.profile.bio ?? '');
-  late final TextEditingController _location =
-      TextEditingController(text: widget.profile.location ?? '');
-  late final TextEditingController _website =
-      TextEditingController(text: widget.profile.website ?? '');
+  late final TextEditingController _displayName = TextEditingController(
+    text: widget.profile.displayName ?? '',
+  );
+  late final TextEditingController _username = TextEditingController(
+    text: widget.profile.username,
+  );
+  late final TextEditingController _bio = TextEditingController(
+    text: widget.profile.bio ?? '',
+  );
+  late final TextEditingController _location = TextEditingController(
+    text: widget.profile.location ?? '',
+  );
+  late final TextEditingController _website = TextEditingController(
+    text: widget.profile.website ?? '',
+  );
 
   Timer? _usernameDebounce;
   String? _avatarPath;
@@ -153,7 +159,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
-      final key = await ref.read(klectApiProvider).upload(
+      final key = await ref
+          .read(klectApiProvider)
+          .upload(
             bucket: bucket,
             objectPath: '${_uuid.v4()}.jpg',
             bytes: bytes,
@@ -319,8 +327,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 child: Text(
                   'A square photo works best. Everything is downscaled on '
                   'device before it leaves your phone.',
-                  style: context.kt.caption
-                      .copyWith(color: colors.textTertiary),
+                  style: context.kt.caption.copyWith(
+                    color: colors.textTertiary,
+                  ),
                 ),
               ),
             ],
@@ -346,7 +355,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             textInputAction: TextInputAction.next,
             maxLength: 20,
             errorText: _usernameError,
-            helper: 'Your profile lives at klect.app/u/${_username.text}',
+            helper:
+                'Your profile lives at '
+                '${KlectLinks.displayOrigin}/u/${_username.text}',
             onChanged: (value) {
               setState(() {});
               _onUsernameChanged(value);
@@ -477,8 +488,9 @@ class _BannerPicker extends StatelessWidget {
                       const SizedBox(width: Space.s15),
                       Text(
                         'Change banner',
-                        style: context.kt.label
-                            .copyWith(color: colors.textPrimary),
+                        style: context.kt.label.copyWith(
+                          color: colors.textPrimary,
+                        ),
                       ),
                     ],
                   ),

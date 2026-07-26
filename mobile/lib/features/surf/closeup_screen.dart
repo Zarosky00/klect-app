@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -73,8 +72,9 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
   final FocusNode _composerFocus = FocusNode();
   final GlobalKey _commentsAnchor = GlobalKey();
 
-  late final AnimationController _dismiss =
-      AnimationController.unbounded(vsync: this);
+  late final AnimationController _dismiss = AnimationController.unbounded(
+    vsync: this,
+  );
 
   int _mediaIndex = 0;
   bool _closing = false;
@@ -150,10 +150,8 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
     final target = velocity < -_flingVelocity
         ? _fullExtent
         : velocity > _flingVelocity
-            ? _restExtent
-            : (size > (_restExtent + _fullExtent) / 2
-                ? _fullExtent
-                : _restExtent);
+        ? _restExtent
+        : (size > (_restExtent + _fullExtent) / 2 ? _fullExtent : _restExtent);
     unawaited(
       _sheet.animateTo(
         target,
@@ -205,21 +203,12 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
     });
   }
 
-  Future<void> _copyLink() async {
-    await Clipboard.setData(
-      ClipboardData(
-        text: KlectLinks.urlFor(widget.entityType, widget.entityId),
-      ),
-    );
-    if (!mounted) return;
-    KToast.success(context, 'Link copied');
-  }
-
   Future<void> _block(Closeup closeup) async {
     final confirmed = await KConfirmDialog.show(
       context,
       title: 'Block ${closeup.owner.handle}?',
-      message: 'You will stop seeing each other entirely — content, messages '
+      message:
+          'You will stop seeing each other entirely — content, messages '
           'and notifications.',
       confirmLabel: 'Block',
       destructive: true,
@@ -237,57 +226,64 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
   }
 
   Future<void> _showOverflow(Closeup closeup) => KSheet.show<void>(
-        context: context,
-        title: closeup.title.isEmpty ? 'Options' : closeup.title,
-        builder: (sheetContext) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _OverflowAction(
-              icon: Icons.link_rounded,
-              label: 'Copy link',
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                unawaited(_copyLink());
-              },
-            ),
-            _OverflowAction(
-              icon: Icons.fullscreen_rounded,
-              label: 'Open fullscreen',
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _openImmersive(_mediaIndex);
-              },
-            ),
-            _OverflowAction(
-              icon: Icons.flag_outlined,
-              label: 'Report',
-              destructive: true,
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                unawaited(
-                  KReportSheet.showForEntity(
-                    context,
-                    type: widget.entityType,
-                    entityId: widget.entityId,
-                    subjectLabel: closeup.title,
-                  ),
-                );
-              },
-            ),
-            if (!closeup.viewer.isOwner && closeup.owner.id.isNotEmpty)
-              _OverflowAction(
-                icon: Icons.block_rounded,
-                label: 'Block ${closeup.owner.handle}',
-                destructive: true,
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  unawaited(_block(closeup));
-                },
+    context: context,
+    title: closeup.title.isEmpty ? 'Options' : closeup.title,
+    builder: (sheetContext) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _OverflowAction(
+          icon: Icons.ios_share_rounded,
+          label: 'Share',
+          onTap: () {
+            Navigator.of(sheetContext).pop();
+            unawaited(
+              KShareSheet.show(
+                context,
+                entityType: widget.entityType,
+                entityId: widget.entityId,
+                title: closeup.title.isEmpty ? null : closeup.title,
               ),
-          ],
+            );
+          },
         ),
-      );
+        _OverflowAction(
+          icon: Icons.fullscreen_rounded,
+          label: 'Open fullscreen',
+          onTap: () {
+            Navigator.of(sheetContext).pop();
+            _openImmersive(_mediaIndex);
+          },
+        ),
+        _OverflowAction(
+          icon: Icons.flag_outlined,
+          label: 'Report',
+          destructive: true,
+          onTap: () {
+            Navigator.of(sheetContext).pop();
+            unawaited(
+              KReportSheet.showForEntity(
+                context,
+                type: widget.entityType,
+                entityId: widget.entityId,
+                subjectLabel: closeup.title,
+              ),
+            );
+          },
+        ),
+        if (!closeup.viewer.isOwner && closeup.owner.id.isNotEmpty)
+          _OverflowAction(
+            icon: Icons.block_rounded,
+            label: 'Block ${closeup.owner.handle}',
+            destructive: true,
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              unawaited(_block(closeup));
+            },
+          ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -310,11 +306,11 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
       body: closeup != null
           ? _content(closeup)
           : async.hasError
-              ? KErrorState(
-                  error: async.error,
-                  onRetry: () => ref.invalidate(closeupProvider(entity)),
-                )
-              : const _CloseupSkeleton(),
+          ? KErrorState(
+              error: async.error,
+              onRetry: () => ref.invalidate(closeupProvider(entity)),
+            )
+          : const _CloseupSkeleton(),
     );
   }
 
@@ -322,7 +318,7 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
     // Post photos live in post_media (0018), outside the closeup payload.
     final media = widget.entityType == EntityType.post
         ? (ref.watch(postMediaProvider(widget.entityId)).value ??
-            const <ImmersiveMedia>[])
+              const <ImmersiveMedia>[])
         : immersiveMediaOf(closeup);
     final topInset = MediaQuery.paddingOf(context).top;
     final colors = context.kc;
@@ -561,8 +557,7 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
         return <Widget>[
           _box(
             CloseupSectionHeader(
-              title:
-                  attachedType == EntityType.post ? 'Quoting' : 'Attached',
+              title: attachedType == EntityType.post ? 'Quoting' : 'Attached',
             ),
             top: Space.s6,
           ),
@@ -574,29 +569,23 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
   }
 
   Widget _itemsGrid(List<CloseupItemRef> items) => SliverPadding(
-        padding: const EdgeInsets.fromLTRB(
-          Space.s5,
-          Space.s3,
-          Space.s5,
-          Space.s0,
-        ),
-        sliver: KMasonryGrid(
-          aspects: <double>[
-            for (final item in items)
-              (item.aspect ?? Aspect.cover)
-                  .clamp(Aspect.gridMin, Aspect.gridMax),
-          ],
-          itemBuilder: (context, index) =>
-              index < items.length ? _ChildItemTile(item: items[index]) : null,
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(Space.s5, Space.s3, Space.s5, Space.s0),
+    sliver: KMasonryGrid(
+      aspects: <double>[
+        for (final item in items)
+          (item.aspect ?? Aspect.cover).clamp(Aspect.gridMin, Aspect.gridMax),
+      ],
+      itemBuilder: (context, index) =>
+          index < items.length ? _ChildItemTile(item: items[index]) : null,
+    ),
+  );
 
   Widget _box(Widget child, {double top = Space.s3}) => SliverToBoxAdapter(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(Space.s5, top, Space.s5, Space.s0),
-          child: child,
-        ),
-      );
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(Space.s5, top, Space.s5, Space.s0),
+      child: child,
+    ),
+  );
 }
 
 class _SheetSurface extends StatelessWidget {
@@ -622,7 +611,10 @@ class _SheetSurface extends StatelessWidget {
         borderRadius: shape,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[header, Expanded(child: child)],
+          children: <Widget>[
+            header,
+            Expanded(child: child),
+          ],
         ),
       ),
     );
@@ -746,8 +738,9 @@ class _PageDots extends StatelessWidget {
                 height: Space.s15,
                 margin: const EdgeInsets.symmetric(horizontal: Space.s05),
                 decoration: BoxDecoration(
-                  color:
-                      index == page ? colors.accentDefault : colors.textTertiary,
+                  color: index == page
+                      ? colors.accentDefault
+                      : colors.textTertiary,
                   borderRadius: BorderRadius.circular(Radii.full),
                 ),
               ),
@@ -841,29 +834,29 @@ class _CloseupSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const KShimmer(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(child: KSkeleton(borderRadius: BorderRadius.zero)),
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: EdgeInsets.all(Space.s5),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    KSkeleton.text(width: Space.s20),
-                    SizedBox(height: Space.s3),
-                    KSkeleton(height: Space.s8),
-                    SizedBox(height: Space.s5),
-                    KSkeleton.text(),
-                    SizedBox(height: Space.s2),
-                    KSkeleton.text(),
-                  ],
-                ),
-              ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(child: KSkeleton(borderRadius: BorderRadius.zero)),
+        Expanded(
+          flex: 2,
+          child: Padding(
+            padding: EdgeInsets.all(Space.s5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                KSkeleton.text(width: Space.s20),
+                SizedBox(height: Space.s3),
+                KSkeleton(height: Space.s8),
+                SizedBox(height: Space.s5),
+                KSkeleton.text(),
+                SizedBox(height: Space.s2),
+                KSkeleton.text(),
+              ],
             ),
-          ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }

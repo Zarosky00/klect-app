@@ -10,6 +10,7 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { Sheet } from '@/components/ui/Sheet';
 import { Wordmark } from './Wordmark';
 import { ThemeToggle } from './ThemeToggle';
+import { useNotifications } from '@/providers/notifications-provider';
 import { useSession } from '@/providers/session-provider';
 
 interface NavItem {
@@ -51,6 +52,27 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/**
+ * The live unread count on the Alerts item — fed by the shell notifications
+ * channel, so it is right from app start, not from the first Alerts visit.
+ */
+function AlertsBadge({ className }: { className?: string }) {
+  const { unread } = useNotifications();
+  if (unread <= 0) return null;
+  return (
+    <span
+      aria-label={`${unread} unread`}
+      className={cn(
+        'tabular grid min-w-4.5 place-items-center rounded-full bg-accent px-1 py-px',
+        'text-micro font-semibold leading-none text-ink-on-accent',
+        className,
+      )}
+    >
+      {unread > 99 ? '99+' : unread}
+    </span>
+  );
+}
+
 /** Desktop: a left rail. Mobile: the bottom bar below. */
 export function AppNavRail() {
   const pathname = usePathname();
@@ -80,6 +102,7 @@ export function AppNavRail() {
           >
             <Icon name={item.icon} filled={active} size="lg" />
             {item.label}
+            {item.href === routes.notifications ? <AlertsBadge className="ml-auto" /> : null}
           </Link>
         );
       })}
@@ -172,7 +195,12 @@ export function AppNavBottomBar() {
               active ? 'text-ink' : 'text-ink-3',
             )}
           >
-            <Icon name={item.icon} filled={active} size="lg" />
+            <span className="relative">
+              <Icon name={item.icon} filled={active} size="lg" />
+              {item.href === routes.notifications ? (
+                <AlertsBadge className="absolute -right-2.5 -top-1" />
+              ) : null}
+            </span>
             <span className="text-micro">{item.label}</span>
           </Link>
         );

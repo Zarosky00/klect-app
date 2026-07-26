@@ -4,14 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { curve, reducedTransition, springy } from '@/design/motion';
 import { cn } from '@/lib/cn';
-import { entityHref, type EntityType } from '@/lib/entities';
-import { SITE_URL } from '@/lib/env';
+import type { EntityType } from '@/lib/entities';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Portal, useEscape } from '@/components/ui/overlay';
 import { ReportDialog } from '@/components/ui/ReportDialog';
 import { useEntitySocial } from '@/providers/interactions-provider';
 import { useSession } from '@/providers/session-provider';
 import { useToast } from '@/providers/toast-provider';
+import { ShareMenu } from './ShareMenu';
 
 /**
  * The long-press destination: a radial quick-action peek — like · save · repost
@@ -49,9 +49,10 @@ const BUTTON = 52;
 export function PeekMenu({ open, onClose, position, type, id, title }: PeekMenuProps) {
   const social = useEntitySocial(type, id);
   const { user } = useSession();
-  const { toast, success, fromError } = useToast();
+  const { toast } = useToast();
   const reduced = useReducedMotion();
   const [reporting, setReporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [focused, setFocused] = useState(0);
 
   useEscape(open, onClose);
@@ -66,21 +67,6 @@ export function PeekMenu({ open, onClose, position, type, id, title }: PeekMenuP
     });
     return false;
   }, [toast, user]);
-
-  const share = useCallback(async () => {
-    const url = `${SITE_URL}${entityHref(type, id)}`;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        await navigator.share({ title: title ?? 'Klect', url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      success('Link copied');
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') return;
-      fromError(error);
-    }
-  }, [fromError, id, success, title, type]);
 
   const actions = useMemo<PeekAction[]>(
     () => [
@@ -127,7 +113,7 @@ export function PeekMenu({ open, onClose, position, type, id, title }: PeekMenuP
         tone: 'text-share',
         hoverTone: 'hover:text-ink',
         run: () => {
-          void share();
+          setSharing(true);
           onClose();
         },
       },
@@ -143,7 +129,7 @@ export function PeekMenu({ open, onClose, position, type, id, title }: PeekMenuP
         },
       },
     ],
-    [onClose, requireAuth, share, social],
+    [onClose, requireAuth, social],
   );
 
   useEffect(() => {
@@ -271,6 +257,14 @@ export function PeekMenu({ open, onClose, position, type, id, title }: PeekMenuP
         onClose={() => setReporting(false)}
         target={{ kind: 'entity', type, id }}
         {...(title === undefined ? {} : { subject: title })}
+      />
+
+      <ShareMenu
+        open={sharing}
+        onClose={() => setSharing(false)}
+        type={type}
+        id={id}
+        title={title}
       />
     </>
   );

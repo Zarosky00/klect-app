@@ -2,15 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../core/interactions/interactions.dart';
-import '../core/links.dart';
 import '../design/theme.dart';
 import '../features/pulse/widgets/pulse_composer.dart';
 import 'k_count_pill.dart';
 import 'k_pressable.dart';
 import 'k_report_sheet.dart';
+import 'k_share_sheet.dart';
 import 'k_sheet.dart';
 import 'k_toast.dart';
 
@@ -90,16 +89,12 @@ class _KActionBarState extends ConsumerState<KActionBar> {
   InteractionController get _controller =>
       ref.read(interactionProvider(widget.entity).notifier);
 
-  Future<void> _share() async {
-    final url = KlectLinks.urlFor(widget.entity.type, widget.entity.id);
-    final title = widget.shareTitle;
-    await SharePlus.instance.share(
-      ShareParams(
-        text: title == null ? url : '$title\n$url',
-        subject: title,
-      ),
-    );
-  }
+  Future<void> _share() => KShareSheet.show(
+    context,
+    entityType: widget.entity.type,
+    entityId: widget.entity.id,
+    title: widget.shareTitle,
+  );
 
   void _report() {
     KReportSheet.showForEntity(
@@ -129,8 +124,7 @@ class _KActionBarState extends ConsumerState<KActionBar> {
             detail: reposted
                 ? 'Take it back out of your followers’ Pulse.'
                 : 'Put this in front of your followers as-is.',
-            onTap: () =>
-                Navigator.of(sheetContext).pop(_RepostChoice.repost),
+            onTap: () => Navigator.of(sheetContext).pop(_RepostChoice.repost),
           ),
           _RepostOption(
             icon: Icons.format_quote_rounded,
@@ -162,8 +156,10 @@ class _KActionBarState extends ConsumerState<KActionBar> {
     final state = ref.watch(interactionProvider(widget.entity));
     final colors = context.kc;
 
-    ref.listen<InteractionState>(interactionProvider(widget.entity),
-        (previous, next) {
+    ref.listen<InteractionState>(interactionProvider(widget.entity), (
+      previous,
+      next,
+    ) {
       final error = next.error;
       if (error != null && error != previous?.error) {
         KToast.error(context, error.message);
@@ -182,7 +178,8 @@ class _KActionBarState extends ConsumerState<KActionBar> {
           count: state.likeCount,
           active: state.liked,
           activeColor: colors.actionLike,
-          semanticLabel: '${state.liked ? 'Unlike' : 'Like'}, '
+          semanticLabel:
+              '${state.liked ? 'Unlike' : 'Like'}, '
               '${state.likeCount}',
           onTap: _controller.toggleLike,
         ),
@@ -193,7 +190,8 @@ class _KActionBarState extends ConsumerState<KActionBar> {
           count: state.saveCount,
           active: state.saved,
           activeColor: colors.actionSave,
-          semanticLabel: '${state.saved ? 'Unsave' : 'Save'}, '
+          semanticLabel:
+              '${state.saved ? 'Unsave' : 'Save'}, '
               '${state.saveCount}',
           onTap: () => _controller.toggleSave(),
         ),
@@ -204,7 +202,8 @@ class _KActionBarState extends ConsumerState<KActionBar> {
           count: state.repostCount,
           active: state.reposted,
           activeColor: colors.actionRepost,
-          semanticLabel: '${state.reposted ? 'Undo repost' : 'Repost'} '
+          semanticLabel:
+              '${state.reposted ? 'Undo repost' : 'Repost'} '
               'or quote, ${state.repostCount}',
           onTap: () => unawaited(_repostChooser()),
         ),
@@ -288,8 +287,9 @@ class _RepostOption extends StatelessWidget {
                   Text(label, style: context.kt.bodyStrong),
                   Text(
                     detail,
-                    style: context.kt.caption
-                        .copyWith(color: colors.textTertiary),
+                    style: context.kt.caption.copyWith(
+                      color: colors.textTertiary,
+                    ),
                   ),
                 ],
               ),

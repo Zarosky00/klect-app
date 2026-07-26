@@ -31,6 +31,14 @@ import { tileFromSurfCard, tileKey, type TileCard } from './tile-card';
 
 const PAGE_SIZE = 30;
 
+/**
+ * Ceiling on retained cards. Offscreen tiles are cheap (`content-visibility:
+ * auto` in `Masonry`), but state, keys and DOM nodes still accumulate on an
+ * endless scroll — so the append-only growth stops here and the reader is
+ * offered a reseed instead. 20 pages ≈ 40+ screens of tiles.
+ */
+const MAX_CARDS = PAGE_SIZE * 20;
+
 export interface SurfGridProps {
   initialCards: TileCard[];
   seed: string;
@@ -89,8 +97,11 @@ export function SurfGrid({
     [],
   );
 
+  const atCapacity = state.cards.length >= MAX_CARDS;
+
   const loadMore = useCallback(async () => {
     if (inFlight.current) return;
+    if (state.cards.length >= MAX_CARDS) return;
     inFlight.current = true;
     const ticket = requestId.current;
     setLoading(true);
@@ -127,7 +138,7 @@ export function SurfGrid({
       if (ticket === requestId.current) setLoading(false);
       inFlight.current = false;
     }
-  }, [activeSeed, filter, state.offset, supabase]);
+  }, [activeSeed, filter, state.cards.length, state.offset, supabase]);
 
   // Refill after a filter change or a reseed.
   useEffect(() => {
@@ -141,7 +152,7 @@ export function SurfGrid({
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || typeof IntersectionObserver === 'undefined') return;
-    if (state.exhausted) return;
+    if (state.exhausted || atCapacity) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -151,7 +162,7 @@ export function SurfGrid({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [error, loadMore, state.exhausted]);
+  }, [atCapacity, error, loadMore, state.exhausted]);
 
   const changeFilter = useCallback(
     (next: SurfFilter) => {
@@ -236,6 +247,15 @@ export function SurfGrid({
       <div className="flex justify-center pb-10 pt-2">
         {state.exhausted && state.cards.length > 0 ? (
           <p className="text-caption text-ink-3">You have reached the end of the feed.</p>
+        ) : atCapacity ? (
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-caption text-ink-3">
+              That is a lot of surfing. Reshuffle for fresh picks.
+            </p>
+            <Button variant="secondary" onClick={reseed} iconLeft="repost">
+              Fresh picks
+            </Button>
+          </div>
         ) : error && state.cards.length > 0 ? (
           <Button variant="secondary" onClick={() => void loadMore()} iconLeft="repost">
             Retry
