@@ -174,15 +174,138 @@ class KlectApi {
   }
 
   /// `pulse_feed` — the X-style stream. Pass the oldest [before] you have to
-  /// page backwards.
-  Future<List<PulseEntry>> pulseFeed({int limit = 25, DateTime? before}) async {
+  /// page backwards; [mode] picks the ranked For-you feed or the
+  /// chronological Following feed (`p_mode`, 0018).
+  Future<List<PulseEntry>> pulseFeed({
+    int limit = 25,
+    DateTime? before,
+    PulseMode mode = PulseMode.following,
+  }) async {
     final rows = asMapList(
       await _rpc('pulse_feed', <String, dynamic>{
         'p_limit': limit,
         'p_before': isoOrNull(before),
+        'p_mode': mode.wire,
       }),
     );
     return <PulseEntry>[for (final row in rows) PulseEntry.fromJson(row)];
+  }
+
+  /// `create_post` — **the** insert path for posts (0018).
+  ///
+  /// Share text, up to four photo descriptors ([media], already uploaded to
+  /// `{uid}/posts/{draft}/…` in the `media` bucket), an attached entity, a
+  /// quote (`entityType == EntityType.post`), or a reply ([replyTo]). The
+  /// server derives `kind`; [kind] rides along for contract stability.
+  ///
+  /// Returns the new post's full pulse envelope so the composer can prepend
+  /// it to the stream verbatim. The RPC's stable snake_case error texts are
+  /// mapped to human copy here.
+  Future<PulseEntry> createPost({
+    String? body,
+    PostKind kind = PostKind.post,
+    EntityType? entityType,
+    String? entityId,
+    List<Map<String, dynamic>>? media,
+    String? replyTo,
+  }) async {
+    try {
+      return PulseEntry.fromJson(asMap(
+        await _rpc('create_post', <String, dynamic>{
+          'p_body': body,
+          'p_kind': kind.wire,
+          'p_entity_type': entityType?.wire,
+          'p_entity_id': entityId,
+          'p_media': media,
+          'p_reply_to': replyTo,
+        }),
+      ));
+    } on KlectError catch (error) {
+      throw _mapCreatePostError(error);
+    }
+  }
+
+  /// Translates `create_post`'s stable snake_case error texts (see the 0018
+  /// migration header) into copy a person can act on.
+  KlectError _mapCreatePostError(KlectError error) {
+    final code = error.message.trim();
+    return switch (code) {
+      'body_too_long' => KlectError(
+          KlectErrorKind.unknown,
+          'Posts are capped at 2,000 characters.',
+          code: error.code,
+          cause: error,
+        ),
+      'body_or_attachment_required' => KlectError(
+          KlectErrorKind.unknown,
+          'Say something, or attach a photo or something you own.',
+          code: error.code,
+          cause: error,
+        ),
+      'bad_target' => KlectError(
+          KlectErrorKind.unknown,
+          'That attachment could not be used.',
+          code: error.code,
+          cause: error,
+        ),
+      'entity_not_found' => KlectError(
+          KlectErrorKind.notFound,
+          'What you attached is no longer available.',
+          code: error.code,
+          cause: error,
+        ),
+      'reply_not_found' => KlectError(
+          KlectErrorKind.notFound,
+          'The post you are replying to is gone.',
+          code: error.code,
+          cause: error,
+        ),
+      'blocked' => KlectError(
+          KlectErrorKind.forbidden,
+          'You cannot interact with this account.',
+          code: error.code,
+          cause: error,
+        ),
+      'bad_media' || 'media_not_yours' => KlectError(
+          KlectErrorKind.storage,
+          'One of the photos could not be attached. Try again.',
+          code: error.code,
+          cause: error,
+        ),
+      'too_many_media' => KlectError(
+          KlectErrorKind.unknown,
+          'A post can carry up to four photos.',
+          code: error.code,
+          cause: error,
+        ),
+      _ => error,
+    };
+  }
+
+  /// One post by id, with its author joined.
+  Future<PostModel?> fetchPost(String id) async {
+    final row = await _guard(
+      () => _client
+          .from('posts')
+          .select('*, author:profiles!author_id(*)')
+          .eq('id', id)
+          .isFilter('deleted_at', null)
+          .maybeSingle(),
+    );
+    return row == null ? null : PostModel.fromJson(row);
+  }
+
+  /// Every photo of a post, ordered. `post_media` rows share `item_media`'s
+  /// shape, so they parse through the same model.
+  Future<List<ItemMedia>> fetchPostMedia(String postId) async {
+    final rows = await _guard(
+      () => _client
+          .from('post_media')
+          .select()
+          .eq('post_id', postId)
+          .order('position'),
+    );
+    return <ItemMedia>[for (final row in rows) ItemMedia.fromJson(row)];
   }
 
   /// `get_closeup(p_type, p_id)` — the single-tap detail payload.
@@ -680,11 +803,44 @@ class KlectApi {
 
   // ───────────────────────────────────────────────────────────── comments ──
 
-  /// Reads a comment thread for any entity, oldest first.
+  /// A page of **root** comments for any entity.
+  ///
+  /// [sort] picks the ordering: [CommentSort.top] is like-count descending
+  /// (ties oldest-first), [CommentSort.newest] is newest-first. Replies come
+  /// separately via [fetchCommentReplies]; the viewer's like state is seeded
+  /// in one batch via [fetchLikedCommentIds].
   Future<List<CommentModel>> fetchComments({
     required EntityType type,
     required String id,
-    int limit = 100,
+    CommentSort sort = CommentSort.top,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final query = _client
+        .from('comments')
+        .select('*, author:profiles!author_id(*)')
+        .eq('entity_type', type.wire)
+        .eq('entity_id', id)
+        .isFilter('parent_id', null)
+        .isFilter('deleted_at', null);
+    final ordered = switch (sort) {
+      CommentSort.top => query
+          .order('like_count', ascending: false)
+          .order('created_at', ascending: true),
+      CommentSort.newest => query.order('created_at', ascending: false),
+    };
+    final rows = await _guard(
+      () => ordered.range(offset, offset + limit - 1),
+    );
+    return <CommentModel>[for (final row in rows) CommentModel.fromJson(row)];
+  }
+
+  /// Every reply on an entity's thread, oldest first. One query serves every
+  /// loaded root — the view attaches each reply to its parent.
+  Future<List<CommentModel>> fetchCommentReplies({
+    required EntityType type,
+    required String id,
+    int limit = 400,
   }) async {
     final rows = await _guard(
       () => _client
@@ -692,11 +848,29 @@ class KlectApi {
           .select('*, author:profiles!author_id(*)')
           .eq('entity_type', type.wire)
           .eq('entity_id', id)
+          .not('parent_id', 'is', null)
           .isFilter('deleted_at', null)
           .order('created_at')
           .limit(limit),
     );
     return <CommentModel>[for (final row in rows) CommentModel.fromJson(row)];
+  }
+
+  /// Which of [commentIds] the viewer has liked — **one** query for a whole
+  /// page of comments, instead of a `viewer_liked` that never arrives from a
+  /// plain table select.
+  Future<Set<String>> fetchLikedCommentIds(List<String> commentIds) async {
+    final me = currentUserId;
+    if (me == null || commentIds.isEmpty) return const <String>{};
+    final rows = await _guard(
+      () => _client
+          .from('likes')
+          .select('entity_id')
+          .eq('user_id', me)
+          .eq('entity_type', EntityType.comment.wire)
+          .inFilter('entity_id', commentIds),
+    );
+    return <String>{for (final row in rows) asString(row['entity_id'])};
   }
 
   // ──────────────────────────────────────────────────────── notifications ──

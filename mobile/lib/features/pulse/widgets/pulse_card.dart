@@ -11,12 +11,14 @@ import '../../../ui/ui.dart';
 import '../../surf/surf.dart';
 import '../data/pulse_entry_view.dart';
 import 'entity_attachment_card.dart';
+import 'pulse_target_card.dart';
 
 /// One row of the Pulse stream.
 ///
-/// Four shapes, one card: an original post, a bare repost ("kenji reposted"),
-/// a quote repost with commentary, and any of those carrying an inline
-/// collection / shelf / thing.
+/// Four shapes, one card: an original post (now with up to four of its own
+/// photos), a bare repost ("kenji reposted"), a quote with commentary, and
+/// any of those carrying the server-embedded target — a quoted-post card or
+/// an entity card, with a tombstone when the target is gone.
 ///
 /// The action bar underneath is the *same* bar the Closeup uses, wired to the
 /// same optimistic engine — a like here and a like there are the same like.
@@ -38,14 +40,26 @@ class PulseCard extends ConsumerWidget {
   Profile? get _reposterHeader =>
       item.kind == PulseKind.repost ? item.reposter : null;
 
+  /// A bare repost of a post renders the post's content **inline** — byline,
+  /// body and photo — instead of boxing the same author twice.
+  PulseTarget? get _inlinePost {
+    final target = item.target;
+    if (item.kind != PulseKind.repost) return null;
+    if (target == null || target.type != EntityType.post) return null;
+    return target;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
     final text = context.kt;
     final presenter = _presenter;
     final reposter = _reposterHeader;
-    final attachment = item.attachment;
-    final body = item.text;
+    final inlinePost = _inlinePost;
+    final target = inlinePost == null ? item.target : null;
+    final body = inlinePost == null
+        ? item.text
+        : (inlinePost.unavailable ? null : inlinePost.body);
     final avatarUrl = ref.watch(klectApiProvider).publicUrl(
           presenter?.avatarPath,
           bucket: StorageBucket.avatars,
@@ -126,9 +140,28 @@ class PulseCard extends ConsumerWidget {
                         const SizedBox(height: Space.s1),
                         Text(body, style: text.body),
                       ],
-                      if (attachment != null) ...<Widget>[
+                      if (item.media.isNotEmpty) ...<Widget>[
                         const SizedBox(height: Space.s3),
-                        EntityAttachmentCard(entity: attachment),
+                        PostMediaGrid(media: item.media),
+                      ],
+                      if (inlinePost != null) ...<Widget>[
+                        if (inlinePost.unavailable) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          PulseTargetCard(target: inlinePost),
+                        ] else if (inlinePost.coverPath != null) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          _InlinePostCover(target: inlinePost),
+                        ],
+                      ],
+                      if (target != null) ...<Widget>[
+                        const SizedBox(height: Space.s3),
+                        PulseTargetCard(target: target),
+                      ] else if (inlinePost == null &&
+                          item.attachment != null) ...<Widget>[
+                        // Legacy fallback: an envelope without an embedded
+                        // target still gets a client-resolved entity card.
+                        const SizedBox(height: Space.s3),
+                        EntityAttachmentCard(entity: item.attachment!),
                       ],
                       const SizedBox(height: Space.s2),
                       KActionBar(
@@ -152,6 +185,122 @@ class PulseCard extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The photo of a bare-reposted post, rendered inline (unboxed).
+class _InlinePostCover extends ConsumerWidget {
+  const _InlinePostCover({required this.target});
+
+  final PulseTarget target;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url = ref.watch(klectApiProvider).publicUrl(target.coverPath);
+    return KBlurhashImage(
+      url: url,
+      blurhash: target.coverBlurhash,
+      aspectRatio: (target.coverAspect ?? Aspect.cover)
+          .clamp(Aspect.gridMin, Aspect.gridMax),
+      borderRadius: BorderRadius.circular(Radii.lg),
+      semanticLabel: target.body ?? 'Post photo',
+    );
+  }
+}
+
+/// X's media grid: one photo full-width at its own ratio, two side by side,
+/// three as one tall + two stacked, four as a 2×2 — all inside one rounded
+/// clip, every box reserved before a byte arrives.
+class PostMediaGrid extends ConsumerWidget {
+  /// Creates the grid.
+  const PostMediaGrid({required this.media, super.key});
+
+  /// The post's photos, in position order (at most four render).
+  final List<ItemMedia> media;
+
+  /// Gap between grid cells.
+  static const double _gap = Space.s05;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (media.isEmpty) return const SizedBox.shrink();
+    final api = ref.watch(klectApiProvider);
+    final shots = media.take(4).toList(growable: false);
+
+    Widget image(ItemMedia m, {double? aspectRatio}) => KBlurhashImage(
+          url: api.publicUrl(m.storagePath),
+          blurhash: m.blurhash,
+          aspectRatio: aspectRatio,
+          borderRadius: BorderRadius.zero,
+          semanticLabel: m.altText ?? 'Post photo',
+        );
+
+    if (shots.length == 1) {
+      final m = shots.first;
+      final intrinsic = (m.width != null && m.height != null && m.height! > 0)
+          ? m.width! / m.height!
+          : Aspect.cover;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(Radii.lg),
+        child: image(
+          m,
+          aspectRatio: intrinsic.clamp(Aspect.gridMin, Aspect.gridMax),
+        ),
+      );
+    }
+
+    final grid = switch (shots.length) {
+      2 => Row(
+          children: <Widget>[
+            Expanded(child: image(shots[0])),
+            const SizedBox(width: _gap),
+            Expanded(child: image(shots[1])),
+          ],
+        ),
+      3 => Row(
+          children: <Widget>[
+            Expanded(child: image(shots[0])),
+            const SizedBox(width: _gap),
+            Expanded(
+              child: Column(
+                children: <Widget>[
+                  Expanded(child: image(shots[1])),
+                  const SizedBox(height: _gap),
+                  Expanded(child: image(shots[2])),
+                ],
+              ),
+            ),
+          ],
+        ),
+      _ => Column(
+          children: <Widget>[
+            Expanded(
+              child: Row(
+                children: <Widget>[
+                  Expanded(child: image(shots[0])),
+                  const SizedBox(width: _gap),
+                  Expanded(child: image(shots[1])),
+                ],
+              ),
+            ),
+            const SizedBox(height: _gap),
+            Expanded(
+              child: Row(
+                children: <Widget>[
+                  Expanded(child: image(shots[2])),
+                  const SizedBox(width: _gap),
+                  Expanded(child: image(shots[3])),
+                ],
+              ),
+            ),
+          ],
+        ),
+    };
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(Radii.lg),
+      child: AspectRatio(aspectRatio: Aspect.gridMax, child: grid),
     );
   }
 }

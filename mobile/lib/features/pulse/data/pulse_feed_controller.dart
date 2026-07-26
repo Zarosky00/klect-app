@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
+import '../../../core/models/models.dart';
 import 'pulse_entry_view.dart';
 
 /// The Pulse stream's paging state.
@@ -19,6 +20,7 @@ class PulseFeedState {
     this.refreshing = false,
     this.hasMore = true,
     this.error,
+    this.freshKey,
   });
 
   /// Normalised rows, newest first.
@@ -39,6 +41,9 @@ class PulseFeedState {
   /// The last failure.
   final KlectError? error;
 
+  /// Key of a just-composed row, so the screen can slide it in.
+  final String? freshKey;
+
   /// Nothing to show and nothing on the way.
   bool get isEmpty => items.isEmpty && !loading;
 
@@ -51,6 +56,8 @@ class PulseFeedState {
     bool? hasMore,
     KlectError? error,
     bool clearError = false,
+    String? freshKey,
+    bool clearFresh = false,
   }) =>
       PulseFeedState(
         items: items ?? this.items,
@@ -59,15 +66,24 @@ class PulseFeedState {
         refreshing: refreshing ?? this.refreshing,
         hasMore: hasMore ?? this.hasMore,
         error: clearError ? null : (error ?? this.error),
+        freshKey: clearFresh ? null : (freshKey ?? this.freshKey),
       );
 }
 
-/// **Pulse** — the X-style stream, paged on the `created_at` cursor.
+/// **Pulse** — the X-style stream, one controller per [PulseMode].
 ///
-/// `pulse_feed(p_limit, p_before)` is a cursor feed, not an offset feed, so
-/// pagination is immune to new posts arriving while you read: we simply ask
-/// for everything older than the oldest row on screen.
+/// `pulse_feed(p_limit, p_before, p_mode)` is a cursor feed, not an offset
+/// feed, so pagination is immune to new posts arriving while you read. Both
+/// modes page on **min(sort_at) currently on screen**: Following is
+/// chronological so that is simply the last row, and For-you is score-ordered
+/// so the minimum must be taken across the whole page (per the 0018 header).
 class PulseFeedController extends Notifier<PulseFeedState> {
+  /// Creates the controller for one feed mode.
+  PulseFeedController(this.mode);
+
+  /// Which half of the stream this controller owns.
+  final PulseMode mode;
+
   /// Rows per page.
   static const int pageSize = 25;
 
@@ -98,6 +114,33 @@ class PulseFeedController extends Notifier<PulseFeedState> {
   /// Retries whatever failed last.
   Future<void> retry() => _load(reset: state.items.isEmpty);
 
+  /// Puts a just-composed post at the top of the stream.
+  ///
+  /// `create_post` returns the full envelope, so nothing needs refetching:
+  /// the row is seeded into the optimistic engine and marked fresh so the
+  /// screen can slide it in.
+  void prepend(PulseEntry entry) {
+    final item = PulseItem.fromEntry(entry);
+    if (!_seen.add(item.key)) return;
+    ref.read(interactionSeedStoreProvider).put(item.entity, item.seed);
+    state = state.copyWith(
+      items: <PulseItem>[item, ...state.items],
+      freshKey: item.key,
+    );
+  }
+
+  /// The next `p_before`: the minimum `sort_at` currently on screen. For-you
+  /// pages are score-ordered, so the last row is not necessarily the oldest.
+  DateTime? _oldestOnScreen() {
+    DateTime? oldest;
+    for (final item in state.items) {
+      final at = item.sortAt;
+      if (at == null) continue;
+      if (oldest == null || at.isBefore(oldest)) oldest = at;
+    }
+    return oldest;
+  }
+
   Future<void> _load({required bool reset}) async {
     if (_busy) return;
     _busy = true;
@@ -108,15 +151,17 @@ class PulseFeedController extends Notifier<PulseFeedState> {
             loading: !hadItems,
             refreshing: hadItems,
             clearError: true,
+            clearFresh: true,
           )
-        : state.copyWith(loadingMore: true, clearError: true);
+        : state.copyWith(loadingMore: true, clearError: true, clearFresh: true);
 
-    final before = reset ? null : state.items.last.sortAt;
+    final before = reset ? null : _oldestOnScreen();
 
     try {
       final rows = await ref.read(klectApiProvider).pulseFeed(
             limit: pageSize,
             before: before,
+            mode: mode,
           );
 
       if (reset) _seen.clear();
@@ -156,9 +201,25 @@ class PulseFeedController extends Notifier<PulseFeedState> {
   }
 }
 
-/// The Pulse stream.
+/// The Pulse stream, one instance per tab.
 final pulseFeedProvider =
-    NotifierProvider<PulseFeedController, PulseFeedState>(
+    NotifierProvider.family<PulseFeedController, PulseFeedState, PulseMode>(
   PulseFeedController.new,
   name: 'pulseFeed',
+);
+
+/// Which Pulse tab is on screen. Lives outside the screen so the composer can
+/// prepend into the feed the user is actually looking at.
+class PulseModeController extends Notifier<PulseMode> {
+  @override
+  PulseMode build() => PulseMode.foryou;
+
+  /// Switches tab.
+  void select(PulseMode mode) => state = mode;
+}
+
+/// The active Pulse tab.
+final pulseModeProvider = NotifierProvider<PulseModeController, PulseMode>(
+  PulseModeController.new,
+  name: 'pulseMode',
 );

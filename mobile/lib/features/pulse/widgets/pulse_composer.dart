@@ -2,12 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
+import '../../../core/interactions/interactions.dart';
 import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
+import '../../create/media/image_pipeline.dart';
+import '../../create/media/photo_source_sheet.dart';
+import '../data/pulse_feed_controller.dart';
+import 'pulse_target_card.dart';
+
+const Uuid _uuid = Uuid();
 
 /// Something the viewer owns, chosen to be shared into Pulse.
 @immutable
@@ -41,38 +49,77 @@ class PulseAttachment {
   final String? blurhash;
 }
 
-/// The Pulse composer: **text plus something you own**.
+/// The Pulse composer — X parity, driven by `create_post` (0018).
 ///
-/// Klect's write surface has exactly one way to put a thing in front of the
-/// people who follow you — `toggle_repost(p_type, p_id, p_quote)` — so that is
-/// what the composer drives. Picking one of your collections, shelves or
-/// things and adding a note publishes a quote repost; the RPC is idempotent,
-/// so sharing something already in your Pulse takes it back out again and the
-/// sheet says so rather than silently doing nothing.
+/// Text-only posts, up to four photos (prepared by the same pipeline the
+/// create flow uses, uploaded to `{uid}/posts/{draft}/{uuid}.jpg` in the
+/// `media` bucket, then handed to the RPC as descriptors), an optional
+/// entity share card, and quote mode (`entity_type = 'post'`) opened from the
+/// repost chooser with the subject embedded.
 abstract final class PulseComposer {
-  /// Opens the composer. Resolves true when something was published.
-  static Future<bool> show(BuildContext context) async {
-    final result = await KSheet.show<bool>(
-      context: context,
-      title: 'Share to Pulse',
-      builder: (sheetContext) => const _ComposerBody(),
-    );
-    return result ?? false;
-  }
+  /// Opens the composer. [subject] pre-embeds a thing being quoted or shared
+  /// — pass `EntityRef.post(id)` for an X-style quote.
+  ///
+  /// Resolves with the new post's pulse envelope, or null when nothing was
+  /// published. The envelope is also prepended to the Following stream, so
+  /// callers only need the return value if they render the post themselves.
+  static Future<PulseEntry?> show(
+    BuildContext context, {
+    EntityRef? subject,
+  }) =>
+      KSheet.show<PulseEntry>(
+        context: context,
+        title: subject?.type == EntityType.post ? 'Quote' : 'Share to Pulse',
+        builder: (sheetContext) => _ComposerBody(subject: subject),
+      );
+}
+
+/// One photo in the composer tray: prepared on-device, uploaded at publish.
+class _DraftPhoto {
+  _DraftPhoto(this.prepared);
+
+  final String id = _uuid.v4();
+  final PreparedImage prepared;
 }
 
 class _ComposerBody extends ConsumerStatefulWidget {
-  const _ComposerBody();
+  const _ComposerBody({this.subject});
+
+  final EntityRef? subject;
 
   @override
   ConsumerState<_ComposerBody> createState() => _ComposerBodyState();
 }
 
 class _ComposerBodyState extends ConsumerState<_ComposerBody> {
+  /// `create_post` refuses more than four descriptors.
+  static const int maxPhotos = 4;
+
+  /// `posts.body` is capped at 2,000 characters server-side.
+  static const int maxBody = 2000;
+
   final TextEditingController _text = TextEditingController();
+  final String _draftId = _uuid.v4();
+  final List<_DraftPhoto> _photos = <_DraftPhoto>[];
+
   PulseAttachment? _attachment;
+  bool _preparing = false;
   bool _busy = false;
+  String? _progress;
   String? _error;
+
+  bool get _hasContent =>
+      _text.text.trim().isNotEmpty ||
+      _photos.isNotEmpty ||
+      _attachment != null ||
+      widget.subject != null;
+
+  @override
+  void initState() {
+    super.initState();
+    // The publish button's enabled state follows the text.
+    _text.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -80,93 +127,327 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
     super.dispose();
   }
 
-  Future<void> _pick() async {
+  Future<void> _addPhotos() async {
+    final remaining = maxPhotos - _photos.length;
+    if (remaining <= 0 || _preparing || _busy) return;
+    final picked = await PhotoSourceSheet.pick(context, limit: remaining);
+    if (picked.isEmpty || !mounted) return;
+
+    setState(() {
+      _preparing = true;
+      _error = null;
+    });
+    try {
+      for (final file in picked.take(remaining)) {
+        final raw = await file.readAsBytes();
+        final prepared = await ImagePipeline.prepare(raw);
+        if (!mounted) return;
+        setState(() => _photos.add(_DraftPhoto(prepared)));
+      }
+    } on ImagePreparationException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not read that photo.');
+    } finally {
+      if (mounted) setState(() => _preparing = false);
+    }
+  }
+
+  void _removePhoto(String id) =>
+      setState(() => _photos.removeWhere((photo) => photo.id == id));
+
+  Future<void> _pickAttachment() async {
     final picked = await _EntityPicker.show(context);
     if (picked == null || !mounted) return;
     setState(() => _attachment = picked);
   }
 
-  Future<void> _publish() async {
+  (EntityType, String)? get _target {
+    final subject = widget.subject;
+    if (subject != null) return (subject.type, subject.id);
     final attachment = _attachment;
-    if (attachment == null || _busy) return;
+    if (attachment != null) return (attachment.type, attachment.id);
+    return null;
+  }
+
+  Future<void> _publish() async {
+    if (_busy || _preparing || !_hasContent) return;
     setState(() {
       _busy = true;
       _error = null;
     });
-    final note = _text.text.trim();
+
+    final api = ref.read(klectApiProvider);
+    final uploaded = <String>[];
     try {
-      final result = await ref.read(klectApiProvider).toggleRepost(
-            attachment.type,
-            attachment.id,
-            quote: note.isEmpty ? null : note,
+      // 1. Photos land in the media bucket under the draft's folder —
+      //    {uid}/posts/{draftId}/{uuid} — which create_post validates.
+      final descriptors = <Map<String, dynamic>>[];
+      for (var index = 0; index < _photos.length; index++) {
+        final prepared = _photos[index].prepared;
+        if (mounted && _photos.length > 1) {
+          setState(
+            () => _progress =
+                'Uploading photo ${index + 1} of ${_photos.length}…',
           );
-      if (!mounted) return;
-      Navigator.of(context).pop(result.active);
-      KToast.show(
-        context,
-        result.active
-            ? 'Shared to Pulse'
-            : 'Removed from Pulse — it was already there',
-        kind: result.active ? KToastKind.success : KToastKind.neutral,
-        icon: result.active ? Icons.bolt_rounded : Icons.undo_rounded,
+        }
+        final key = await api.upload(
+          bucket: StorageBucket.media,
+          objectPath: 'posts/$_draftId/${_uuid.v4()}.${prepared.extension}',
+          bytes: prepared.bytes,
+          contentType: prepared.mimeType,
+        );
+        uploaded.add(key);
+        descriptors.add(<String, dynamic>{
+          'storage_path': key,
+          'width': prepared.width,
+          'height': prepared.height,
+          'blurhash': prepared.blurhash.isEmpty ? null : prepared.blurhash,
+          'mime_type': prepared.mimeType,
+          'bytes': prepared.byteLength,
+          'position': index,
+        });
+      }
+
+      if (mounted) setState(() => _progress = 'Publishing…');
+
+      // 2. The one insert path for posts.
+      final target = _target;
+      final body = _text.text.trim();
+      final entry = await api.createPost(
+        body: body.isEmpty ? null : body,
+        kind: target != null && target.$1 == EntityType.post
+            ? PostKind.quote
+            : PostKind.post,
+        entityType: target?.$1,
+        entityId: target?.$2,
+        media: descriptors.isEmpty ? null : descriptors,
       );
+
+      // 3. Prepend the returned envelope so the stream shows it instantly —
+      //    own posts always belong to the Following feed.
+      ref
+          .read(pulseFeedProvider(PulseMode.following).notifier)
+          .prepend(entry);
+
+      if (!mounted) return;
+      Navigator.of(context).pop(entry);
     } on KlectError catch (error) {
+      // Best effort: a failed publish must not leave orphan blobs behind.
+      for (final key in uploaded) {
+        unawaited(
+          api.removeUpload(StorageBucket.media, key).catchError((_) {}),
+        );
+      }
       if (!mounted) return;
       setState(() => _error = error.message);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _progress = null;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
+    final subject = widget.subject;
     final attachment = _attachment;
+    final isQuote = subject?.type == EntityType.post;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        KTextField(
-          controller: _text,
-          hint: 'Say something about it',
-          maxLines: 5,
-          minLines: 3,
-          maxLength: 500,
-          autofocus: true,
-        ),
-        const SizedBox(height: Space.s4),
-        if (attachment == null)
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          KTextField(
+            controller: _text,
+            hint: isQuote
+                ? 'Add your take'
+                : 'What is on your shelf today?',
+            maxLines: 6,
+            minLines: 3,
+            maxLength: maxBody,
+            autofocus: true,
+          ),
+          if (_photos.isNotEmpty || _preparing) ...<Widget>[
+            const SizedBox(height: Space.s3),
+            _PhotoTray(
+              photos: _photos,
+              preparing: _preparing,
+              onRemove: _busy ? null : _removePhoto,
+            ),
+          ],
+          if (subject != null) ...<Widget>[
+            const SizedBox(height: Space.s3),
+            PulseTargetLoader(entity: subject, interactive: false),
+          ],
+          if (subject == null) ...<Widget>[
+            const SizedBox(height: Space.s3),
+            if (attachment == null)
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: KButton(
+                      label: 'Photos',
+                      icon: Icons.add_photo_alternate_outlined,
+                      variant: KButtonVariant.secondary,
+                      expand: true,
+                      onPressed: _photos.length >= maxPhotos || _busy
+                          ? null
+                          : () => unawaited(_addPhotos()),
+                    ),
+                  ),
+                  const SizedBox(width: Space.s2),
+                  Expanded(
+                    child: KButton(
+                      label: 'Something you own',
+                      icon: Icons.collections_bookmark_outlined,
+                      variant: KButtonVariant.secondary,
+                      expand: true,
+                      onPressed:
+                          _busy ? null : () => unawaited(_pickAttachment()),
+                    ),
+                  ),
+                ],
+              )
+            else ...<Widget>[
+              _AttachmentPreview(
+                attachment: attachment,
+                onRemove: () => setState(() => _attachment = null),
+                onChange: () => unawaited(_pickAttachment()),
+              ),
+              const SizedBox(height: Space.s2),
+              KButton(
+                label: 'Add photos',
+                icon: Icons.add_photo_alternate_outlined,
+                variant: KButtonVariant.ghost,
+                size: KButtonSize.small,
+                onPressed: _photos.length >= maxPhotos || _busy
+                    ? null
+                    : () => unawaited(_addPhotos()),
+              ),
+            ],
+          ] else ...<Widget>[
+            const SizedBox(height: Space.s3),
+            KButton(
+              label: 'Add photos',
+              icon: Icons.add_photo_alternate_outlined,
+              variant: KButtonVariant.secondary,
+              size: KButtonSize.small,
+              onPressed: _photos.length >= maxPhotos || _busy
+                  ? null
+                  : () => unawaited(_addPhotos()),
+            ),
+          ],
+          if (_error != null) ...<Widget>[
+            const SizedBox(height: Space.s3),
+            Text(
+              _error!,
+              style: context.kt.caption.copyWith(color: colors.semanticDanger),
+            ),
+          ],
+          if (_progress != null) ...<Widget>[
+            const SizedBox(height: Space.s3),
+            Text(
+              _progress!,
+              style:
+                  context.kt.caption.copyWith(color: colors.textSecondary),
+            ),
+          ],
+          const SizedBox(height: Space.s5),
           KButton(
-            label: 'Attach something you own',
-            icon: Icons.add_photo_alternate_outlined,
-            variant: KButtonVariant.secondary,
+            label: isQuote ? 'Quote' : 'Post',
+            icon: Icons.bolt_rounded,
             expand: true,
-            onPressed: () => unawaited(_pick()),
-          )
-        else
-          _AttachmentPreview(
-            attachment: attachment,
-            onRemove: () => setState(() => _attachment = null),
-            onChange: () => unawaited(_pick()),
+            busy: _busy,
+            onPressed:
+                _hasContent && !_preparing ? () => unawaited(_publish()) : null,
           ),
-        if (_error != null) ...<Widget>[
-          const SizedBox(height: Space.s3),
-          Text(
-            _error!,
-            style: context.kt.caption.copyWith(color: colors.semanticDanger),
-          ),
+          SizedBox(height: MediaQuery.viewInsetsOf(context).bottom),
         ],
-        const SizedBox(height: Space.s5),
-        KButton(
-          label: 'Share',
-          icon: Icons.bolt_rounded,
-          expand: true,
-          busy: _busy,
-          onPressed: attachment == null ? null : () => unawaited(_publish()),
-        ),
-        SizedBox(height: MediaQuery.viewInsetsOf(context).bottom),
-      ],
+      ),
+    );
+  }
+}
+
+/// The horizontal strip of prepared photos, with remove buttons.
+class _PhotoTray extends StatelessWidget {
+  const _PhotoTray({
+    required this.photos,
+    required this.preparing,
+    required this.onRemove,
+  });
+
+  final List<_DraftPhoto> photos;
+  final bool preparing;
+  final void Function(String id)? onRemove;
+
+  static const double _tile = Space.s20;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return SizedBox(
+      height: _tile,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: <Widget>[
+          for (final photo in photos)
+            Padding(
+              padding: const EdgeInsets.only(right: Space.s2),
+              child: Stack(
+                children: <Widget>[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(Radii.md),
+                    child: Image.memory(
+                      photo.prepared.bytes,
+                      width: _tile,
+                      height: _tile,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                  if (onRemove != null)
+                    Positioned(
+                      top: Space.s05,
+                      right: Space.s05,
+                      child: KIconButton(
+                        icon: Icons.close_rounded,
+                        semanticLabel: 'Remove photo',
+                        size: Space.s4,
+                        color: colors.textPrimary,
+                        background: colors.surfaceScrim,
+                        onPressed: () => onRemove!(photo.id),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          if (preparing)
+            Container(
+              width: _tile,
+              height: _tile,
+              decoration: BoxDecoration(
+                color: colors.surface2,
+                borderRadius: BorderRadius.circular(Radii.md),
+              ),
+              child: Center(
+                child: SizedBox(
+                  width: Space.s5,
+                  height: Space.s5,
+                  child: CircularProgressIndicator(
+                    strokeWidth: Strokes.thick,
+                    color: colors.accentDefault,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -379,7 +660,10 @@ class _PickerBodyState extends ConsumerState<_PickerBody> {
         ),
         const SizedBox(height: Space.s2),
         if (_error != null)
-          KInlineError(message: _error!, onRetry: () => unawaited(_loadCollections()))
+          KInlineError(
+            message: _error!,
+            onRetry: () => unawaited(_loadCollections()),
+          )
         else if (_loading)
           const KSkeletonList(rows: 3, showMedia: false)
         else

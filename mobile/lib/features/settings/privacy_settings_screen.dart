@@ -124,59 +124,76 @@ class _PrivacySettingsScreenState
                 'every shelf and item inside it, whatever they say themselves.',
                 style: context.kt.body.copyWith(color: colors.textSecondary),
               ),
-              const SettingsSectionHeader(label: 'Who sees your account'),
-              SettingsChoiceRow(
-                title: AccountVisibility.public.label,
-                subtitle: 'Anyone, including logged-out visitors and search '
-                    'engines.',
-                icon: Icons.public_rounded,
-                selected: visibility == AccountVisibility.public,
-                onTap: () =>
-                    _setVisibility(AccountVisibility.public, visibility),
+              SettingsSection(
+                header: 'Who sees your account',
+                children: <Widget>[
+                  SettingsChoiceRow(
+                    title: AccountVisibility.public.label,
+                    subtitle: 'Anyone, including logged-out visitors and '
+                        'search engines.',
+                    icon: Icons.public_rounded,
+                    selected: visibility == AccountVisibility.public,
+                    onTap: () =>
+                        _setVisibility(AccountVisibility.public, visibility),
+                  ),
+                  SettingsChoiceRow(
+                    title: AccountVisibility.followers.label,
+                    subtitle: 'Only accounts that follow you.',
+                    icon: Icons.group_outlined,
+                    selected: visibility == AccountVisibility.followers,
+                    onTap: () => _setVisibility(
+                      AccountVisibility.followers,
+                      visibility,
+                    ),
+                  ),
+                  SettingsChoiceRow(
+                    title: AccountVisibility.private.label,
+                    subtitle: 'Only you.',
+                    icon: Icons.lock_outline_rounded,
+                    selected: visibility == AccountVisibility.private,
+                    onTap: () =>
+                        _setVisibility(AccountVisibility.private, visibility),
+                  ),
+                ],
               ),
-              SettingsChoiceRow(
-                title: AccountVisibility.followers.label,
-                subtitle: 'Only accounts that follow you.',
-                icon: Icons.group_outlined,
-                selected: visibility == AccountVisibility.followers,
-                onTap: () =>
-                    _setVisibility(AccountVisibility.followers, visibility),
-              ),
-              SettingsChoiceRow(
-                title: AccountVisibility.private.label,
-                subtitle: 'Only you.',
-                icon: Icons.lock_outline_rounded,
-                selected: visibility == AccountVisibility.private,
-                onTap: () =>
-                    _setVisibility(AccountVisibility.private, visibility),
-              ),
-              const SettingsSectionHeader(
-                label: 'Who can message you',
+              SettingsSection(
+                header: 'Who can message you',
                 note: 'Enforced when the conversation is opened, not after.',
+                children: <Widget>[
+                  for (final option in AllowMessagesFrom.values)
+                    SettingsChoiceRow(
+                      title: option.label,
+                      subtitle: _messageSubtitle(option),
+                      icon: _messageIcon(option),
+                      selected: messages == option,
+                      onTap: () => _setMessages(option, messages),
+                    ),
+                ],
               ),
-              for (final option in AllowMessagesFrom.values)
-                SettingsChoiceRow(
-                  title: option.label,
-                  subtitle: _messageSubtitle(option),
-                  selected: messages == option,
-                  onTap: () => _setMessages(option, messages),
-                ),
-              const SettingsSectionHeader(label: 'Taste matching'),
-              SettingsToggleRow(
-                title: 'Appear in "Collectors like you"',
-                subtitle: 'Compares the tags on your shelves with other '
-                    'collectors. Turning this off removes you from matching '
-                    'in both directions.',
-                icon: Icons.auto_awesome_outlined,
-                value: similarity,
-                onChanged: _setSimilarity,
+              SettingsSection(
+                header: 'Taste matching',
+                children: <Widget>[
+                  SettingsToggleRow(
+                    title: 'Appear in "Collectors like you"',
+                    subtitle: 'Compares the tags on your shelves with other '
+                        'collectors. Turning this off removes you from '
+                        'matching in both directions.',
+                    icon: Icons.auto_awesome_outlined,
+                    value: similarity,
+                    onChanged: _setSimilarity,
+                  ),
+                ],
               ),
-              const SettingsSectionHeader(label: 'People'),
-              SettingsRow(
-                icon: Icons.block_outlined,
-                title: 'Blocked and muted',
-                subtitle: 'Blocking is bidirectional and immediate.',
-                onTap: () => context.push('/settings/blocked'),
+              SettingsSection(
+                header: 'People',
+                children: <Widget>[
+                  SettingsRow(
+                    icon: Icons.block_outlined,
+                    title: 'Blocked and muted',
+                    subtitle: 'Blocking is bidirectional and immediate.',
+                    onTap: () => context.push('/settings/blocked'),
+                  ),
+                ],
               ),
               if (_busy)
                 Padding(
@@ -213,5 +230,13 @@ class _PrivacySettingsScreenState
         AllowMessagesFrom.matches => 'Only your taste matches.',
         AllowMessagesFrom.mutual => 'Only people you both follow.',
         AllowMessagesFrom.nobody => 'Nobody can start a new conversation.',
+      };
+
+  static IconData _messageIcon(AllowMessagesFrom option) => switch (option) {
+        AllowMessagesFrom.everyone => Icons.public_rounded,
+        AllowMessagesFrom.following => Icons.person_outline_rounded,
+        AllowMessagesFrom.matches => Icons.auto_awesome_outlined,
+        AllowMessagesFrom.mutual => Icons.group_outlined,
+        AllowMessagesFrom.nobody => Icons.do_not_disturb_on_outlined,
       };
 }

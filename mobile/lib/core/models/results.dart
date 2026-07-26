@@ -1,6 +1,7 @@
 import 'catalog.dart';
 import 'enums.dart';
 import 'json.dart';
+import 'post.dart';
 import 'profile.dart';
 
 /// The authoritative `{active, count}` every toggle RPC returns.
@@ -302,6 +303,8 @@ class PulseEntry {
     this.viewerLiked = false,
     this.viewerSaved = false,
     this.viewerReposted = false,
+    this.media = const <ItemMedia>[],
+    this.target,
   });
 
   /// Parses one entry of the `pulse_feed` array.
@@ -309,6 +312,7 @@ class PulseEntry {
     final actor = asMap(json['actor'] ?? json['reposter']);
     final author = asMap(json['author'] ?? json['owner'] ?? json['profile']);
     final counts = asMap(json['counts']);
+    final target = asMap(json['target']);
     int count(String key, String legacy) =>
         counts.isEmpty ? asInt(json[legacy]) : asInt(counts[key]);
     return PulseEntry(
@@ -328,6 +332,10 @@ class PulseEntry {
       viewerLiked: asBool(json['viewer_liked']),
       viewerSaved: asBool(json['viewer_saved']),
       viewerReposted: asBool(json['viewer_reposted']),
+      media: <ItemMedia>[
+        for (final m in asMapList(json['media'])) ItemMedia.fromJson(m),
+      ]..sort((a, b) => a.position.compareTo(b.position)),
+      target: target.isEmpty ? null : PulseTarget.fromJson(target),
     );
   }
 
@@ -378,6 +386,12 @@ class PulseEntry {
 
   /// Viewer has reposted it.
   final bool viewerReposted;
+
+  /// The post's own photos, in position order. Empty for repost rows.
+  final List<ItemMedia> media;
+
+  /// Server-embedded preview of the attached / quoted / reposted thing.
+  final PulseTarget? target;
 
   /// Stable list key.
   String get key => '${entityType.wire}:$entityId';

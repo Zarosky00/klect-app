@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/klect_api.dart';
+import '../../core/models/models.dart';
 import '../../core/offline/action_queue.dart';
 import '../../core/settings/app_settings.dart';
 import '../../design/theme.dart';
@@ -49,86 +50,66 @@ class SettingsScreen extends ConsumerWidget {
         ),
         children: <Widget>[
           if (profile != null)
-            KPressable(
+            _ProfileHeroRow(
+              profile: profile,
+              avatarUrl: avatarUrlOf(api, profile.avatarPath),
               onTap: () => context.push('/u/${profile.username}'),
-              enforceMinTapTarget: false,
-              semanticLabel: 'Open your profile',
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: Space.s3),
-                child: Row(
-                  children: <Widget>[
-                    KAvatar(
-                      imageUrl: avatarUrlOf(api, profile.avatarPath),
-                      name: profile.name,
-                      isVerified: profile.isVerified,
-                      size: Space.s12,
-                    ),
-                    const SizedBox(width: Space.s3),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(profile.name, style: context.kt.title3),
-                          Text(
-                            profile.handle,
-                            style: context.kt.caption
-                                .copyWith(color: colors.textTertiary),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      size: Space.s5,
-                      color: colors.textTertiary,
-                    ),
-                  ],
-                ),
-              ),
             ),
-          const SettingsSectionHeader(label: 'Account'),
-          SettingsRow(
-            icon: Icons.badge_outlined,
-            title: 'Account',
-            subtitle: 'Name, handle, email, password',
-            onTap: () => push(const AccountSettingsScreen()),
+          SettingsSection(
+            header: 'Account',
+            children: <Widget>[
+              SettingsRow(
+                icon: Icons.badge_outlined,
+                title: 'Account',
+                subtitle: 'Name, handle, email, password',
+                onTap: () => push(const AccountSettingsScreen()),
+              ),
+              SettingsRow(
+                icon: Icons.notifications_none_rounded,
+                title: 'Notifications',
+                subtitle: 'Which alerts reach you',
+                onTap: () => push(const NotificationSettingsScreen()),
+              ),
+            ],
           ),
-          SettingsRow(
-            icon: Icons.notifications_none_rounded,
-            title: 'Notifications',
-            subtitle: 'Which alerts reach you',
-            onTap: () => push(const NotificationSettingsScreen()),
+          SettingsSection(
+            header: 'Privacy and safety',
+            children: <Widget>[
+              SettingsRow(
+                icon: Icons.privacy_tip_outlined,
+                title: 'Privacy',
+                subtitle: 'Who sees you, who can message you',
+                onTap: () => context.push('/settings/privacy'),
+              ),
+              SettingsRow(
+                icon: Icons.block_outlined,
+                title: 'Blocked and muted',
+                subtitle: 'Blocking is bidirectional and immediate',
+                onTap: () => context.push('/settings/blocked'),
+              ),
+            ],
           ),
-          const SettingsSectionHeader(label: 'Privacy and safety'),
-          SettingsRow(
-            icon: Icons.privacy_tip_outlined,
-            title: 'Privacy',
-            subtitle: 'Who sees you, who can message you',
-            onTap: () => context.push('/settings/privacy'),
-          ),
-          SettingsRow(
-            icon: Icons.block_outlined,
-            title: 'Blocked and muted',
-            subtitle: 'Blocking is bidirectional and immediate',
-            onTap: () => context.push('/settings/blocked'),
-          ),
-          const SettingsSectionHeader(label: 'App'),
-          SettingsRow(
-            icon: Icons.palette_outlined,
-            title: 'Appearance',
-            subtitle: 'Theme and motion',
-            value: switch (themeMode) {
-              ThemeMode.system => 'System',
-              ThemeMode.light => 'Light',
-              ThemeMode.dark => 'Dark',
-            },
-            onTap: () => context.push('/settings/appearance'),
-          ),
-          SettingsRow(
-            icon: Icons.info_outline_rounded,
-            title: 'About KLECT',
-            subtitle: 'Version, terms, privacy policy',
-            onTap: () => push(const AboutScreen()),
+          SettingsSection(
+            header: 'App',
+            children: <Widget>[
+              SettingsRow(
+                icon: Icons.palette_outlined,
+                title: 'Appearance',
+                subtitle: 'Theme and motion',
+                value: switch (themeMode) {
+                  ThemeMode.system => 'System',
+                  ThemeMode.light => 'Light',
+                  ThemeMode.dark => 'Dark',
+                },
+                onTap: () => context.push('/settings/appearance'),
+              ),
+              SettingsRow(
+                icon: Icons.info_outline_rounded,
+                title: 'About KLECT',
+                subtitle: 'Version, terms, privacy policy',
+                onTap: () => push(const AboutScreen()),
+              ),
+            ],
           ),
           const SizedBox(height: Space.s5),
           ListenableBuilder(
@@ -183,6 +164,83 @@ class SettingsScreen extends ConsumerWidget {
                 : () => DeleteAccountFlow.start(context, profile: profile),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The identity card at the top of Settings — who is signed in, one tap from
+/// their public profile. A real hero surface (`surface.2` + `elevation.low`),
+/// not another anonymous list row.
+class _ProfileHeroRow extends StatelessWidget {
+  const _ProfileHeroRow({
+    required this.profile,
+    required this.avatarUrl,
+    required this.onTap,
+  });
+
+  final Profile profile;
+  final String? avatarUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return KPressable(
+      onTap: onTap,
+      enforceMinTapTarget: false,
+      semanticLabel: 'Open your profile',
+      child: Container(
+        padding: const EdgeInsets.all(Space.s4),
+        decoration: BoxDecoration(
+          color: colors.surface2,
+          borderRadius: BorderRadius.circular(Radii.xl),
+          border: Border.all(color: colors.borderSubtle, width: Strokes.thin),
+          boxShadow: KlectTheme.shadow(Elevation.low),
+        ),
+        child: Row(
+          children: <Widget>[
+            KAvatar(
+              imageUrl: avatarUrl,
+              name: profile.name,
+              isVerified: profile.isVerified,
+              size: Space.s16,
+            ),
+            const SizedBox(width: Space.s4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    profile.name,
+                    style: context.kt.title2,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: Space.s05),
+                  Text(
+                    profile.handle,
+                    style: context.kt.callout
+                        .copyWith(color: colors.textSecondary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: Space.s1),
+                  Text(
+                    'View profile',
+                    style: context.kt.caption
+                        .copyWith(color: colors.accentDefault),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: Space.s5,
+              color: colors.textTertiary,
+            ),
+          ],
+        ),
       ),
     );
   }

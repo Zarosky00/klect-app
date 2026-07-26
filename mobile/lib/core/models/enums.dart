@@ -407,6 +407,38 @@ enum CallSignalType {
   }
 }
 
+/// `pulse_feed(p_mode)` — which half of the Pulse stream to serve.
+enum PulseMode {
+  /// Ranked discovery: engagement with time-decay, taste match, follow bonus.
+  foryou('foryou', 'For you'),
+
+  /// Chronological posts + reposts from people you follow. The default.
+  following('following', 'Following');
+
+  const PulseMode(this.wire, this.label);
+
+  /// The value Postgres expects for `p_mode`.
+  final String wire;
+
+  /// Human label for the segmented control.
+  final String label;
+}
+
+/// How a comment thread is ordered. A client-side order-by choice, not a
+/// Postgres enum — `fetchComments` turns it into the matching `order()` calls.
+enum CommentSort {
+  /// Most-liked first, ties oldest-first — X's "Top".
+  top('Top'),
+
+  /// Newest first.
+  newest('Newest');
+
+  const CommentSort(this.label);
+
+  /// Human label for the sort toggle.
+  final String label;
+}
+
 /// `surf_feed(p_filter)`.
 enum SurfFilter {
   /// Everything the ranker surfaces.

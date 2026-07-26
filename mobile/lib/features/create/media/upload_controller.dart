@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 
@@ -26,7 +28,7 @@ enum UploadStage {
   /// Bytes are in flight to the `media` bucket.
   uploading,
 
-  /// Object written; inserting the `item_media` row.
+  /// Object written; filing the photo against its item.
   registering,
 
   /// Fully landed.
@@ -75,6 +77,8 @@ class UploadTask {
     this.objectPath,
     this.mediaId,
     this.error,
+    this.cropRect,
+    this.quarterTurns = 0,
   });
 
   /// Stable local id — the tray's widget key and the retry handle.
@@ -88,6 +92,13 @@ class UploadTask {
 
   /// The downscaled payload, once [UploadStage.processing] has finished.
   PreparedImage? prepared;
+
+  /// Crop chosen in the FRAME beat, in oriented pixel space (post-EXIF-bake,
+  /// post-[quarterTurns]). Null uploads the full frame.
+  Rect? cropRect;
+
+  /// Clockwise 90° rotations chosen in the FRAME beat.
+  int quarterTurns;
 
   /// Current stage.
   UploadStage stage;
@@ -175,8 +186,10 @@ class UploadedCover {
 
 /// The capture → upload engine for one item draft.
 ///
-/// Owned by the screen that created it (not a global provider) so its lifetime
-/// is exactly the lifetime of the draft, and `dispose()` cannot be forgotten.
+/// The create flow obtains one through [mediaUploadControllerProvider], keyed
+/// by draft id, so an in-flight upload keeps running when the user navigates
+/// away — the flow invalidates the provider when the draft ends. Short-lived
+/// surfaces (the add-photos sheet) may still own one directly.
 ///
 /// Ordering is the contract: `item_media.position` follows tray order, and a
 /// database trigger derives the item cover from position 0 — so "make cover"
@@ -271,7 +284,11 @@ class MediaUploadController extends ChangeNotifier {
     _notify();
     try {
       final raw = await task.source.readAsBytes();
-      final prepared = await ImagePipeline.prepare(raw);
+      final prepared = await ImagePipeline.prepare(
+        raw,
+        cropRect: task.cropRect,
+        quarterTurns: task.quarterTurns,
+      );
       if (_disposed) return;
       task
         ..prepared = prepared
@@ -322,6 +339,28 @@ class MediaUploadController extends ChangeNotifier {
     final index = _tasks.indexWhere((task) => task.id == taskId);
     if (index <= 0) return;
     reorder(index, 0);
+  }
+
+  /// Applies a FRAME edit — crop and/or quarter turns — and re-prepares.
+  ///
+  /// Re-cropping before save is free: the source file is still on disk, so
+  /// this is just one more single-decode pass on the isolate. A photo that has
+  /// already landed is immutable — its `item_media` row is the truth.
+  Future<void> applyEdit(
+    String taskId, {
+    required Rect? cropRect,
+    required int quarterTurns,
+  }) async {
+    final task = _tasks.firstWhereOrNullById(taskId);
+    if (task == null || task.stage == UploadStage.done) return;
+    final unchanged =
+        task.cropRect == cropRect && task.quarterTurns == quarterTurns;
+    if (unchanged && task.prepared != null) return;
+    task
+      ..cropRect = cropRect
+      ..quarterTurns = quarterTurns
+      ..prepared = null;
+    await _prepare(task);
   }
 
   /// Re-runs one failed photo.
@@ -509,23 +548,52 @@ extension on List<UploadTask> {
   }
 }
 
-/// One-shot upload for a cover image that is not part of an item.
+/// One upload engine per draft, held **outside** any screen.
 ///
-/// Collections and subcollections carry their own `cover_path`; they have no
-/// `item_media` rows, so they do not need the queue — but they do need the same
-/// downscale + blurhash treatment.
-abstract final class CoverUploader {
-  /// Prepares and uploads [file] under `{user_id}/{folder}/{uuid}.jpg`.
+/// Keyed by a caller-minted draft id and deliberately non-autodispose, so the
+/// queue — and any upload already in flight — survives every navigation the
+/// user makes while it runs. Whoever ends the draft (save landed, or the user
+/// discarded) must `ref.invalidate(mediaUploadControllerProvider(draftId))`,
+/// which disposes the controller and frees the prepared bytes.
+final mediaUploadControllerProvider =
+    Provider.family<MediaUploadController, String>(
+  (ref, draftId) {
+    final controller = MediaUploadController(
+      ref.watch(klectApiProvider),
+      ref.watch(uploadJournalProvider),
+    );
+    ref.onDispose(controller.dispose);
+    return controller;
+  },
+  name: 'mediaUploadController',
+);
+
+/// A cover photo prepared on-device and previewable, but **not yet uploaded**.
+///
+/// Deliberately deferred: item photos have the upload journal to reconcile a
+/// blob whose row never landed, but covers have no journal — so a cover
+/// uploaded at pick time became an orphan every time the form was abandoned.
+/// The bytes stay in memory until the owning form actually saves.
+@immutable
+class PendingCover {
+  /// Creates a pending cover.
+  const PendingCover({required this.prepared, required this.folder});
+
+  /// The downscaled + hashed payload, ready for preview and upload.
+  final PreparedImage prepared;
+
+  /// Second path segment for the eventual object key.
+  final String folder;
+
+  /// BlurHash of the prepared payload.
+  String get blurhash => prepared.blurhash;
+
+  /// Pushes the bytes to the `media` bucket under
+  /// `{user_id}/{folder}/{uuid}.jpg` and returns the landed descriptor.
   ///
-  /// The first path segment is the uploader's id, which is what the Storage
-  /// policy enforces; [KlectApi.upload] prepends it for us.
-  static Future<UploadedCover> upload(
-    KlectApi api, {
-    required XFile file,
-    required String folder,
-  }) async {
-    final raw = await file.readAsBytes();
-    final prepared = await ImagePipeline.prepare(raw);
+  /// Call this from the save path, after the user has committed — never from
+  /// the picker.
+  Future<UploadedCover> upload(KlectApi api) async {
     final key = await api.upload(
       bucket: StorageBucket.media,
       objectPath: '${api.requireUserId}/$folder/'
@@ -540,5 +608,25 @@ abstract final class CoverUploader {
       height: prepared.height,
     );
   }
+}
 
+/// Local preparation for a cover image that is not part of an item.
+///
+/// Collections and subcollections carry their own `cover_path`; they have no
+/// `item_media` rows, so they do not need the queue — but they do need the same
+/// downscale + blurhash treatment.
+abstract final class CoverUploader {
+  /// Decodes, downscales and hashes [file] on a background isolate.
+  ///
+  /// Nothing touches the network here — the caller holds the returned
+  /// [PendingCover] and runs [PendingCover.upload] at save time, so an
+  /// abandoned form never leaves a blob behind in Storage.
+  static Future<PendingCover> prepare({
+    required XFile file,
+    required String folder,
+  }) async {
+    final raw = await file.readAsBytes();
+    final prepared = await ImagePipeline.prepare(raw);
+    return PendingCover(prepared: prepared, folder: folder);
+  }
 }

@@ -17,16 +17,29 @@ class CommentsState {
   const CommentsState({
     this.comments = const <CommentModel>[],
     this.loading = true,
+    this.loadingMore = false,
+    this.hasMore = false,
+    this.sort = CommentSort.top,
     this.error,
     this.failedDraft,
     this.failedParentId,
   });
 
-  /// Every comment, flat and oldest-first. The view builds the tree.
+  /// Every loaded comment, flat: root comments in [sort] order followed by
+  /// replies in time order. The view builds the tree.
   final List<CommentModel> comments;
 
-  /// The first fetch is in flight.
+  /// The first fetch (or a sort switch) is in flight.
   final bool loading;
+
+  /// A later page of root comments is in flight.
+  final bool loadingMore;
+
+  /// Whether the last root page came back full.
+  final bool hasMore;
+
+  /// Current ordering.
+  final CommentSort sort;
 
   /// The last failure.
   final KlectError? error;
@@ -42,6 +55,9 @@ class CommentsState {
   CommentsState copyWith({
     List<CommentModel>? comments,
     bool? loading,
+    bool? loadingMore,
+    bool? hasMore,
+    CommentSort? sort,
     KlectError? error,
     bool clearError = false,
     String? failedDraft,
@@ -51,6 +67,9 @@ class CommentsState {
       CommentsState(
         comments: comments ?? this.comments,
         loading: loading ?? this.loading,
+        loadingMore: loadingMore ?? this.loadingMore,
+        hasMore: hasMore ?? this.hasMore,
+        sort: sort ?? this.sort,
         error: clearError ? null : (error ?? this.error),
         failedDraft: clearDraft ? null : (failedDraft ?? this.failedDraft),
         failedParentId:
@@ -58,7 +77,14 @@ class CommentsState {
       );
 }
 
-/// Threaded comments with optimistic posting.
+/// Threaded comments with optimistic posting, Top/Newest sorting and
+/// load-more pagination over **root** comments.
+///
+/// Roots page through `fetchComments(sort, limit, offset)`; every reply on
+/// the entity arrives in one companion query, and the viewer's like state for
+/// the whole page is seeded by **one** batched `likes` lookup
+/// (`fetchLikedCommentIds`) — a plain table select carries no `viewer_liked`,
+/// which is why the old per-row parse was always false.
 ///
 /// The comment count on the entity is nudged the instant the finger lifts and
 /// then reconciled with the authoritative `count` from `add_comment`, exactly
@@ -76,9 +102,13 @@ class CommentsController extends Notifier<CommentsState> {
   /// onto the deepest allowed ancestor.
   static const int maxDepth = 3;
 
+  /// Root comments per page.
+  static const int pageSize = 20;
+
   static const Uuid _uuid = Uuid();
 
   bool _disposed = false;
+  bool _busy = false;
 
   @override
   CommentsState build() {
@@ -88,19 +118,60 @@ class CommentsController extends Notifier<CommentsState> {
     return const CommentsState();
   }
 
-  /// Fetches the thread.
-  Future<void> load() async {
-    if (_disposed) return;
-    state = state.copyWith(loading: true, clearError: true);
+  /// Fetches the first page under the current sort.
+  Future<void> load() => _loadPage(reset: true);
+
+  /// Switches ordering and reloads from the top.
+  Future<void> setSort(CommentSort sort) async {
+    if (sort == state.sort) return;
+    state = state.copyWith(sort: sort, loading: true, comments: const []);
+    await _loadPage(reset: true);
+  }
+
+  /// Appends the next page of root comments.
+  Future<void> loadMore() async {
+    if (_busy || !state.hasMore) return;
+    await _loadPage(reset: false);
+  }
+
+  Future<void> _loadPage({required bool reset}) async {
+    if (_disposed || _busy) return;
+    _busy = true;
+    state = reset
+        ? state.copyWith(loading: true, clearError: true)
+        : state.copyWith(loadingMore: true, clearError: true);
     try {
-      final comments = await ref.read(klectApiProvider).fetchComments(
-            type: entity.type,
-            id: entity.id,
-          );
+      final api = ref.read(klectApiProvider);
+      final existingRoots = reset
+          ? 0
+          : state.comments.where((c) => c.parentId == null).length;
+
+      final roots = await api.fetchComments(
+        type: entity.type,
+        id: entity.id,
+        sort: state.sort,
+        limit: pageSize,
+        offset: existingRoots,
+      );
+      // One query serves every reply on the thread; the view attaches them.
+      final replies = reset || state.comments.isEmpty
+          ? await api.fetchCommentReplies(type: entity.type, id: entity.id)
+          : const <CommentModel>[];
+
+      // Batched viewer-like seeding — ONE query for the whole page.
+      final fresh = <CommentModel>[...roots, ...replies];
+      final liked = await api.fetchLikedCommentIds(
+        <String>[for (final comment in fresh) comment.id],
+      );
+      final seeded = <CommentModel>[
+        for (final comment in fresh)
+          comment.copyWith(viewerLiked: liked.contains(comment.id)),
+      ];
+
       // Comments are likeable entities in their own right, so seed the engine
       // for each one before any pill is built.
       final store = ref.read(interactionSeedStoreProvider);
-      for (final comment in comments) {
+      for (final comment in seeded) {
         store.put(
           EntityRef.comment(comment.id),
           InteractionState(
@@ -110,11 +181,30 @@ class CommentsController extends Notifier<CommentsState> {
           ),
         );
       }
+
       if (_disposed) return;
-      state = state.copyWith(comments: comments, loading: false);
+      final known = <String>{
+        if (!reset) for (final comment in state.comments) comment.id,
+      };
+      state = state.copyWith(
+        comments: <CommentModel>[
+          if (!reset) ...state.comments,
+          for (final comment in seeded)
+            if (known.add(comment.id)) comment,
+        ],
+        loading: false,
+        loadingMore: false,
+        hasMore: roots.length >= pageSize,
+      );
     } on KlectError catch (error) {
       if (_disposed) return;
-      state = state.copyWith(loading: false, error: error);
+      state = state.copyWith(
+        loading: false,
+        loadingMore: false,
+        error: error,
+      );
+    } finally {
+      _busy = false;
     }
   }
 
@@ -145,8 +235,12 @@ class CommentsController extends Notifier<CommentsState> {
       isPending: true,
     );
 
+    // Your own comment surfaces immediately: new roots lead the thread, new
+    // replies ride under their parent.
     state = state.copyWith(
-      comments: <CommentModel>[...state.comments, optimistic],
+      comments: parentId == null
+          ? <CommentModel>[optimistic, ...state.comments]
+          : <CommentModel>[...state.comments, optimistic],
       clearDraft: true,
       clearError: true,
     );

@@ -45,7 +45,111 @@ class SettingsSectionHeader extends StatelessWidget {
   }
 }
 
-/// A tappable settings row with a chevron.
+/// One rounded island holding a group of related settings rows.
+///
+/// The depth belongs to the section, not to every row: a single `surface.1`
+/// container with an `elevation.low` shadow, hairline dividers between flat
+/// rows inside. This is what keeps a settings screen from reading as a stack
+/// of identical grey slabs.
+class SettingsSection extends StatelessWidget {
+  /// Creates a section.
+  const SettingsSection({required this.children, super.key, this.header, this.note});
+
+  /// The rows, in order. Use the flat row widgets from this file.
+  final List<Widget> children;
+
+  /// Optional eyebrow rendered above the island.
+  final String? header;
+
+  /// Optional explainer under the eyebrow.
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final rows = <Widget>[];
+    for (var index = 0; index < children.length; index++) {
+      if (index > 0) rows.add(const _RowDivider());
+      rows.add(children[index]);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (header != null) SettingsSectionHeader(label: header!, note: note),
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: colors.surface1,
+            borderRadius: BorderRadius.circular(Radii.lg),
+            border: Border.all(color: colors.borderSubtle, width: Strokes.thin),
+            boxShadow: KlectTheme.shadow(Elevation.low),
+          ),
+          child: Column(children: rows),
+        ),
+      ],
+    );
+  }
+}
+
+/// The hairline between two rows inside a [SettingsSection].
+class _RowDivider extends StatelessWidget {
+  const _RowDivider();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: Strokes.hairline,
+        margin: const EdgeInsetsDirectional.only(start: Space.s4),
+        color: context.kc.borderSubtle,
+      );
+}
+
+/// The tinted square behind a row's leading glyph.
+///
+/// `surface.3` at rest, `accent.subtle` when the row is the current choice,
+/// `danger.subtle` for destructive rows — the tier system doing the talking
+/// instead of a bare grey icon.
+class _SettingsIconChip extends StatelessWidget {
+  const _SettingsIconChip({
+    required this.icon,
+    this.selected = false,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final bool selected;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final Color background;
+    final Color tint;
+    if (destructive) {
+      background = colors.semanticDangerSubtle;
+      tint = colors.semanticDanger;
+    } else if (selected) {
+      background = colors.accentSubtle;
+      tint = colors.accentDefault;
+    } else {
+      background = colors.surface3;
+      tint = colors.textSecondary;
+    }
+    return Container(
+      width: Space.s8,
+      height: Space.s8,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(Radii.sm),
+      ),
+      child: Icon(icon, size: Space.s5, color: tint),
+    );
+  }
+}
+
+/// A tappable settings row with a chevron. Flat — lives inside a
+/// [SettingsSection], which owns the surface and the border.
 class SettingsRow extends StatelessWidget {
   /// Creates a row.
   const SettingsRow({
@@ -84,22 +188,15 @@ class SettingsRow extends StatelessWidget {
       onTap: onTap,
       enforceMinTapTarget: false,
       semanticLabel: value == null ? title : '$title, $value',
-      child: Container(
-        margin: const EdgeInsets.only(bottom: Space.s2),
-        padding: const EdgeInsets.all(Space.s4),
-        decoration: BoxDecoration(
-          color: colors.surface1,
-          borderRadius: BorderRadius.circular(Radii.lg),
-          border: Border.all(color: colors.borderSubtle, width: Strokes.thin),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.s4,
+          vertical: Space.s3,
         ),
         child: Row(
           children: <Widget>[
-            Icon(
-              icon,
-              size: Space.s6,
-              color: destructive ? colors.semanticDanger : colors.textSecondary,
-            ),
-            const SizedBox(width: Space.s4),
+            _SettingsIconChip(icon: icon, destructive: destructive),
+            const SizedBox(width: Space.s3),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,7 +232,7 @@ class SettingsRow extends StatelessWidget {
   }
 }
 
-/// A settings row with a switch.
+/// A settings row with a switch. Flat — lives inside a [SettingsSection].
 class SettingsToggleRow extends StatelessWidget {
   /// Creates a toggle row.
   const SettingsToggleRow({
@@ -168,24 +265,18 @@ class SettingsToggleRow extends StatelessWidget {
     return Semantics(
       toggled: value,
       label: title,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: Space.s2),
+      child: Padding(
         padding: const EdgeInsets.fromLTRB(
           Space.s4,
           Space.s2,
           Space.s3,
           Space.s2,
         ),
-        decoration: BoxDecoration(
-          color: colors.surface1,
-          borderRadius: BorderRadius.circular(Radii.lg),
-          border: Border.all(color: colors.borderSubtle, width: Strokes.thin),
-        ),
         child: Row(
           children: <Widget>[
             if (icon != null) ...<Widget>[
-              Icon(icon, size: Space.s6, color: colors.textSecondary),
-              const SizedBox(width: Space.s4),
+              _SettingsIconChip(icon: icon!),
+              const SizedBox(width: Space.s3),
             ],
             Expanded(
               child: Column(
@@ -212,7 +303,8 @@ class SettingsToggleRow extends StatelessWidget {
   }
 }
 
-/// A radio-style choice row, used by every privacy picker.
+/// A radio-style choice row, used by every privacy picker. Flat — lives
+/// inside a [SettingsSection]; the current choice tints its own row.
 class SettingsChoiceRow extends StatelessWidget {
   /// Creates a choice row.
   const SettingsChoiceRow({
@@ -247,25 +339,16 @@ class SettingsChoiceRow extends StatelessWidget {
       enforceMinTapTarget: false,
       semanticLabel: selected ? '$title, selected' : title,
       child: Container(
-        margin: const EdgeInsets.only(bottom: Space.s2),
-        padding: const EdgeInsets.all(Space.s4),
-        decoration: BoxDecoration(
-          color: selected ? colors.accentSubtle : colors.surface1,
-          borderRadius: BorderRadius.circular(Radii.lg),
-          border: Border.all(
-            color: selected ? colors.accentDefault : colors.borderSubtle,
-            width: Strokes.thin,
-          ),
+        color: selected ? colors.accentSubtle : null,
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.s4,
+          vertical: Space.s3,
         ),
         child: Row(
           children: <Widget>[
             if (icon != null) ...<Widget>[
-              Icon(
-                icon,
-                size: Space.s6,
-                color: selected ? colors.accentDefault : colors.textSecondary,
-              ),
-              const SizedBox(width: Space.s4),
+              _SettingsIconChip(icon: icon!, selected: selected),
+              const SizedBox(width: Space.s3),
             ],
             Expanded(
               child: Column(
@@ -281,6 +364,7 @@ class SettingsChoiceRow extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(width: Space.s3),
             Icon(
               selected
                   ? Icons.radio_button_checked_rounded

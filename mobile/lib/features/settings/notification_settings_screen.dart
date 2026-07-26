@@ -5,6 +5,7 @@ import '../../core/models/models.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
 import '../notifications/notification_preferences.dart';
+import '../notifications/notifications_screen.dart' show notificationStyle;
 import 'settings_widgets.dart';
 
 /// Which alerts you want to see.
@@ -37,33 +38,49 @@ class NotificationSettingsScreen extends ConsumerWidget {
             'deleted — switching a type back on brings its history with it.',
             style: context.kt.body.copyWith(color: colors.textSecondary),
           ),
-          const SettingsSectionHeader(label: 'Your work'),
-          for (final type in <NotificationType>[
-            NotificationType.like,
-            NotificationType.save,
-            NotificationType.repost,
-          ])
-            _TypeToggle(type: type, muted: muted, controller: controller),
-          const SettingsSectionHeader(label: 'Conversation'),
-          for (final type in <NotificationType>[
-            NotificationType.comment,
-            NotificationType.reply,
-            NotificationType.mention,
-            NotificationType.message,
-            NotificationType.call,
-          ])
-            _TypeToggle(type: type, muted: muted, controller: controller),
-          const SettingsSectionHeader(label: 'People'),
-          for (final type in <NotificationType>[
-            NotificationType.follow,
-            NotificationType.match,
-          ])
-            _TypeToggle(type: type, muted: muted, controller: controller),
-          const SettingsSectionHeader(label: 'KLECT'),
-          _TypeToggle(
-            type: NotificationType.system,
-            muted: muted,
-            controller: controller,
+          SettingsSection(
+            header: 'Your work',
+            children: <Widget>[
+              for (final type in <NotificationType>[
+                NotificationType.like,
+                NotificationType.save,
+                NotificationType.repost,
+              ])
+                _TypeToggle(type: type, muted: muted, controller: controller),
+            ],
+          ),
+          SettingsSection(
+            header: 'Conversation',
+            children: <Widget>[
+              for (final type in <NotificationType>[
+                NotificationType.comment,
+                NotificationType.reply,
+                NotificationType.mention,
+                NotificationType.message,
+                NotificationType.call,
+              ])
+                _TypeToggle(type: type, muted: muted, controller: controller),
+            ],
+          ),
+          SettingsSection(
+            header: 'People',
+            children: <Widget>[
+              for (final type in <NotificationType>[
+                NotificationType.follow,
+                NotificationType.match,
+              ])
+                _TypeToggle(type: type, muted: muted, controller: controller),
+            ],
+          ),
+          SettingsSection(
+            header: 'KLECT',
+            children: <Widget>[
+              _TypeToggle(
+                type: NotificationType.system,
+                muted: muted,
+                controller: controller,
+              ),
+            ],
           ),
           if (muted.isNotEmpty) ...<Widget>[
             const SizedBox(height: Space.s6),
@@ -95,6 +112,7 @@ class _TypeToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final copy = notificationTypeCopy[type];
     return SettingsToggleRow(
+      icon: notificationStyle(context.kc, type).icon,
       title: copy?.title ?? type.wire,
       subtitle: copy?.subtitle,
       value: !muted.contains(type),

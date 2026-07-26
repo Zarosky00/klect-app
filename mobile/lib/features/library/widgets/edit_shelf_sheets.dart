@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_error.dart';
+import '../../../core/api/klect_api.dart';
 import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
@@ -46,7 +47,11 @@ class _EditCollectionBodyState extends ConsumerState<_EditCollectionBody> {
       widget.collection.visibility ?? EntityVisibility.public;
   late bool _pinned = widget.collection.isPinned;
 
-  UploadedCover? _cover;
+  PendingCover? _cover;
+
+  /// The cover blob, once it has actually landed. Kept so a save that fails
+  /// *after* the upload does not upload the same bytes twice on retry.
+  UploadedCover? _uploadedCover;
   bool _coverRemoved = false;
   bool _busy = false;
   String? _error;
@@ -69,14 +74,20 @@ class _EditCollectionBodyState extends ConsumerState<_EditCollectionBody> {
       _error = null;
     });
     try {
+      // Deferred from pick time on purpose: uploading only inside the save
+      // path means a cancelled sheet never orphans a blob in Storage.
+      final cover = _cover;
+      if (cover != null) {
+        _uploadedCover ??= await cover.upload(ref.read(klectApiProvider));
+      }
       await ref.read(libraryActionsProvider).editCollection(
             widget.collection.id,
             name: name,
             description: _description.text,
             visibility: _visibility,
-            coverPath: _cover?.storagePath,
-            coverBlurhash: _cover?.blurhash,
-            clearCover: _coverRemoved && _cover == null,
+            coverPath: cover == null ? null : _uploadedCover?.storagePath,
+            coverBlurhash: cover == null ? null : _uploadedCover?.blurhash,
+            clearCover: _coverRemoved && cover == null,
             isPinned: _pinned,
           );
       if (!mounted) return;
@@ -124,6 +135,7 @@ class _EditCollectionBodyState extends ConsumerState<_EditCollectionBody> {
             helper: 'Shown wherever this shelf appears.',
             onPicked: (cover) => setState(() {
               _cover = cover;
+              _uploadedCover = null;
               _coverRemoved = cover == null;
             }),
           ),
@@ -189,7 +201,11 @@ class _EditSubcollectionBodyState
       TextEditingController(text: widget.subcollection.description ?? '');
 
   late EntityVisibility? _visibility = widget.subcollection.visibility;
-  UploadedCover? _cover;
+  PendingCover? _cover;
+
+  /// The cover blob, once it has actually landed. Kept so a save that fails
+  /// *after* the upload does not upload the same bytes twice on retry.
+  UploadedCover? _uploadedCover;
   bool _coverRemoved = false;
   bool _busy = false;
   String? _error;
@@ -212,15 +228,21 @@ class _EditSubcollectionBodyState
       _error = null;
     });
     try {
+      // Deferred from pick time on purpose: uploading only inside the save
+      // path means a cancelled sheet never orphans a blob in Storage.
+      final cover = _cover;
+      if (cover != null) {
+        _uploadedCover ??= await cover.upload(ref.read(klectApiProvider));
+      }
       await ref.read(libraryActionsProvider).editSubcollection(
             widget.subcollection.id,
             name: name,
             description: _description.text,
             visibility: _visibility,
             clearVisibility: _visibility == null,
-            coverPath: _cover?.storagePath,
-            coverBlurhash: _cover?.blurhash,
-            clearCover: _coverRemoved && _cover == null,
+            coverPath: cover == null ? null : _uploadedCover?.storagePath,
+            coverBlurhash: cover == null ? null : _uploadedCover?.blurhash,
+            clearCover: _coverRemoved && cover == null,
           );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -266,6 +288,7 @@ class _EditSubcollectionBodyState
             enabled: !_busy,
             onPicked: (cover) => setState(() {
               _cover = cover;
+              _uploadedCover = null;
               _coverRemoved = cover == null;
             }),
           ),

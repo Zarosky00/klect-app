@@ -41,6 +41,9 @@ class PulseItem {
     this.body,
     this.quote,
     this.sortAt,
+    this.media = const <ItemMedia>[],
+    this.target,
+    this.replyToPostId,
   });
 
   /// Normalises one entry of the stream.
@@ -62,8 +65,10 @@ class PulseItem {
     var reposterMap = person('reposter', 'reposter_id');
     if (reposterMap.isEmpty) reposterMap = person('actor', 'reposter_id');
 
-    final feedKind =
-        asStringOrNull(raw['feed_kind']) ?? asStringOrNull(raw['kind']);
+    final feedKind = asStringOrNull(raw['feed_kind']);
+    // The 0018 envelope carries both: `feed_kind` (post | repost) and, for
+    // post rows, the post's own `kind` (post | quote | reply).
+    final postKind = asStringOrNull(raw['kind']);
     final quote = asStringOrNull(raw['quote_text'] ?? raw['quote']);
 
     final declaredType =
@@ -71,12 +76,19 @@ class PulseItem {
     final declaredId = asStringOrNull(raw['target_id'] ?? raw['entity_id']);
 
     final postId = asStringOrNull(raw['post_id']) ??
-        (declaredType == EntityType.post ? declaredId : null);
+        (declaredType == EntityType.post && feedKind != 'repost'
+            ? declaredId
+            : null);
     final targetType = declaredType == EntityType.post ? null : declaredType;
     final targetId = declaredType == EntityType.post ? null : declaredId;
 
     final kind = switch (feedKind) {
       'repost' => quote == null ? PulseKind.repost : PulseKind.quote,
+      'post' => switch (postKind) {
+          'quote' => PulseKind.quote,
+          'reply' => PulseKind.reply,
+          _ => PulseKind.post,
+        },
       'quote' => PulseKind.quote,
       'reply' => PulseKind.reply,
       _ => reposterMap.isEmpty
@@ -95,6 +107,9 @@ class PulseItem {
       body: asStringOrNull(raw['body']) ?? entry.body,
       quote: quote,
       sortAt: asDateOrNull(raw['sort_at']) ?? entry.createdAt,
+      media: entry.media,
+      target: entry.target,
+      replyToPostId: asStringOrNull(raw['reply_to_post_id']),
     );
   }
 
@@ -127,6 +142,15 @@ class PulseItem {
 
   /// Cursor value — the oldest one on screen is the next `p_before`.
   final DateTime? sortAt;
+
+  /// The post's own photos, from the envelope's `media[]`.
+  final List<ItemMedia> media;
+
+  /// Server-embedded preview of the attached / quoted / reposted thing.
+  final PulseTarget? target;
+
+  /// Parent post when this is a reply.
+  final String? replyToPostId;
 
   /// The entity every social action on this card applies to.
   ///

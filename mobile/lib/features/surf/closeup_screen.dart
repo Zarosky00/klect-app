@@ -14,6 +14,7 @@ import '../../core/models/models.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
+import '../pulse/widgets/pulse_target_card.dart';
 import 'data/closeup_providers.dart';
 import 'widgets/closeup_sections.dart';
 import 'widgets/comment_thread.dart';
@@ -318,7 +319,11 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
   }
 
   Widget _content(Closeup closeup) {
-    final media = immersiveMediaOf(closeup);
+    // Post photos live in post_media (0018), outside the closeup payload.
+    final media = widget.entityType == EntityType.post
+        ? (ref.watch(postMediaProvider(widget.entityId)).value ??
+            const <ImmersiveMedia>[])
+        : immersiveMediaOf(closeup);
     final topInset = MediaQuery.paddingOf(context).top;
     final colors = context.kc;
 
@@ -545,6 +550,24 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
           ],
         ];
       case EntityType.post:
+        // The attached entity or quoted post renders under the body, exactly
+        // like the stream card does.
+        final post = closeup.post;
+        final attachedType = post?.entityType;
+        final attachedId = post?.entityId;
+        if (post == null || attachedType == null || attachedId == null) {
+          return const <Widget>[];
+        }
+        return <Widget>[
+          _box(
+            CloseupSectionHeader(
+              title:
+                  attachedType == EntityType.post ? 'Quoting' : 'Attached',
+            ),
+            top: Space.s6,
+          ),
+          _box(PulseTargetLoader(entity: EntityRef(attachedType, attachedId))),
+        ];
       case EntityType.comment:
         return const <Widget>[];
     }

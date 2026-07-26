@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
@@ -5,8 +7,11 @@ import 'package:share_plus/share_plus.dart';
 import '../core/interactions/interactions.dart';
 import '../core/links.dart';
 import '../design/theme.dart';
+import '../features/pulse/widgets/pulse_composer.dart';
 import 'k_count_pill.dart';
+import 'k_pressable.dart';
 import 'k_report_sheet.dart';
+import 'k_sheet.dart';
 import 'k_toast.dart';
 
 /// The one action bar: like · save · repost · comment · share.
@@ -105,6 +110,50 @@ class _KActionBarState extends ConsumerState<KActionBar> {
     );
   }
 
+  /// The X-style repost chooser: Repost / Quote / Undo repost.
+  ///
+  /// A bare repost is the idempotent `toggle_repost`; Quote opens the Pulse
+  /// composer with this entity embedded as the subject (`create_post` with
+  /// `entity_type = 'post'` for posts, an entity share card otherwise).
+  Future<void> _repostChooser() async {
+    final reposted = ref.read(interactionProvider(widget.entity)).reposted;
+    final choice = await KSheet.show<_RepostChoice>(
+      context: context,
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _RepostOption(
+            icon: reposted ? Icons.undo_rounded : Icons.repeat_rounded,
+            label: reposted ? 'Undo repost' : 'Repost',
+            detail: reposted
+                ? 'Take it back out of your followers’ Pulse.'
+                : 'Put this in front of your followers as-is.',
+            onTap: () =>
+                Navigator.of(sheetContext).pop(_RepostChoice.repost),
+          ),
+          _RepostOption(
+            icon: Icons.format_quote_rounded,
+            label: 'Quote',
+            detail: 'Say something about it in a post of your own.',
+            onTap: () => Navigator.of(sheetContext).pop(_RepostChoice.quote),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    switch (choice) {
+      case _RepostChoice.repost:
+        unawaited(_controller.toggleRepost());
+      case _RepostChoice.quote:
+        final entry = await PulseComposer.show(context, subject: widget.entity);
+        if (entry != null && mounted) {
+          KToast.success(context, 'Shared to Pulse');
+        }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.live) {
@@ -155,9 +204,9 @@ class _KActionBarState extends ConsumerState<KActionBar> {
           count: state.repostCount,
           active: state.reposted,
           activeColor: colors.actionRepost,
-          semanticLabel: '${state.reposted ? 'Undo repost' : 'Repost'}, '
-              '${state.repostCount}',
-          onTap: () => _controller.toggleRepost(),
+          semanticLabel: '${state.reposted ? 'Undo repost' : 'Repost'} '
+              'or quote, ${state.repostCount}',
+          onTap: () => unawaited(_repostChooser()),
         ),
         SizedBox(width: gap),
         KCountPill(
@@ -189,6 +238,65 @@ class _KActionBarState extends ConsumerState<KActionBar> {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// What the repost chooser resolved to.
+enum _RepostChoice { repost, quote }
+
+/// One row of the repost chooser sheet.
+class _RepostOption extends StatelessWidget {
+  const _RepostOption({
+    required this.icon,
+    required this.label,
+    required this.detail,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String detail;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return KPressable(
+      onTap: onTap,
+      enforceMinTapTarget: false,
+      semanticLabel: label,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Space.s3),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: Space.s10,
+              height: Space.s10,
+              decoration: BoxDecoration(
+                color: colors.accentSubtle,
+                borderRadius: BorderRadius.circular(Radii.md),
+              ),
+              child: Icon(icon, size: Space.s5, color: colors.actionRepost),
+            ),
+            const SizedBox(width: Space.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(label, style: context.kt.bodyStrong),
+                  Text(
+                    detail,
+                    style: context.kt.caption
+                        .copyWith(color: colors.textTertiary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

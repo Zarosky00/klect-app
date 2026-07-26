@@ -245,47 +245,55 @@ class _ProfileAppBar extends ConsumerWidget {
         ),
         const SizedBox(width: Space.s3),
       ],
-      flexibleSpace: FlexibleSpaceBar(
-        titlePadding: const EdgeInsets.only(
-          left: Space.s14,
-          right: Space.s14,
-          bottom: Space.s3,
-        ),
-        centerTitle: true,
-        expandedTitleScale: 1,
-        title: _CollapsedTitle(profile: profile),
-        background: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            if (banner == null)
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: <Color>[colors.surface2, colors.surface1],
+      // Same glass treatment as every other chrome surface: the bar's fill is
+      // translucent `surface.glass`, so without a real blur the bio scrolling
+      // underneath reads straight through the collapsed header.
+      flexibleSpace: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: Blurs.chrome, sigmaY: Blurs.chrome),
+          child: FlexibleSpaceBar(
+            titlePadding: const EdgeInsets.only(
+              left: Space.s14,
+              right: Space.s14,
+              bottom: Space.s3,
+            ),
+            centerTitle: true,
+            expandedTitleScale: 1,
+            title: _CollapsedTitle(profile: profile),
+            background: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                if (banner == null)
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: <Color>[colors.surface2, colors.surface1],
+                      ),
+                    ),
+                  )
+                else
+                  KBlurhashImage(
+                    url: banner,
+                    borderRadius: BorderRadius.zero,
+                    semanticLabel: '${profile.name} banner',
+                  ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.center,
+                      end: Alignment.bottomCenter,
+                      colors: <Color>[
+                        colors.bgBase.withValues(alpha: 0),
+                        colors.bgBase,
+                      ],
+                    ),
                   ),
                 ),
-              )
-            else
-              KBlurhashImage(
-                url: banner,
-                borderRadius: BorderRadius.zero,
-                semanticLabel: '${profile.name} banner',
-              ),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.center,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    colors.bgBase.withValues(alpha: 0),
-                    colors.bgBase,
-                  ],
-                ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

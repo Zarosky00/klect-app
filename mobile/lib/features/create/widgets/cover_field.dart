@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
+import '../media/image_pipeline.dart';
 import '../media/photo_source_sheet.dart';
 import '../media/upload_controller.dart';
 
@@ -13,6 +13,11 @@ import '../media/upload_controller.dart';
 /// Those two levels have no `item_media` rows of their own, so their cover is a
 /// single object in the `media` bucket — prepared through exactly the same
 /// downscale + blurhash pipeline as an item photo.
+///
+/// **Nothing is uploaded from here.** The photo is prepared on pick so the
+/// preview is honest, but the bytes stay on-device as a [PendingCover] until
+/// the owning form saves — covers have no upload journal, so an upload-on-pick
+/// orphaned a blob every time the form was abandoned.
 class CoverField extends ConsumerStatefulWidget {
   /// Creates a cover picker.
   const CoverField({
@@ -26,12 +31,12 @@ class CoverField extends ConsumerStatefulWidget {
     this.enabled = true,
   });
 
-  /// Second path segment for the upload, e.g. the collection id. The user id
-  /// is prepended by [KlectApi.upload].
+  /// Second path segment for the save-time upload, e.g. the collection id.
+  /// The user id is prepended by the API when the upload finally runs.
   final String folder;
 
-  /// Fired with the uploaded cover, or null when the cover is removed.
-  final ValueChanged<UploadedCover?> onPicked;
+  /// Fired with the prepared cover, or null when the cover is removed.
+  final ValueChanged<PendingCover?> onPicked;
 
   /// Current `cover_path`, if the entity already has one.
   final String? coverPath;
@@ -55,14 +60,12 @@ class CoverField extends ConsumerStatefulWidget {
 class _CoverFieldState extends ConsumerState<CoverField> {
   bool _busy = false;
   String? _error;
-  UploadedCover? _uploaded;
+  PendingCover? _pending;
   bool _removed = false;
 
-  String? get _effectivePath =>
-      _removed ? null : (_uploaded?.storagePath ?? widget.coverPath);
-
-  String? get _effectiveBlurhash =>
-      _removed ? null : (_uploaded?.blurhash ?? widget.coverBlurhash);
+  /// The already-saved cover to show, when no local pick has replaced it.
+  String? get _existingPath =>
+      _removed || _pending != null ? null : widget.coverPath;
 
   Future<void> _pick() async {
     final files = await PhotoSourceSheet.pick(context, limit: 1);
@@ -73,18 +76,17 @@ class _CoverFieldState extends ConsumerState<CoverField> {
       _error = null;
     });
     try {
-      final cover = await CoverUploader.upload(
-        ref.read(klectApiProvider),
+      final pending = await CoverUploader.prepare(
         file: files.first,
         folder: widget.folder,
       );
       if (!mounted) return;
       setState(() {
-        _uploaded = cover;
+        _pending = pending;
         _removed = false;
       });
-      widget.onPicked(cover);
-    } on KlectError catch (error) {
+      widget.onPicked(pending);
+    } on ImagePreparationException catch (error) {
       if (!mounted) return;
       setState(() => _error = error.message);
     } catch (_) {
@@ -98,7 +100,7 @@ class _CoverFieldState extends ConsumerState<CoverField> {
   void _remove() {
     setState(() {
       _removed = true;
-      _uploaded = null;
+      _pending = null;
     });
     widget.onPicked(null);
   }
@@ -106,8 +108,9 @@ class _CoverFieldState extends ConsumerState<CoverField> {
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    final path = _effectivePath;
-    final url = ref.watch(klectApiProvider).publicUrl(path);
+    final pending = _pending;
+    final existingUrl = ref.watch(klectApiProvider).publicUrl(_existingPath);
+    final hasCover = pending != null || existingUrl != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -132,28 +135,7 @@ class _CoverFieldState extends ConsumerState<CoverField> {
                   children: <Widget>[
                     AspectRatio(
                       aspectRatio: Aspect.cover,
-                      child: url == null
-                          ? DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: colors.surface2,
-                                borderRadius: BorderRadius.circular(Radii.md),
-                                border: Border.all(
-                                  color: colors.borderDefault,
-                                  width: Strokes.thin,
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.add_photo_alternate_rounded,
-                                size: Space.s6,
-                                color: colors.textTertiary,
-                              ),
-                            )
-                          : KBlurhashImage(
-                              url: url,
-                              blurhash: _effectiveBlurhash,
-                              aspectRatio: Aspect.cover,
-                              semanticLabel: 'Current cover',
-                            ),
+                      child: _preview(colors, pending, existingUrl),
                     ),
                     if (_busy)
                       Positioned.fill(
@@ -184,14 +166,14 @@ class _CoverFieldState extends ConsumerState<CoverField> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   KButton(
-                    label: url == null ? 'Choose photo' : 'Replace',
+                    label: hasCover ? 'Replace' : 'Choose photo',
                     icon: Icons.image_rounded,
                     size: KButtonSize.small,
                     variant: KButtonVariant.secondary,
                     busy: _busy,
                     onPressed: widget.enabled && !_busy ? _pick : null,
                   ),
-                  if (url != null) ...<Widget>[
+                  if (hasCover) ...<Widget>[
                     const SizedBox(height: Space.s2),
                     KButton(
                       label: 'Remove',
@@ -218,6 +200,49 @@ class _CoverFieldState extends ConsumerState<CoverField> {
           KInlineError(message: _error!),
         ],
       ],
+    );
+  }
+
+  /// A freshly picked cover previews straight from its in-memory bytes; a
+  /// cover that already lives in Storage renders through the usual pipeline.
+  Widget _preview(
+    KlectColors colors,
+    PendingCover? pending,
+    String? existingUrl,
+  ) {
+    if (pending != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(Radii.md),
+        child: Image.memory(
+          pending.prepared.bytes,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          semanticLabel: 'Chosen cover, not saved yet',
+        ),
+      );
+    }
+    if (existingUrl != null) {
+      return KBlurhashImage(
+        url: existingUrl,
+        blurhash: widget.coverBlurhash,
+        aspectRatio: Aspect.cover,
+        semanticLabel: 'Current cover',
+      );
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface2,
+        borderRadius: BorderRadius.circular(Radii.md),
+        border: Border.all(
+          color: colors.borderDefault,
+          width: Strokes.thin,
+        ),
+      ),
+      child: Icon(
+        Icons.add_photo_alternate_rounded,
+        size: Space.s6,
+        color: colors.textTertiary,
+      ),
     );
   }
 }

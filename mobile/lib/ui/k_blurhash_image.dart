@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blurhash/flutter_blurhash.dart';
 
+import '../core/images/k_image_cache.dart';
 import '../design/motion.dart';
 import '../design/theme.dart';
 
@@ -13,7 +16,12 @@ import '../design/theme.dart';
 ///     so the masonry never reflows;
 ///  2. **paint the blurhash** while the bytes are in flight;
 ///  3. **cross-fade the photo in** over `fast`.
-class KBlurhashImage extends StatelessWidget {
+///
+/// Loading is honest about failure: fetches time out and retry a bounded
+/// number of times (see [KImageCache]), and when they still fail a visible
+/// chip appears over the blurhash — tapping it evicts the broken cache entry
+/// and tries again. A failed image never masquerades as a loading one.
+class KBlurhashImage extends StatefulWidget {
   /// Creates an image box.
   const KBlurhashImage({
     required this.url,
@@ -60,19 +68,45 @@ class KBlurhashImage extends StatelessWidget {
   /// Decode width cap, so a long scroll keeps memory flat.
   final int? memCacheWidth;
 
+  @override
+  State<KBlurhashImage> createState() => _KBlurhashImageState();
+}
+
+class _KBlurhashImageState extends State<KBlurhashImage> {
+  /// Bumped after an evict so the provider is rebuilt from scratch instead of
+  /// replaying the cached failure.
+  int _retryGeneration = 0;
+  bool _evicting = false;
+
   /// The ratio this box will occupy, or null when it should fill its parent.
   double? get _ratio {
-    if (aspectRatio != null) return aspectRatio;
-    final w = width;
-    final h = height;
+    if (widget.aspectRatio != null) return widget.aspectRatio;
+    final w = widget.width;
+    final h = widget.height;
     if (w == null || h == null || w <= 0 || h <= 0) return null;
     return w / h;
   }
 
+  Future<void> _retry(String source) async {
+    if (_evicting) return;
+    setState(() => _evicting = true);
+    // Drops both the disk entry and the in-memory decoded bitmap, so the
+    // generation bump below forces a genuine re-download.
+    await CachedNetworkImage.evictFromCache(
+      source,
+      cacheManager: KImageCache.instance,
+    );
+    if (!mounted) return;
+    setState(() {
+      _evicting = false;
+      _retryGeneration++;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final radius =
-        borderRadius ?? const BorderRadius.all(Radius.circular(Radii.md));
+    final radius = widget.borderRadius ??
+        const BorderRadius.all(Radius.circular(Radii.md));
 
     Widget content = ClipRRect(
       borderRadius: radius,
@@ -84,46 +118,49 @@ class KBlurhashImage extends StatelessWidget {
       content = AspectRatio(aspectRatio: ratio, child: content);
     }
 
-    if (heroTag != null) {
-      content = Hero(tag: heroTag!, child: content);
+    if (widget.heroTag != null) {
+      content = Hero(tag: widget.heroTag!, child: content);
     }
 
     return Semantics(
       image: true,
-      label: semanticLabel,
+      label: widget.semanticLabel,
       child: content,
     );
   }
 
   Widget _buildImage(BuildContext context) {
-    final source = url;
+    final source = widget.url;
     if (source == null || source.isEmpty) {
-      return _Placeholder(blurhash: blurhash, fit: fit);
+      return _Placeholder(blurhash: widget.blurhash, fit: widget.fit);
     }
     return CachedNetworkImage(
+      key: ValueKey<String>('$source#$_retryGeneration'),
       imageUrl: source,
-      fit: fit,
+      cacheManager: KImageCache.instance,
+      fit: widget.fit,
       fadeInDuration: KDurations.fast,
       fadeOutDuration: KDurations.instant,
       fadeInCurve: Curves_.decelerate,
-      memCacheWidth: memCacheWidth,
-      placeholder: (context, _) => _Placeholder(blurhash: blurhash, fit: fit),
-      errorWidget: (context, _, _) =>
-          _Placeholder(blurhash: blurhash, fit: fit, failed: true),
+      memCacheWidth: widget.memCacheWidth,
+      placeholder: (context, _) =>
+          _Placeholder(blurhash: widget.blurhash, fit: widget.fit),
+      errorWidget: (context, _, _) => _evicting
+          ? _Placeholder(blurhash: widget.blurhash, fit: widget.fit)
+          : _FailedImage(
+              blurhash: widget.blurhash,
+              fit: widget.fit,
+              onRetry: () => unawaited(_retry(source)),
+            ),
     );
   }
 }
 
 class _Placeholder extends StatelessWidget {
-  const _Placeholder({
-    required this.blurhash,
-    required this.fit,
-    this.failed = false,
-  });
+  const _Placeholder({required this.blurhash, required this.fit});
 
   final String? blurhash;
   final BoxFit fit;
-  final bool failed;
 
   @override
   Widget build(BuildContext context) {
@@ -136,17 +173,87 @@ class _Placeholder extends StatelessWidget {
         errorBuilder: (context, _, _) => ColoredBox(color: colors.skeletonBase),
       );
     }
-    return ColoredBox(
-      color: colors.skeletonBase,
-      child: failed
-          ? Center(
-              child: Icon(
-                Icons.image_not_supported_outlined,
-                size: Space.s6,
-                color: colors.textTertiary,
+    return ColoredBox(color: colors.skeletonBase);
+  }
+}
+
+/// The failed state: the blurhash stays as context, and an unmissable chip
+/// says so — a failure that looks identical to loading is the bug this fixes.
+class _FailedImage extends StatelessWidget {
+  const _FailedImage({
+    required this.blurhash,
+    required this.fit,
+    required this.onRetry,
+  });
+
+  final String? blurhash;
+  final BoxFit fit;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Image failed to load. Tap to retry.',
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onRetry,
+        child: Stack(
+          fit: StackFit.passthrough,
+          children: <Widget>[
+            _Placeholder(blurhash: blurhash, fit: fit),
+            const Positioned.fill(
+              child: Center(
+                // Scales the chip down instead of overflowing a tiny tile.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(
+                    padding: EdgeInsets.all(Space.s2),
+                    child: _RetryChip(),
+                  ),
+                ),
               ),
-            )
-          : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RetryChip extends StatelessWidget {
+  const _RetryChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.s3,
+        vertical: Space.s15,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surface2,
+        borderRadius: BorderRadius.circular(Radii.full),
+        border: Border.all(color: colors.borderDefault, width: Strokes.thin),
+        boxShadow: KlectTheme.shadow(Elevation.low),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.refresh_rounded,
+            size: Space.s4,
+            color: colors.textSecondary,
+          ),
+          const SizedBox(width: Space.s1),
+          Text(
+            'Tap to retry',
+            style: context.kt.caption.copyWith(color: colors.textSecondary),
+          ),
+        ],
+      ),
     );
   }
 }

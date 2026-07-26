@@ -185,9 +185,15 @@ class _ImmersiveScreenState extends ConsumerState<ImmersiveScreen>
     final closeup = async.value;
     final api = ref.watch(klectApiProvider);
 
+    // Post photos live in post_media (0018), outside the closeup payload.
+    final postMedia = widget.entityType == EntityType.post
+        ? ref.watch(postMediaProvider(widget.entityId)).value
+        : null;
     final shots = <_Shot>[
       if (closeup != null)
-        for (final photo in immersiveMediaOf(closeup))
+        for (final photo in widget.entityType == EntityType.post
+            ? (postMedia ?? const <ImmersiveMedia>[])
+            : immersiveMediaOf(closeup))
           if (api.publicUrl(photo.path) case final String url)
             _Shot(photo, url),
     ];

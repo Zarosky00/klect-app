@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/models/models.dart';
+import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../router.dart';
 import '../../ui/ui.dart';
@@ -14,10 +16,12 @@ import 'widgets/pulse_composer.dart';
 
 /// **Pulse** — the X half of Klect.
 ///
-/// A chronological stream of what the people you follow are posting,
-/// reposting and quoting, paged on the `created_at` cursor so new arrivals
-/// never shuffle what you are reading. Every row carries the same action bar,
-/// the same optimistic engine and the same gesture contract as a Surf tile.
+/// Two streams under one segmented header: **For you** (ranked discovery,
+/// `pulse_feed(p_mode => 'foryou')`) and **Following** (chronological). Each
+/// tab keeps its own controller, cursor and scroll position, both paged on
+/// `min(sort_at)` so new arrivals never shuffle what you are reading. Every
+/// row carries the same action bar, the same optimistic engine and the same
+/// gesture contract as a Surf tile.
 class PulseScreen extends ConsumerStatefulWidget {
   /// Creates the screen.
   const PulseScreen({super.key});
@@ -27,11 +31,20 @@ class PulseScreen extends ConsumerStatefulWidget {
 }
 
 class _PulseScreenState extends ConsumerState<PulseScreen> {
-  final ScrollController _scroll = ScrollController();
+  final Map<PulseMode, ScrollController> _scrolls =
+      <PulseMode, ScrollController>{
+    for (final mode in PulseMode.values) mode: ScrollController(),
+  };
+
+  PulseMode get _mode => ref.read(pulseModeProvider);
+
+  ScrollController get _scroll => _scrolls[_mode]!;
 
   @override
   void dispose() {
-    _scroll.dispose();
+    for (final controller in _scrolls.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -43,26 +56,38 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     final metrics = notification.metrics;
     if (metrics.hasContentDimensions &&
         metrics.maxScrollExtent - metrics.pixels < metrics.viewportDimension) {
-      unawaited(ref.read(pulseFeedProvider.notifier).loadMore());
+      unawaited(ref.read(pulseFeedProvider(_mode).notifier).loadMore());
     }
     return false;
   }
 
   Future<void> _refresh() async {
-    await ref.read(pulseFeedProvider.notifier).refresh();
+    await ref.read(pulseFeedProvider(_mode).notifier).refresh();
     if (!mounted) return;
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
+  void _selectMode(PulseMode mode) {
+    if (mode == _mode) return;
+    ref.read(pulseModeProvider.notifier).select(mode);
+  }
+
   Future<void> _compose() async {
-    final published = await PulseComposer.show(context);
-    if (!published || !mounted) return;
-    await _refresh();
+    final entry = await PulseComposer.show(context);
+    if (entry == null || !mounted) return;
+    // The composer prepends into the Following stream — show it landing.
+    ref.read(pulseModeProvider.notifier).select(PulseMode.following);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final scroll = _scrolls[PulseMode.following]!;
+      if (scroll.hasClients) scroll.jumpTo(0);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final feed = ref.watch(pulseFeedProvider);
+    final mode = ref.watch(pulseModeProvider);
+    final feed = ref.watch(pulseFeedProvider(mode));
 
     return KScaffold(
       onRefresh: _refresh,
@@ -73,11 +98,15 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       body: NotificationListener<ScrollNotification>(
         onNotification: _onScroll,
         child: CustomScrollView(
-          controller: _scroll,
+          key: PageStorageKey<String>('pulse-${mode.wire}'),
+          controller: _scrolls[mode],
           slivers: <Widget>[
             KAppBar(
               title: 'Pulse',
-              subtitle: 'From the collectors you follow',
+              subtitle: mode == PulseMode.foryou
+                  ? 'Tuned to your taste'
+                  : 'From the collectors you follow',
+              expandedHeight: Space.s24 + Space.s12,
               actions: <Widget>[
                 KIconButton(
                   icon: Icons.search_rounded,
@@ -86,8 +115,9 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
                 ),
                 const MessagesAction(),
               ],
+              bottom: _PulseTabs(selected: mode, onSelect: _selectMode),
             ),
-            ..._body(feed),
+            ..._body(feed, mode),
             const SliverToBoxAdapter(
               child: SizedBox(height: Layout.bottomBarHeight + Space.s16),
             ),
@@ -97,7 +127,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     );
   }
 
-  List<Widget> _body(PulseFeedState feed) {
+  List<Widget> _body(PulseFeedState feed, PulseMode mode) {
     if (feed.items.isEmpty && feed.loading) {
       return const <Widget>[
         SliverToBoxAdapter(child: KSkeletonList(rows: 4)),
@@ -109,7 +139,8 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
           hasScrollBody: false,
           child: KErrorState(
             error: feed.error,
-            onRetry: () => unawaited(ref.read(pulseFeedProvider.notifier).retry()),
+            onRetry: () =>
+                unawaited(ref.read(pulseFeedProvider(mode).notifier).retry()),
           ),
         ),
       ];
@@ -118,16 +149,27 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       return <Widget>[
         SliverFillRemaining(
           hasScrollBody: false,
-          child: KEmptyState(
-            title: 'Your Pulse is quiet',
-            message: 'Follow a few collectors and everything they add, repost '
-                'and say lands here.',
-            icon: Icons.bolt_outlined,
-            actionLabel: 'Find collectors like you',
-            onAction: () => context.push(Routes.matches),
-            secondaryActionLabel: 'Share something of yours',
-            onSecondaryAction: () => unawaited(_compose()),
-          ),
+          child: mode == PulseMode.foryou
+              ? KEmptyState(
+                  title: 'Nothing to rank yet',
+                  message: 'For-you learns from what you like, save and '
+                      'collect. Surf a little and this feed starts thinking.',
+                  icon: Icons.auto_awesome_outlined,
+                  actionLabel: 'Go surf',
+                  onAction: () => context.go('/surf'),
+                  secondaryActionLabel: 'Share something of yours',
+                  onSecondaryAction: () => unawaited(_compose()),
+                )
+              : KEmptyState(
+                  title: 'Your Pulse is quiet',
+                  message: 'Follow a few collectors and everything they add, '
+                      'repost and say lands here.',
+                  icon: Icons.bolt_outlined,
+                  actionLabel: 'Find collectors like you',
+                  onAction: () => context.push(Routes.matches),
+                  secondaryActionLabel: 'Share something of yours',
+                  onSecondaryAction: () => unawaited(_compose()),
+                ),
         ),
       ];
     }
@@ -137,14 +179,19 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
         itemCount: feed.items.length,
         itemBuilder: (context, index) {
           final item = feed.items[index];
-          return PulseCard(key: ValueKey<String>(item.key), item: item);
+          final card = PulseCard(key: ValueKey<String>(item.key), item: item);
+          if (item.key == feed.freshKey) {
+            // The post the user just composed slides in from above.
+            return _ComposedEntrance(child: card);
+          }
+          return _Entrance(index: index, child: card);
         },
       ),
-      SliverToBoxAdapter(child: _footer(feed)),
+      SliverToBoxAdapter(child: _footer(feed, mode)),
     ];
   }
 
-  Widget _footer(PulseFeedState feed) {
+  Widget _footer(PulseFeedState feed, PulseMode mode) {
     final error = feed.error;
     if (error != null) {
       return Padding(
@@ -152,7 +199,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
         child: KInlineError(
           message: error.message,
           onRetry: () =>
-              unawaited(ref.read(pulseFeedProvider.notifier).retry()),
+              unawaited(ref.read(pulseFeedProvider(mode).notifier).retry()),
         ),
       );
     }
@@ -171,6 +218,150 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       );
     }
     return const SizedBox(height: Space.s6);
+  }
+}
+
+/// The For-you ▸ Following segmented control, pinned under the serif title.
+class _PulseTabs extends StatelessWidget implements PreferredSizeWidget {
+  const _PulseTabs({required this.selected, required this.onSelect});
+
+  final PulseMode selected;
+  final void Function(PulseMode) onSelect;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(Space.s12);
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return SizedBox(
+      height: Space.s12,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.s4,
+          vertical: Space.s2,
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              padding: const EdgeInsets.all(Space.s05),
+              decoration: BoxDecoration(
+                color: colors.surface2,
+                borderRadius: BorderRadius.circular(Radii.full),
+                border: Border.all(
+                  color: colors.borderSubtle,
+                  width: Strokes.hairline,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (final mode in PulseMode.values)
+                    _PulseTab(
+                      mode: mode,
+                      selected: mode == selected,
+                      onSelect: onSelect,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PulseTab extends StatelessWidget {
+  const _PulseTab({
+    required this.mode,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final PulseMode mode;
+  final bool selected;
+  final void Function(PulseMode) onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return KPressable(
+      onTap: () => onSelect(mode),
+      enforceMinTapTarget: false,
+      semanticLabel:
+          selected ? '${mode.label}, selected' : mode.label,
+      child: AnimatedContainer(
+        duration: KMotion.duration(context, KDurations.fast),
+        curve: KMotion.curve(context, KCurves.emphasized),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.s4,
+          vertical: Space.s1,
+        ),
+        decoration: BoxDecoration(
+          color: selected ? colors.accentDefault : Colors.transparent,
+          borderRadius: BorderRadius.circular(Radii.full),
+        ),
+        child: Text(
+          mode.label,
+          style: context.kt.label.copyWith(
+            color: selected ? colors.textOnAccent : colors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Staggered fade + rise for stream rows, capped by [KMotion.staggerDelay] so
+/// a long feed never feels slow further down. Same pattern as the inbox.
+class _Entrance extends StatelessWidget {
+  const _Entrance({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (KMotion.reduced(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: KDurations.base + KMotion.staggerDelay(index, grid: false),
+      curve: Curves_.emphasized,
+      builder: (context, t, inner) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * Space.s3),
+          child: inner,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// The just-composed post sliding down into the top of the stream.
+class _ComposedEntrance extends StatelessWidget {
+  const _ComposedEntrance({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (KMotion.reduced(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: KDurations.medium,
+      curve: Curves_.emphasized,
+      builder: (context, t, inner) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (t - 1) * Space.s8),
+          child: inner,
+        ),
+      ),
+      child: child,
+    );
   }
 }
 

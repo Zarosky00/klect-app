@@ -112,6 +112,29 @@ List<ImmersiveMedia> immersiveMediaOf(Closeup closeup) {
   return out;
 }
 
+/// A post's own photos (`post_media`, 0018) as pager-ready media.
+///
+/// `get_closeup` predates first-class post photos, so post closeups and the
+/// immersive viewer fetch them through this companion provider and fall back
+/// to the payload's own media when the entity is not a post.
+final postMediaProvider =
+    FutureProvider.autoDispose.family<List<ImmersiveMedia>, String>(
+  (ref, postId) async {
+    final media = await ref.watch(klectApiProvider).fetchPostMedia(postId);
+    return <ImmersiveMedia>[
+      for (final m in media)
+        ImmersiveMedia(
+          path: m.storagePath,
+          blurhash: m.blurhash,
+          altText: m.altText,
+          width: m.width,
+          height: m.height,
+        ),
+    ];
+  },
+  name: 'postMedia',
+);
+
 /// The `get_closeup` payload for one entity.
 ///
 /// Auto-disposing so a long browsing session does not accumulate payloads, but

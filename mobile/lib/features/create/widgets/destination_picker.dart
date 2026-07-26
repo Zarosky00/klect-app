@@ -67,7 +67,12 @@ class CollectionChooser extends ConsumerWidget {
                   icon: Icons.collections_bookmark_rounded,
                   compact: true,
                   actionLabel: 'New shelf',
-                  onAction: () => context.push<void>('/create/collection'),
+                  onAction: () async {
+                    final created = await context.push<CollectionModel>(
+                      '/create/collection?return=1',
+                    );
+                    if (created != null) onSelected(created);
+                  },
                 )
               : Wrap(
                   spacing: Space.s2,
@@ -83,7 +88,17 @@ class CollectionChooser extends ConsumerWidget {
                       label: 'New shelf',
                       icon: Icons.add_rounded,
                       onTap: enabled
-                          ? () => context.push<void>('/create/collection')
+                          ? () async {
+                              // `return=1` makes the shelf form pop back here
+                              // with the created row instead of navigating to
+                              // it — the filing flow the user was in resumes
+                              // with the new shelf already chosen.
+                              final created =
+                                  await context.push<CollectionModel>(
+                                '/create/collection?return=1',
+                              );
+                              if (created != null) onSelected(created);
+                            }
                           : null,
                     ),
                   ],

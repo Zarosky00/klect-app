@@ -42,21 +42,25 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: Space.s6),
           const _HierarchyCard(),
-          const SettingsSectionHeader(label: 'The small print'),
-          const _LinkRow(
-            icon: Icons.description_outlined,
-            title: 'Terms of service',
-            url: '${KlectLinks.webOrigin}/terms',
-          ),
-          const _LinkRow(
-            icon: Icons.privacy_tip_outlined,
-            title: 'Privacy policy',
-            url: '${KlectLinks.webOrigin}/privacy',
-          ),
-          const _LinkRow(
-            icon: Icons.gavel_rounded,
-            title: 'Community guidelines',
-            url: '${KlectLinks.webOrigin}/guidelines',
+          const SettingsSection(
+            header: 'The small print',
+            children: <Widget>[
+              _LinkRow(
+                icon: Icons.description_outlined,
+                title: 'Terms of service',
+                url: '${KlectLinks.webOrigin}/terms',
+              ),
+              _LinkRow(
+                icon: Icons.privacy_tip_outlined,
+                title: 'Privacy policy',
+                url: '${KlectLinks.webOrigin}/privacy',
+              ),
+              _LinkRow(
+                icon: Icons.gavel_rounded,
+                title: 'Community guidelines',
+                url: '${KlectLinks.webOrigin}/guidelines',
+              ),
+            ],
           ),
           const SettingsSectionHeader(
             label: 'Reporting',
@@ -82,6 +86,7 @@ class _HierarchyCard extends StatelessWidget {
         color: colors.surface1,
         borderRadius: BorderRadius.circular(Radii.lg),
         border: Border.all(color: colors.borderSubtle, width: Strokes.thin),
+        boxShadow: KlectTheme.shadow(Elevation.low),
       ),
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,

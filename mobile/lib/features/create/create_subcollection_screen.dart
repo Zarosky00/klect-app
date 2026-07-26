@@ -21,11 +21,19 @@ import 'widgets/visibility_field.dart';
 /// Creates a group inside a shelf — the middle level of the hierarchy.
 class CreateSubcollectionScreen extends ConsumerStatefulWidget {
   /// Creates the screen.
-  const CreateSubcollectionScreen({this.collectionId, super.key});
+  const CreateSubcollectionScreen({
+    this.collectionId,
+    this.popOnCreate = false,
+    super.key,
+  });
 
   /// Route parameter — pre-selects the shelf when the flow was started from
   /// inside one.
   final String? collectionId;
+
+  /// When true the screen pops with the created [SubcollectionModel] instead
+  /// of navigating to the new group, so the flow that needed it resumes.
+  final bool popOnCreate;
 
   @override
   ConsumerState<CreateSubcollectionScreen> createState() =>
@@ -40,7 +48,11 @@ class _CreateSubcollectionScreenState
   String? _collectionId;
   String? _collectionName;
   EntityVisibility? _visibility;
-  UploadedCover? _cover;
+  PendingCover? _cover;
+
+  /// The cover blob, once it has actually landed. Kept so a save that fails
+  /// *after* the upload does not upload the same bytes twice on retry.
+  UploadedCover? _uploadedCover;
   bool _busy = false;
   String? _error;
 
@@ -102,14 +114,20 @@ class _CreateSubcollectionScreenState
 
     try {
       final api = ref.read(klectApiProvider);
+      // Deferred from pick time on purpose: uploading only inside the save
+      // path means an abandoned form never orphans a blob in Storage.
+      final cover = _cover;
+      if (cover != null) {
+        _uploadedCover ??= await cover.upload(api);
+      }
       final existing = await api.fetchSubcollections(collectionId);
       final created = await api.createSubcollection(
         collectionId: collectionId,
         name: name,
         description:
             _description.text.trim().isEmpty ? null : _description.text.trim(),
-        coverPath: _cover?.storagePath,
-        coverBlurhash: _cover?.blurhash,
+        coverPath: cover == null ? null : _uploadedCover?.storagePath,
+        coverBlurhash: cover == null ? null : _uploadedCover?.blurhash,
         visibility: _visibility,
       );
       await ref.read(libraryActionsProvider).appendPosition(
@@ -128,7 +146,11 @@ class _CreateSubcollectionScreenState
         subcollectionId: created.id,
       );
       KToast.success(context, '${created.name} added.');
-      context.pushReplacement('/s/${created.id}');
+      if (widget.popOnCreate && context.canPop()) {
+        context.pop(created);
+      } else {
+        context.pushReplacement('/s/${created.id}');
+      }
     } on KlectError catch (error) {
       if (!mounted) return;
       setState(() {
@@ -205,7 +227,10 @@ class _CreateSubcollectionScreenState
             folder: 'covers',
             enabled: !_busy,
             helper: 'Optional — otherwise the first item stands in.',
-            onPicked: (cover) => setState(() => _cover = cover),
+            onPicked: (cover) => setState(() {
+              _cover = cover;
+              _uploadedCover = null;
+            }),
           ),
           const SizedBox(height: Space.s5),
           VisibilityField(

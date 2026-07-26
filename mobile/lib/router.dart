@@ -16,8 +16,8 @@ import 'features/chat/group_info_screen.dart';
 import 'features/chat/messages_screen.dart';
 import 'features/chat/new_group_screen.dart';
 import 'features/create/create_collection_screen.dart';
-import 'features/create/create_hub_screen.dart';
-import 'features/create/create_item_screen.dart';
+import 'features/create/create_item_flow_screen.dart';
+import 'features/create/create_pick_screen.dart';
 import 'features/create/create_subcollection_screen.dart';
 import 'features/library/collection_screen.dart';
 import 'features/library/item_screen.dart';
@@ -184,7 +184,7 @@ final routerProvider = Provider<GoRouter>(
               routes: <RouteBase>[
                 GoRoute(
                   path: Routes.create,
-                  builder: (context, state) => const CreateHubScreen(),
+                  builder: (context, state) => const CreatePickScreen(),
                 ),
               ],
             ),
@@ -214,19 +214,25 @@ final routerProvider = Provider<GoRouter>(
         GoRoute(
           path: '/create/collection',
           parentNavigatorKey: _rootNavigatorKey,
-          builder: (context, state) => const CreateCollectionScreen(),
+          builder: (context, state) => CreateCollectionScreen(
+            // `return=1` pops back with the created shelf so the flow that
+            // needed it resumes, instead of stranding the user on its page.
+            popOnCreate: state.uri.queryParameters['return'] == '1',
+          ),
         ),
         GoRoute(
           path: '/create/subcollection',
           parentNavigatorKey: _rootNavigatorKey,
           builder: (context, state) => CreateSubcollectionScreen(
             collectionId: state.uri.queryParameters['collection'],
+            popOnCreate: state.uri.queryParameters['return'] == '1',
           ),
         ),
         GoRoute(
           path: '/create/item',
           parentNavigatorKey: _rootNavigatorKey,
-          builder: (context, state) => CreateItemScreen(
+          builder: (context, state) => CreateItemFlowScreen(
+            draftId: state.uri.queryParameters['draft'],
             collectionId: state.uri.queryParameters['collection'],
             subcollectionId: state.uri.queryParameters['subcollection'],
           ),

@@ -111,3 +111,105 @@ class PostModel {
   /// True when this post shares a collection / subcollection / item.
   bool get hasAttachment => entityType != null && entityId != null;
 }
+
+/// The server-embedded preview of a post's attached / quoted / reposted thing
+/// — the `target` block of the 0018 pulse envelope.
+///
+/// Uniform keys across every entity type; `{type, id, unavailable: true}` when
+/// the thing is not visible to the caller, so a repost of vanished content
+/// renders as a tombstone instead of an empty card.
+class PulseTarget {
+  /// Creates a target payload.
+  const PulseTarget({
+    required this.id,
+    this.type,
+    this.unavailable = false,
+    this.title,
+    this.subtitle,
+    this.body,
+    this.kind,
+    this.coverPath,
+    this.coverBlurhash,
+    this.coverWidth,
+    this.coverHeight,
+    this.childCount = 0,
+    this.likeCount = 0,
+    this.createdAt,
+    this.author,
+  });
+
+  /// Parses the envelope's `target` block.
+  factory PulseTarget.fromJson(Map<String, dynamic> json) {
+    final author = asMap(json['author']);
+    return PulseTarget(
+      id: asString(json['id']),
+      type: EntityType.tryParse(json['type']),
+      unavailable: asBool(json['unavailable']),
+      title: asStringOrNull(json['title']),
+      subtitle: asStringOrNull(json['subtitle']),
+      body: asStringOrNull(json['body']),
+      kind: asStringOrNull(json['kind']),
+      coverPath: asStringOrNull(json['cover_path']),
+      coverBlurhash: asStringOrNull(json['cover_blurhash']),
+      coverWidth: asIntOrNull(json['cover_width']),
+      coverHeight: asIntOrNull(json['cover_height']),
+      childCount: asInt(json['child_count']),
+      likeCount: asInt(json['like_count']),
+      createdAt: asDateOrNull(json['created_at']),
+      author: author.isEmpty ? null : Profile.fromJson(author),
+    );
+  }
+
+  /// The target's id.
+  final String id;
+
+  /// Which entity level the target is. Null when the wire value was foreign.
+  final EntityType? type;
+
+  /// True when the caller may not see the target — render a tombstone.
+  final bool unavailable;
+
+  /// Collection / shelf name or item title. Null for posts.
+  final String? title;
+
+  /// Description / brand line.
+  final String? subtitle;
+
+  /// Post body, when the target is a quoted post or comment.
+  final String? body;
+
+  /// The quoted post's own kind (`post` | `quote` | `reply`), when a post.
+  final String? kind;
+
+  /// Cover storage path — for a post, its first photo.
+  final String? coverPath;
+
+  /// Blurhash of the cover.
+  final String? coverBlurhash;
+
+  /// Intrinsic cover width, when recorded.
+  final int? coverWidth;
+
+  /// Intrinsic cover height, when recorded.
+  final int? coverHeight;
+
+  /// Children beneath the target (things, photos, replies).
+  final int childCount;
+
+  /// Live like count at envelope time.
+  final int likeCount;
+
+  /// When the target was created.
+  final DateTime? createdAt;
+
+  /// Who owns the target.
+  final Profile? author;
+
+  /// Cover aspect ratio, or null when unknown.
+  double? get coverAspect {
+    final w = coverWidth;
+    final h = coverHeight;
+    if (w == null || h == null || w <= 0 || h <= 0) return null;
+    return w / h;
+  }
+}

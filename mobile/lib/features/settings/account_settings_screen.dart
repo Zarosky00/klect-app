@@ -204,34 +204,41 @@ class _AccountSettingsScreenState
                 busy: _busy,
                 onPressed: _dirty(me) ? _save : null,
               ),
-              const SettingsSectionHeader(label: 'Profile'),
-              SettingsRow(
-                icon: Icons.image_outlined,
-                title: 'Banner, avatar, bio and links',
-                subtitle: 'The parts of you people actually see.',
-                onTap: () => Navigator.of(context).push<bool>(
-                  MaterialPageRoute<bool>(
-                    builder: (routeContext) =>
-                        EditProfileScreen(profile: me),
+              SettingsSection(
+                header: 'Profile',
+                children: <Widget>[
+                  SettingsRow(
+                    icon: Icons.image_outlined,
+                    title: 'Banner, avatar, bio and links',
+                    subtitle: 'The parts of you people actually see.',
+                    onTap: () => Navigator.of(context).push<bool>(
+                      MaterialPageRoute<bool>(
+                        builder: (routeContext) =>
+                            EditProfileScreen(profile: me),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-              const SettingsSectionHeader(
-                label: 'Sign-in',
+              SettingsSection(
+                header: 'Sign-in',
                 note: 'Changing either of these sends a confirmation to your '
                     'inbox before it takes effect.',
-              ),
-              SettingsRow(
-                icon: Icons.mail_outline_rounded,
-                title: 'Email',
-                value: email == null ? 'Unknown' : _mask(email),
-                onTap: () => _ChangeEmailSheet.show(context, current: email),
-              ),
-              SettingsRow(
-                icon: Icons.key_outlined,
-                title: 'Password',
-                subtitle: 'Set a new one.',
-                onTap: () => _ChangePasswordSheet.show(context),
+                children: <Widget>[
+                  SettingsRow(
+                    icon: Icons.mail_outline_rounded,
+                    title: 'Email',
+                    value: email == null ? 'Unknown' : _mask(email),
+                    onTap: () =>
+                        _ChangeEmailSheet.show(context, current: email),
+                  ),
+                  SettingsRow(
+                    icon: Icons.key_outlined,
+                    title: 'Password',
+                    subtitle: 'Set a new one.',
+                    onTap: () => _ChangePasswordSheet.show(context),
+                  ),
+                ],
               ),
               const SizedBox(height: Space.s6),
               Text(

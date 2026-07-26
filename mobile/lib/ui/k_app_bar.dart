@@ -89,7 +89,9 @@ class KAppBar extends StatelessWidget {
             titlePadding: EdgeInsets.only(
               left: centerTitle ? 0 : Space.s4,
               right: Space.s4,
-              bottom: Space.s3,
+              // The flexible space extends behind [bottom], so the title has
+              // to clear its band or it renders underneath the filter row.
+              bottom: Space.s3 + (bottom?.preferredSize.height ?? 0),
             ),
             centerTitle: centerTitle,
             // Derived from the type ramp, not invented: expanded reads as
@@ -109,15 +111,59 @@ class KAppBar extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (subtitle != null)
-                  Text(
-                    subtitle!,
-                    style: text.caption.copyWith(color: colors.textSecondary),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  _ExpandedSubtitle(
+                    subtitle: subtitle!,
+                    centerTitle: centerTitle,
                   ),
               ],
             ),
             background: background,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The second line under a [KAppBar] title, alive only while expanded.
+///
+/// Fades *and* collapses with scroll progress — the fade keeps a slow scroll
+/// from snapping, and giving the space back is what lets the shrunken title
+/// sit centred in the toolbar instead of being pushed off its top edge.
+class _ExpandedSubtitle extends StatelessWidget {
+  const _ExpandedSubtitle({
+    required this.subtitle,
+    required this.centerTitle,
+  });
+
+  final String subtitle;
+  final bool centerTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final settings = context
+        .dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
+    final extent =
+        settings == null ? 0.0 : (settings.maxExtent - settings.minExtent);
+    // 1 at rest, 0 once the bar has fully collapsed — the exact inverse of
+    // the profile screen's collapsed title.
+    final expanded = settings == null || extent <= 0
+        ? 1.0
+        : ((settings.currentExtent - settings.minExtent) / extent)
+            .clamp(0.0, 1.0);
+
+    return ClipRect(
+      child: Align(
+        alignment: centerTitle ? Alignment.topCenter : Alignment.topLeft,
+        heightFactor: expanded,
+        child: Opacity(
+          opacity: expanded,
+          child: Text(
+            subtitle,
+            style: context.kt.caption.copyWith(color: colors.textSecondary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ),

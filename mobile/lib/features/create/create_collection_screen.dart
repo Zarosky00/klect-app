@@ -21,7 +21,13 @@ import 'widgets/visibility_field.dart';
 /// Creates a shelf — the top level of the hierarchy.
 class CreateCollectionScreen extends ConsumerStatefulWidget {
   /// Creates the screen.
-  const CreateCollectionScreen({super.key});
+  const CreateCollectionScreen({this.popOnCreate = false, super.key});
+
+  /// When true the screen pops with the created [CollectionModel] instead of
+  /// navigating to the new shelf — so a filing flow that needed a shelf
+  /// mid-way gets it back and simply continues. This is what fixes the old
+  /// "make a shelf, get stranded on its page, item draft gone" dead end.
+  final bool popOnCreate;
 
   @override
   ConsumerState<CreateCollectionScreen> createState() =>
@@ -35,7 +41,11 @@ class _CreateCollectionScreenState
 
   CollectionTemplate? _template;
   EntityVisibility _visibility = EntityVisibility.public;
-  UploadedCover? _cover;
+  PendingCover? _cover;
+
+  /// The cover blob, once it has actually landed. Kept so a save that fails
+  /// *after* the upload does not upload the same bytes twice on retry.
+  UploadedCover? _uploadedCover;
   bool _busy = false;
   String? _error;
 
@@ -86,14 +96,20 @@ class _CreateCollectionScreenState
 
     try {
       final api = ref.read(klectApiProvider);
+      // Deferred from pick time on purpose: uploading only inside the save
+      // path means an abandoned form never orphans a blob in Storage.
+      final cover = _cover;
+      if (cover != null) {
+        _uploadedCover ??= await cover.upload(api);
+      }
       final existing = await api.fetchCollections(api.requireUserId);
       final collection = await api.createCollection(
         name: name,
         description:
             _description.text.trim().isEmpty ? null : _description.text.trim(),
         templateId: _template?.id,
-        coverPath: _cover?.storagePath,
-        coverBlurhash: _cover?.blurhash,
+        coverPath: cover == null ? null : _uploadedCover?.storagePath,
+        coverBlurhash: cover == null ? null : _uploadedCover?.blurhash,
         accentColor: _template?.accentColor,
         visibility: _visibility,
       );
@@ -112,7 +128,11 @@ class _CreateCollectionScreenState
 
       ref.refreshLibrary(collectionId: collection.id);
       KToast.success(context, '${collection.name} is on the shelf.');
-      context.pushReplacement('/c/${collection.id}');
+      if (widget.popOnCreate && context.canPop()) {
+        context.pop(collection);
+      } else {
+        context.pushReplacement('/c/${collection.id}');
+      }
     } on KlectError catch (error) {
       if (!mounted) return;
       setState(() {
@@ -212,7 +232,10 @@ class _CreateCollectionScreenState
             folder: 'covers',
             enabled: !_busy,
             helper: 'Optional — a shelf with no cover shows its accent.',
-            onPicked: (cover) => setState(() => _cover = cover),
+            onPicked: (cover) => setState(() {
+              _cover = cover;
+              _uploadedCover = null;
+            }),
           ),
           const SizedBox(height: Space.s5),
           VisibilityField(

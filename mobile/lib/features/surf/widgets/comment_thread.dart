@@ -20,10 +20,22 @@ class _ThreadRow {
   final int depth;
 }
 
-/// Threaded comments for any entity, with an optimistic composer.
+/// A collapsed branch: "[Show N replies]" in place of a deep subtree.
+class _CollapsedRow {
+  const _CollapsedRow(this.parentId, this.count, this.depth);
+
+  final String parentId;
+  final int count;
+  final int depth;
+}
+
+/// Threaded comments for any entity — X quality:
 ///
-/// Replies nest to [CommentsController.maxDepth]; anything deeper renders at
-/// the deepest indent rather than marching off the right edge of the sheet.
+///  * **Top / Newest** sort toggle, served by the paged roots query;
+///  * **load-more** pagination over root comments;
+///  * replies visible to depth 1, deeper branches collapsed behind
+///    "Show N replies";
+///  * viewer like state seeded for the whole page in one batched query.
 class CommentThread extends ConsumerStatefulWidget {
   /// Creates a thread.
   const CommentThread({
@@ -45,6 +57,7 @@ class CommentThread extends ConsumerStatefulWidget {
 
 class _CommentThreadState extends ConsumerState<CommentThread> {
   final TextEditingController _draft = TextEditingController();
+  final Set<String> _expanded = <String>{};
   CommentModel? _replyTo;
 
   @override
@@ -53,40 +66,67 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
     super.dispose();
   }
 
-  List<_ThreadRow> _thread(List<CommentModel> comments) {
+  /// Builds the visible rows: roots in controller order, replies oldest-first,
+  /// branches deeper than depth 1 collapsed until expanded.
+  List<Object> _thread(List<CommentModel> comments) {
     final ids = <String>{for (final comment in comments) comment.id};
     final byParent = <String, List<CommentModel>>{};
     final roots = <CommentModel>[];
     for (final comment in comments) {
       final parent = comment.parentId;
-      if (parent == null || !ids.contains(parent)) {
+      if (parent == null) {
         roots.add(comment);
-      } else {
+      } else if (ids.contains(parent)) {
         byParent.putIfAbsent(parent, () => <CommentModel>[]).add(comment);
       }
+      // An orphan reply (parent not loaded / deleted) stays hidden — with
+      // paged roots it would otherwise masquerade as a root.
     }
 
     int byTime(CommentModel a, CommentModel b) =>
         (a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
             .compareTo(b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0));
 
-    final rows = <_ThreadRow>[];
+    int descendants(String id) {
+      final children = byParent[id];
+      if (children == null) return 0;
+      var count = children.length;
+      for (final child in children) {
+        count += descendants(child.id);
+      }
+      return count;
+    }
+
+    final rows = <Object>[];
     void walk(List<CommentModel> level, int depth) {
       level.sort(byTime);
       for (final comment in level) {
         rows.add(_ThreadRow(comment, depth));
         final children = byParent[comment.id];
         if (children == null) continue;
-        walk(
-          children,
-          depth < CommentsController.maxDepth - 1 ? depth + 1 : depth,
-        );
+        // Roots and their direct replies always show; anything deeper hides
+        // behind an expander until asked for.
+        if (depth >= 1 && !_expanded.contains(comment.id)) {
+          rows.add(
+            _CollapsedRow(
+              comment.id,
+              descendants(comment.id),
+              depth < maxIndent ? depth + 1 : depth,
+            ),
+          );
+          continue;
+        }
+        walk(children, depth < maxIndent ? depth + 1 : depth);
       }
     }
 
     walk(roots, 0);
     return rows;
   }
+
+  /// Deepest indent rendered — anything deeper stays at this level rather
+  /// than marching off the right edge of the sheet.
+  static const int maxIndent = CommentsController.maxDepth - 1;
 
   void _startReply(CommentModel comment) {
     setState(() => _replyTo = comment);
@@ -130,6 +170,26 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (state.comments.isNotEmpty || !state.loading)
+          Row(
+            children: <Widget>[
+              for (final sort in CommentSort.values) ...<Widget>[
+                KChip(
+                  label: sort.label,
+                  selected: sort == state.sort,
+                  dense: true,
+                  onTap: state.loading
+                      ? null
+                      : () => unawaited(
+                            ref
+                                .read(commentsProvider(widget.entity).notifier)
+                                .setSort(sort),
+                          ),
+                ),
+                const SizedBox(width: Space.s2),
+              ],
+            ],
+          ),
         if (state.loading && state.comments.isEmpty)
           const KSkeletonList(rows: 2, showMedia: false)
         else if (rows.isEmpty)
@@ -141,19 +201,46 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
               style: context.kt.callout.copyWith(color: colors.textTertiary),
             ),
           )
-        else
+        else ...<Widget>[
           for (final row in rows)
-            _CommentRow(
-              key: ValueKey<String>(row.comment.id),
-              row: row,
-              isMine: meId != null && row.comment.authorId == meId,
-              onReply: () => _startReply(row.comment),
-              onDelete: () => unawaited(
-                ref
-                    .read(commentsProvider(widget.entity).notifier)
-                    .remove(row.comment.id),
+            if (row is _ThreadRow)
+              _CommentRow(
+                key: ValueKey<String>(row.comment.id),
+                row: row,
+                isMine: meId != null && row.comment.authorId == meId,
+                onReply: () => _startReply(row.comment),
+                onDelete: () => unawaited(
+                  ref
+                      .read(commentsProvider(widget.entity).notifier)
+                      .remove(row.comment.id),
+                ),
+              )
+            else if (row is _CollapsedRow)
+              _ShowRepliesRow(
+                key: ValueKey<String>('expand:${row.parentId}'),
+                row: row,
+                onExpand: () => setState(() => _expanded.add(row.parentId)),
+              ),
+          if (state.hasMore)
+            Padding(
+              padding: const EdgeInsets.only(top: Space.s2),
+              child: KButton(
+                label: state.loadingMore
+                    ? 'Loading…'
+                    : 'Show more comments',
+                variant: KButtonVariant.ghost,
+                size: KButtonSize.small,
+                busy: state.loadingMore,
+                onPressed: state.loadingMore
+                    ? null
+                    : () => unawaited(
+                          ref
+                              .read(commentsProvider(widget.entity).notifier)
+                              .loadMore(),
+                        ),
               ),
             ),
+        ],
         const SizedBox(height: Space.s4),
         _Composer(
           controller: _draft,
@@ -163,6 +250,56 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
           onSend: () => unawaited(_send()),
         ),
       ],
+    );
+  }
+}
+
+/// "Show N replies" — a collapsed branch, one tap from unfolding.
+class _ShowRepliesRow extends StatelessWidget {
+  const _ShowRepliesRow({required this.row, required this.onExpand, super.key});
+
+  final _CollapsedRow row;
+  final VoidCallback onExpand;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return Padding(
+      padding: EdgeInsets.only(
+        // Clears the avatar column (avatar + gap) so the expander aligns
+        // with the comment bodies above it.
+        left: row.depth * Space.s6 + Space.s8 + Space.s3,
+        top: Space.s1,
+        bottom: Space.s2,
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: KPressable(
+          onTap: onExpand,
+          enforceMinTapTarget: false,
+          semanticLabel: 'Show ${row.count} '
+              '${row.count == 1 ? 'reply' : 'replies'}',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: Space.s1),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  Icons.subdirectory_arrow_right_rounded,
+                  size: Space.s4,
+                  color: colors.accentDefault,
+                ),
+                const SizedBox(width: Space.s1),
+                Text(
+                  'Show ${row.count} ${row.count == 1 ? 'reply' : 'replies'}',
+                  style: context.kt.micro
+                      .copyWith(color: colors.accentDefault),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
