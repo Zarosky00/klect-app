@@ -348,6 +348,22 @@ touched the search/trigram/feed indexes. Re-check once real usage exists before 
   Added follow-panel golden/widget coverage, keyboard-inset and quote-preview regressions, and
   preference tests. Released the verified Android build as `v1.4.2` through PR #2.
 
+### 2026-07-27 — in-app sideload updater (pending merge and release)
+- Built in an isolated sibling worktree on `agent/in-app-apk-updater`, leaving the active social /
+  redesign checkout, branch, index, and uncommitted files untouched.
+- This supersedes the earlier browser-download behavior: GitHub release checks now require a
+  successfully uploaded `klect.apk` asset and cache its direct HTTPS URL, expected byte count, and
+  SHA-256 digest. Old cached release metadata remains compatible through the stable latest URL.
+- "Update in KLECT" streams the APK to private cache with visible progress, rejects truncated or
+  digest-mismatched files, and opens Android's system installer through a narrowly scoped,
+  non-exported FileProvider. If needed, Android first opens the per-app "Allow from this source"
+  setting; after returning, the already verified APK is reused via "Continue install".
+- Validation: `flutter analyze --no-pub` 0 issues; complete Flutter suite 116/116 passed; clean
+  Android release APK compiled and packaged successfully with the expected
+  `REQUEST_INSTALL_PACKAGES` permission and `com.klect.klect.update_file_provider` authority.
+  Physical-device permission, install, replacement, and restart behavior remains to be verified
+  after this branch is merged into a version newer than v1.4.2 and released with the same signer.
+
 ---
 
 ## Next actions
