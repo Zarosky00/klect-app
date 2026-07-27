@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-27 · Session: mobile/web usability patch · shipped as v1.3.1
+> Last updated: 2026-07-27 · Session: premium mobile interaction feedback · shipped as v1.4.0
 
 ---
 
@@ -12,9 +12,9 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 34 tables, 87 RLS policies, 45 triggers, 14 realtime tables, 4 storage buckets. Smoke-tested under real JWT impersonation. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | See `BACKEND_API.md`. All RPCs live and tested. |
-| 4 | Flutter mobile app (`mobile/`) | ✅ **DONE (features)** | All feature screens implemented, zero placeholders. v1.3.1 fixes clipped profile avatars, responsive stats/tabs, and the quote composer action bar; Settings now includes an explicit manual update check. `flutter analyze` 0 issues, 84 tests pass. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **DONE (features)** | All feature screens implemented, zero placeholders. v1.4.0 adds centralized premium sounds, haptics, contextual action toasts, persisted Sound & touch controls, rapid-tap deduplication, reduced-motion support, and silent comment/reply composition. `flutter analyze` 0 issues, 100 tests pass. |
 | 5 | Next.js web + admin (`web/`) | ✅ **DONE (features)** | All 32 page routes + 3 auth route handlers + sitemap/robots implemented incl. intercepting closeup modal and full `/admin` — zero placeholders. v1.3.1 adds responsive profile/composer polish and `/settings/app`. Group *management* UI is mobile-only for now (web renders groups fine). |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | 2026-07-27 gates green: mobile analyze + 84 tests + APK; web 9 tests + tsc + lint + production build. Manual CHECKLIST.md sections A–H (63 seen-it-work items) still to walk through. |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | 2026-07-27 gates green: mobile analyze + 100 tests + v1.4.0 APK; web 9 tests + tsc + lint + production build. Manual CHECKLIST.md sections A–H (63 seen-it-work items) plus real-device sound/haptic feel still need to be walked through. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **DONE & VERIFIED** | Migration **0017 applied to live DB** + all 5 group RPCs smoke-tested under JWT impersonation (incl. owner auto-transfer). Advisors: 0 ERROR. `database.types.ts` regenerated. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
@@ -40,6 +40,17 @@
   avatar is fully visible, stats use a 2×2 grid, and the five-section tab rail scrolls horizontally.
 - GitHub release `v1.3.1` is published with `klect.apk`; the stable
   `releases/latest/download/klect.apk` URL resolves with HTTP 200 and the correct APK MIME type.
+
+**v1.4.0 verification (2026-07-27):**
+- Mobile: `dart analyze` **0 issues**; complete `flutter test` **100/100 passed**; release APK
+  verified as `com.klect.klect`, version `1.4.0` / code `6`, SHA-256
+  `a0222a8641254a3fadecae0a3c5300a52008e2304497b8997e5099dd1d4219a6`.
+- GitHub release `v1.4.0` is published from commit `0e0d6eb` with the required `klect.apk` asset.
+  The public latest-release API reports the expected tag, APK MIME type, byte size, and digest;
+  `releases/latest/download/klect.apk` follows through to HTTP 200.
+- The existing Android update checker and website download button both use that stable URL, so
+  no Supabase or Vercel change was required. Physical normal/vibrate/silent-mode feel testing
+  remains pending because no Android device was attached to the build machine.
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 
