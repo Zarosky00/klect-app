@@ -7,6 +7,7 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
+import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/links.dart';
 import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
@@ -58,8 +59,9 @@ class _PulseFilterDrawerState extends ConsumerState<PulseFilterDrawer> {
       _lastQuery = query;
     });
     try {
-      final results =
-          await ref.read(klectApiProvider).searchAll(query, limit: 8);
+      final results = await ref
+          .read(klectApiProvider)
+          .searchAll(query, limit: 8);
       if (!mounted || _lastQuery != query) return;
       setState(() => _hits = results.posts);
     } on KlectError catch (error) {
@@ -141,15 +143,17 @@ class _PulseFilterDrawerState extends ConsumerState<PulseFilterDrawer> {
                     Text('Shared taste only', style: text.label),
                     Text(
                       'Rows from collectors whose taste matches yours.',
-                      style:
-                          text.caption.copyWith(color: colors.textTertiary),
+                      style: text.caption.copyWith(color: colors.textTertiary),
                     ),
                   ],
                 ),
               ),
               Switch(
                 value: filters.sharedTaste,
-                onChanged: (_) => controller.toggleSharedTaste(),
+                onChanged: (_) {
+                  triggerInteractionTapFeedback(context);
+                  controller.toggleSharedTaste();
+                },
               ),
             ],
           ),
@@ -186,16 +190,16 @@ class _PulseFilterDrawerState extends ConsumerState<PulseFilterDrawer> {
                     ),
                   )
                 : (_hits == null && _searchError == null)
-                    ? null
-                    : KIconButton(
-                        icon: Icons.close_rounded,
-                        semanticLabel: 'Clear search',
-                        size: Space.s4,
-                        onPressed: () {
-                          _query.clear();
-                          unawaited(_search(''));
-                        },
-                      ),
+                ? null
+                : KIconButton(
+                    icon: Icons.close_rounded,
+                    semanticLabel: 'Clear search',
+                    size: Space.s4,
+                    onPressed: () {
+                      _query.clear();
+                      unawaited(_search(''));
+                    },
+                  ),
           ),
           ..._searchSection(),
         ],
@@ -284,10 +288,9 @@ class _PostHitRow extends ConsumerWidget {
     final colors = context.kc;
     final text = context.kt;
     final author = hit.author;
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
-          author?.avatarPath,
-          bucket: StorageBucket.avatars,
-        );
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
 
     return KPressable(
       onTap: () => context.push(KlectLinks.postThreadPath(hit.id)),
@@ -324,8 +327,9 @@ class _PostHitRow extends ConsumerWidget {
                         const SizedBox(width: Space.s2),
                         Text(
                           timeago.format(hit.createdAt!, locale: 'en_short'),
-                          style: text.micro
-                              .copyWith(color: colors.textTertiary),
+                          style: text.micro.copyWith(
+                            color: colors.textTertiary,
+                          ),
                         ),
                       ],
                     ],
@@ -336,8 +340,7 @@ class _PostHitRow extends ConsumerWidget {
                       hit.body!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: text.callout
-                          .copyWith(color: colors.textSecondary),
+                      style: text.callout.copyWith(color: colors.textSecondary),
                     ),
                   ],
                   const SizedBox(height: Space.s05),

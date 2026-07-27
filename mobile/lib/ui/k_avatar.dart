@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../design/theme.dart';
 import 'k_blurhash_image.dart';
+import 'k_pressable.dart';
 
 /// Circular avatar with a verified badge and an initials fallback.
 class KAvatar extends StatelessWidget {
@@ -112,15 +113,16 @@ class KAvatar extends StatelessWidget {
       label: name == null
           ? null
           : isVerified
-              ? '$name, verified'
-              : name,
+          ? '$name, verified'
+          : name,
       image: true,
       child: avatar,
     );
 
     if (onTap == null) return labelled;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return KPressable(
+      enforceMinTapTarget: false,
+      semanticLabel: name,
       onTap: onTap,
       child: labelled,
     );

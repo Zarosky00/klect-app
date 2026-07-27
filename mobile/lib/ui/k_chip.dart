@@ -71,9 +71,15 @@ class KChip extends StatelessWidget {
           ),
           if (onRemove != null) ...<Widget>[
             const SizedBox(width: Space.s1),
-            GestureDetector(
+            KPressable(
+              enforceMinTapTarget: false,
+              semanticLabel: 'Remove $label',
               onTap: onRemove,
-              child: Icon(Icons.close_rounded, size: Space.s4, color: foreground),
+              child: Icon(
+                Icons.close_rounded,
+                size: Space.s4,
+                color: foreground,
+              ),
             ),
           ],
         ],

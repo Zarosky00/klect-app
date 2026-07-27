@@ -6,8 +6,7 @@ import '../../design/theme.dart';
 import '../../ui/ui.dart';
 import 'settings_widgets.dart';
 
-/// Theme: follow the system, or pin light/dark. The choice is persisted, so it
-/// survives a cold start.
+/// Theme and interaction preferences persisted across cold starts.
 class AppearanceSettingsScreen extends ConsumerWidget {
   /// Creates the appearance screen.
   const AppearanceSettingsScreen({super.key});
@@ -28,7 +27,7 @@ class AppearanceSettingsScreen extends ConsumerWidget {
         ),
         children: <Widget>[
           Text(
-            'KLECT is dark-first — a private gallery at night, so your '
+            'KLECT is dark-first \u2014 a private gallery at night, so your '
             'photography is the only source of colour.',
             style: context.kt.body.copyWith(color: colors.textSecondary),
           ),
@@ -60,18 +59,18 @@ class AppearanceSettingsScreen extends ConsumerWidget {
           ),
           SettingsSection(
             header: 'Sound & touch',
-            note: 'Quiet confirmations for meaningful actions only.',
+            note: 'One familiar response for deliberate taps.',
             children: <Widget>[
               SettingsToggleRow(
                 title: 'Interaction sounds',
-                subtitle: 'Subtle cues that respect your device’s silent mode.',
-                icon: Icons.graphic_eq_rounded,
+                subtitle: 'Uses your Android device\u2019s native tap sound.',
+                icon: Icons.touch_app_rounded,
                 value: settings.interactionSoundsEnabled,
                 onChanged: controller.setInteractionSoundsEnabled,
               ),
               SettingsToggleRow(
                 title: 'Haptic feedback',
-                subtitle: 'Mild touch feedback for social and image actions.',
+                subtitle: 'A light selection click for in-app controls.',
                 icon: Icons.vibration_rounded,
                 value: settings.hapticsEnabled,
                 onChanged: controller.setHapticsEnabled,

@@ -1,6 +1,7 @@
 import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 
+import '../core/feedback/interaction_feedback.dart';
 import '../design/motion.dart';
 import '../design/theme.dart';
 
@@ -22,6 +23,7 @@ class KPressable extends StatefulWidget {
     this.semanticLabel,
     this.enforceMinTapTarget = true,
     this.behavior = HitTestBehavior.opaque,
+    this.feedbackEnabled = true,
   });
 
   /// What to render.
@@ -53,6 +55,9 @@ class KPressable extends StatefulWidget {
 
   /// Hit-test behaviour of the underlying detector.
   final HitTestBehavior behavior;
+
+  /// Whether accepted callbacks receive the app's native tap feedback.
+  final bool feedbackEnabled;
 
   @override
   State<KPressable> createState() => _KPressableState();
@@ -102,6 +107,12 @@ class _KPressableState extends State<KPressable>
           widget.onLongPress != null ||
           widget.onDoubleTap != null);
 
+  void _run(VoidCallback? callback) {
+    if (!widget.enabled || callback == null) return;
+    if (widget.feedbackEnabled) triggerInteractionTapFeedback(context);
+    callback();
+  }
+
   @override
   Widget build(BuildContext context) {
     final reduced = KMotion.reduced(context);
@@ -142,13 +153,24 @@ class _KPressableState extends State<KPressable>
       excludeSemantics: widget.semanticLabel != null,
       child: GestureDetector(
         behavior: widget.behavior,
-        onTapDown: _interactive ? (_) => _setPressed(true, reduced: reduced) : null,
-        onTapUp: _interactive ? (_) => _setPressed(false, reduced: reduced) : null,
-        onTapCancel:
-            _interactive ? () => _setPressed(false, reduced: reduced) : null,
-        onTap: widget.enabled ? widget.onTap : null,
-        onDoubleTap: widget.enabled ? widget.onDoubleTap : null,
-        onLongPress: widget.enabled ? widget.onLongPress : null,
+        onTapDown: _interactive
+            ? (_) => _setPressed(true, reduced: reduced)
+            : null,
+        onTapUp: _interactive
+            ? (_) => _setPressed(false, reduced: reduced)
+            : null,
+        onTapCancel: _interactive
+            ? () => _setPressed(false, reduced: reduced)
+            : null,
+        onTap: widget.enabled && widget.onTap != null
+            ? () => _run(widget.onTap)
+            : null,
+        onDoubleTap: widget.enabled && widget.onDoubleTap != null
+            ? () => _run(widget.onDoubleTap)
+            : null,
+        onLongPress: widget.enabled && widget.onLongPress != null
+            ? () => _run(widget.onLongPress)
+            : null,
         child: content,
       ),
     );

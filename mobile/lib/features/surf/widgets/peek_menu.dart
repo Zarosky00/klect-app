@@ -30,27 +30,17 @@ abstract final class KPeekMenu {
     String? imageUrl,
     String? blurhash,
     double? aspectRatio,
-  }) {
-    unawaited(
-      ProviderScope.containerOf(context)
-          .read(interactionFeedbackProvider.notifier)
-          .local(
-            action: InteractionFeedbackAction.peekOpen,
-            targetKey: entity.key,
-          ),
-    );
-    return Navigator.of(context, rootNavigator: true).push<void>(
-      _PeekRoute(
-        entity: entity,
-        title: title,
-        subtitle: subtitle,
-        imageUrl: imageUrl,
-        blurhash: blurhash,
-        aspectRatio: aspectRatio,
-        scrim: KlectTheme.of(context).colors.surfaceScrim,
-      ),
-    );
-  }
+  }) => Navigator.of(context, rootNavigator: true).push<void>(
+    _PeekRoute(
+      entity: entity,
+      title: title,
+      subtitle: subtitle,
+      imageUrl: imageUrl,
+      blurhash: blurhash,
+      aspectRatio: aspectRatio,
+      scrim: KlectTheme.of(context).colors.surfaceScrim,
+    ),
+  );
 }
 
 class _PeekRoute extends PopupRoute<void> {
@@ -244,7 +234,10 @@ class _PeekBody extends ConsumerWidget {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: close,
+      onTap: () {
+        triggerInteractionTapFeedback(context);
+        close();
+      },
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: Blurs.sheet, sigmaY: Blurs.sheet),
         child: SafeArea(

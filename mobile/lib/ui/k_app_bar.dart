@@ -63,8 +63,19 @@ class KAppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.kc;
     final text = context.kt;
+    final effectiveLeading =
+        leading ??
+        (Navigator.of(context).canPop()
+            ? KIconButton(
+                icon: Icons.arrow_back_rounded,
+                semanticLabel: 'Back',
+                color: colors.textPrimary,
+                onPressed: () => Navigator.of(context).maybePop(),
+              )
+            : null);
 
     return SliverAppBar(
+      automaticallyImplyLeading: false,
       pinned: pinned,
       floating: floating,
       stretch: true,
@@ -76,7 +87,7 @@ class KAppBar extends StatelessWidget {
       elevation: Elevation.none.y,
       scrolledUnderElevation: Elevation.none.y,
       centerTitle: centerTitle,
-      leading: leading,
+      leading: effectiveLeading,
       actions: <Widget>[
         ...actions,
         const SizedBox(width: Space.s2),
@@ -131,10 +142,7 @@ class KAppBar extends StatelessWidget {
 /// from snapping, and giving the space back is what lets the shrunken title
 /// sit centred in the toolbar instead of being pushed off its top edge.
 class _ExpandedSubtitle extends StatelessWidget {
-  const _ExpandedSubtitle({
-    required this.subtitle,
-    required this.centerTitle,
-  });
+  const _ExpandedSubtitle({required this.subtitle, required this.centerTitle});
 
   final String subtitle;
   final bool centerTitle;
@@ -144,14 +152,17 @@ class _ExpandedSubtitle extends StatelessWidget {
     final colors = context.kc;
     final settings = context
         .dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
-    final extent =
-        settings == null ? 0.0 : (settings.maxExtent - settings.minExtent);
+    final extent = settings == null
+        ? 0.0
+        : (settings.maxExtent - settings.minExtent);
     // 1 at rest, 0 once the bar has fully collapsed — the exact inverse of
     // the profile screen's collapsed title.
     final expanded = settings == null || extent <= 0
         ? 1.0
-        : ((settings.currentExtent - settings.minExtent) / extent)
-            .clamp(0.0, 1.0);
+        : ((settings.currentExtent - settings.minExtent) / extent).clamp(
+            0.0,
+            1.0,
+          );
 
     return ClipRect(
       child: Align(
@@ -224,7 +235,8 @@ class KFixedAppBar extends StatelessWidget implements PreferredSizeWidget {
       centerTitle: centerTitle,
       toolbarHeight: Layout.topBarHeight,
       automaticallyImplyLeading: false,
-      leading: leading ??
+      leading:
+          leading ??
           (showBack
               ? KIconButton(
                   icon: Icons.arrow_back_rounded,
@@ -233,10 +245,9 @@ class KFixedAppBar extends StatelessWidget implements PreferredSizeWidget {
                   onPressed: onBack ?? () => Navigator.of(context).maybePop(),
                 )
               : null),
-      title: titleWidget ??
-          (title == null
-              ? null
-              : Text(title!, style: context.kt.title2)),
+      title:
+          titleWidget ??
+          (title == null ? null : Text(title!, style: context.kt.title2)),
       actions: <Widget>[
         ...actions,
         const SizedBox(width: Space.s2),

@@ -7,6 +7,7 @@ import 'package:flutter_blurhash/flutter_blurhash.dart';
 import '../core/images/k_image_cache.dart';
 import '../design/motion.dart';
 import '../design/theme.dart';
+import 'k_pressable.dart';
 
 /// The only image widget in the product.
 ///
@@ -105,7 +106,8 @@ class _KBlurhashImageState extends State<KBlurhashImage> {
 
   @override
   Widget build(BuildContext context) {
-    final radius = widget.borderRadius ??
+    final radius =
+        widget.borderRadius ??
         const BorderRadius.all(Radius.circular(Radii.md));
 
     Widget content = ClipRRect(
@@ -122,11 +124,7 @@ class _KBlurhashImageState extends State<KBlurhashImage> {
       content = Hero(tag: widget.heroTag!, child: content);
     }
 
-    return Semantics(
-      image: true,
-      label: widget.semanticLabel,
-      child: content,
-    );
+    return Semantics(image: true, label: widget.semanticLabel, child: content);
   }
 
   Widget _buildImage(BuildContext context) {
@@ -196,8 +194,8 @@ class _FailedImage extends StatelessWidget {
       button: true,
       label: 'Image failed to load. Tap to retry.',
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: KPressable(
+        enforceMinTapTarget: false,
         onTap: onRetry,
         child: Stack(
           fit: StackFit.passthrough,

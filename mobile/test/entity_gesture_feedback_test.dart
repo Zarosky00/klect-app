@@ -13,7 +13,7 @@ import 'support/test_harness.dart';
 void main() {
   const entity = EntityRef.item('item-1');
 
-  testWidgets('single card tap is tactile but intentionally silent', (
+  testWidgets('single card tap receives the native sound and haptic once', (
     tester,
   ) async {
     final driver = RecordingFeedbackDriver();
@@ -39,14 +39,15 @@ void main() {
     await tester.pump();
 
     expect(opens, 1);
-    expect(driver.haptics, <InteractionFeedbackHaptic>[
-      InteractionFeedbackHaptic.selection,
-    ]);
-    expect(driver.sounds, isEmpty);
+    expect(driver.taps, hasLength(1));
+    expect(driver.taps.single.sound, isTrue);
+    expect(driver.taps.single.haptic, isTrue);
     await tester.pump(KMotion.doubleTapWindow);
   });
 
-  testWidgets('double tap adds a matching immersive focus cue', (tester) async {
+  testWidgets('double tap produces one identical effect per accepted tap', (
+    tester,
+  ) async {
     final driver = RecordingFeedbackDriver();
     final container = ProviderContainer.test(
       overrides: [
@@ -75,17 +76,11 @@ void main() {
 
     expect(opens, 1);
     expect(immersiveOpens, 1);
-    expect(
-      driver.haptics,
-      containsAll(<InteractionFeedbackHaptic>[
-        InteractionFeedbackHaptic.selection,
-        InteractionFeedbackHaptic.light,
-      ]),
-    );
-    expect(driver.sounds, contains(InteractionFeedbackSound.focus));
+    expect(driver.taps, hasLength(2));
+    expect(driver.taps.every((tap) => tap.sound && tap.haptic), isTrue);
   });
 
-  testWidgets('long press Peek uses the focus cue and medium haptic', (
+  testWidgets('long press Peek uses the same native tap feedback', (
     tester,
   ) async {
     final driver = RecordingFeedbackDriver();
@@ -108,8 +103,9 @@ void main() {
     await tester.longPress(find.byType(KEntityGestureCard));
     await tester.pump();
 
-    expect(driver.haptics, contains(InteractionFeedbackHaptic.medium));
-    expect(driver.sounds, contains(InteractionFeedbackSound.focus));
+    expect(driver.taps, hasLength(1));
+    expect(driver.taps.single.sound, isTrue);
+    expect(driver.taps.single.haptic, isTrue);
 
     await tester.tapAt(const Offset(4, 4));
     await tester.pumpAndSettle();

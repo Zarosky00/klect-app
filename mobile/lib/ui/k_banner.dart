@@ -3,10 +3,12 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../core/feedback/interaction_feedback.dart';
 import '../design/motion.dart';
 import '../design/theme.dart';
 import 'k_avatar.dart';
 import 'k_blurhash_image.dart';
+import 'k_pressable.dart';
 
 /// A transient top-edge banner for things that happen *while you are looking
 /// elsewhere* — a like landing, a message arriving.
@@ -243,8 +245,9 @@ class _KBannerHostState extends State<_KBannerHost>
                     const SizedBox(height: Space.s05),
                     Text(
                       widget.message,
-                      style: context.kt.callout
-                          .copyWith(color: colors.textSecondary),
+                      style: context.kt.callout.copyWith(
+                        color: colors.textSecondary,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -265,19 +268,16 @@ class _KBannerHostState extends State<_KBannerHost>
                 ),
               ],
               const SizedBox(width: Space.s1),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
+              KPressable(
+                enforceMinTapTarget: false,
+                semanticLabel: 'Dismiss',
                 onTap: widget.onDismiss,
-                child: Semantics(
-                  button: true,
-                  label: 'Dismiss',
-                  child: Padding(
-                    padding: const EdgeInsets.all(Space.s2),
-                    child: Icon(
-                      Icons.close_rounded,
-                      size: Space.s4,
-                      color: colors.textTertiary,
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.all(Space.s2),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: Space.s4,
+                    color: colors.textTertiary,
                   ),
                 ),
               ),
@@ -289,7 +289,12 @@ class _KBannerHostState extends State<_KBannerHost>
 
     final interactive = GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: widget.onTap,
+      onTap: widget.onTap == null
+          ? null
+          : () {
+              triggerInteractionTapFeedback(context);
+              widget.onTap!();
+            },
       onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
       child: DecoratedBox(
@@ -311,8 +316,9 @@ class _KBannerHostState extends State<_KBannerHost>
         label: '${widget.title} ${widget.message}',
         child: Center(
           child: ConstrainedBox(
-            constraints:
-                const BoxConstraints(maxWidth: Layout.readableMaxWidth),
+            constraints: const BoxConstraints(
+              maxWidth: Layout.readableMaxWidth,
+            ),
             child: Transform.translate(
               offset: Offset(0, _dragOffset),
               child: FadeTransition(

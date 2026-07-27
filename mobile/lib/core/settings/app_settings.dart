@@ -16,10 +16,10 @@ class AppSettings {
   /// System-following by default, with a manual override.
   final ThemeMode themeMode;
 
-  /// Whether quiet interaction confirmation sounds may play.
+  /// Whether the platform-native in-app tap sound may play.
   final bool interactionSoundsEnabled;
 
-  /// Whether selected interactions may use platform haptics.
+  /// Whether accepted in-app taps may use the light platform haptic.
   final bool hapticsEnabled;
 
   /// Copy with overrides.
@@ -77,7 +77,7 @@ class AppSettingsController extends Notifier<AppSettings> {
     await _store.setString(themeModeKey, mode.name);
   }
 
-  /// Enables or disables the bundled interaction cues.
+  /// Enables or disables the platform-native tap sound.
   Future<void> setInteractionSoundsEnabled(bool enabled) async {
     state = state.copyWith(interactionSoundsEnabled: enabled);
     await _store.setString(interactionSoundsKey, '$enabled');

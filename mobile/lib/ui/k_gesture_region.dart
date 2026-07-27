@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../core/feedback/interaction_feedback.dart';
 import '../design/motion.dart';
 
 /// **The gesture contract** (`docs/DESIGN_SYSTEM.md` §4), with no double-tap
@@ -37,6 +38,7 @@ class KGestureRegion extends StatefulWidget {
     this.enabled = true,
     this.behavior = HitTestBehavior.opaque,
     this.semanticLabel,
+    this.feedbackEnabled = true,
   });
 
   /// What to render.
@@ -68,6 +70,9 @@ class KGestureRegion extends StatefulWidget {
   /// Announced by screen readers.
   final String? semanticLabel;
 
+  /// Whether accepted gestures receive the app's native tap feedback.
+  final bool feedbackEnabled;
+
   @override
   State<KGestureRegion> createState() => _KGestureRegionState();
 }
@@ -84,6 +89,7 @@ class _KGestureRegionState extends State<KGestureRegion> {
 
   void _handleTap() {
     if (!widget.enabled) return;
+    if (widget.feedbackEnabled) triggerInteractionTapFeedback(context);
 
     if (_awaitingSecondTap) {
       // Second tap inside the window: escalate.
@@ -106,6 +112,7 @@ class _KGestureRegionState extends State<KGestureRegion> {
 
   void _handleLongPress() {
     if (!widget.enabled) return;
+    if (widget.feedbackEnabled) triggerInteractionTapFeedback(context);
     _timer?.cancel();
     _awaitingSecondTap = false;
     widget.onLongPress?.call();
@@ -113,16 +120,17 @@ class _KGestureRegionState extends State<KGestureRegion> {
 
   @override
   Widget build(BuildContext context) => Semantics(
-        label: widget.semanticLabel,
-        button: widget.onTap != null,
-        onTap: widget.enabled ? widget.onTap : null,
-        onLongPress: widget.enabled ? widget.onLongPress : null,
-        child: GestureDetector(
-          behavior: widget.behavior,
-          onTap: _handleTap,
-          onLongPress:
-              widget.onLongPress == null ? null : _handleLongPress,
-          child: widget.child,
-        ),
-      );
+    label: widget.semanticLabel,
+    button: widget.onTap != null,
+    onTap: widget.enabled && widget.onTap != null ? _handleTap : null,
+    onLongPress: widget.enabled && widget.onLongPress != null
+        ? _handleLongPress
+        : null,
+    child: GestureDetector(
+      behavior: widget.behavior,
+      onTap: _handleTap,
+      onLongPress: widget.onLongPress == null ? null : _handleLongPress,
+      child: widget.child,
+    ),
+  );
 }

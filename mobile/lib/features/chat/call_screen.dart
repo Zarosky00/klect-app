@@ -6,6 +6,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/klect_api.dart';
+import '../../core/feedback/interaction_feedback.dart';
 import '../../core/models/models.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
@@ -117,7 +118,10 @@ class _CallScreenState extends ConsumerState<CallScreen>
       },
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _controlsVisible = !_controlsVisible),
+        onTap: () {
+          triggerInteractionTapFeedback(context);
+          setState(() => _controlsVisible = !_controlsVisible);
+        },
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
@@ -136,26 +140,24 @@ class _CallScreenState extends ConsumerState<CallScreen>
                       ignoring: !_controlsVisible,
                       child: switch (state.phase) {
                         CallPhase.incoming => _IncomingControls(
-                            onAccept: () => unawaited(_accept()),
-                            onDecline: () => unawaited(
-                              ref
-                                  .read(activeCallProvider.notifier)
-                                  .decline(),
-                            ),
-                            isVideo: state.isVideo,
+                          onAccept: () => unawaited(_accept()),
+                          onDecline: () => unawaited(
+                            ref.read(activeCallProvider.notifier).decline(),
                           ),
+                          isVideo: state.isVideo,
+                        ),
                         CallPhase.ended => _EndedControls(
-                            state: state,
-                            onDone: () {
-                              _dismissTimer?.cancel();
-                              ref.read(activeCallProvider.notifier).dismiss();
-                              if (context.canPop()) {
-                                context.pop();
-                              } else {
-                                context.go(Routes.messages);
-                              }
-                            },
-                          ),
+                          state: state,
+                          onDone: () {
+                            _dismissTimer?.cancel();
+                            ref.read(activeCallProvider.notifier).dismiss();
+                            if (context.canPop()) {
+                              context.pop();
+                            } else {
+                              context.go(Routes.messages);
+                            }
+                          },
+                        ),
                         _ => _InCallControls(state: state),
                       },
                     ),
@@ -216,10 +218,9 @@ class _PeerPortrait extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
     final peer = state.peer;
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
-          peer?.avatarPath,
-          bucket: StorageBucket.avatars,
-        );
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(peer?.avatarPath, bucket: StorageBucket.avatars);
 
     return Center(
       child: Column(
@@ -345,7 +346,8 @@ class _Header extends StatelessWidget {
             ),
             if (!KlectCallIce.hasTurn && state.phase == CallPhase.reconnecting)
               Tooltip(
-                message: 'No TURN relay is configured, so calls across '
+                message:
+                    'No TURN relay is configured, so calls across '
                     'restrictive networks may not connect.',
                 child: Icon(
                   Icons.info_outline_rounded,
@@ -384,7 +386,9 @@ class _InCallControls extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: <Widget>[
               _CallButton(
-                icon: state.micEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
+                icon: state.micEnabled
+                    ? Icons.mic_rounded
+                    : Icons.mic_off_rounded,
                 label: state.micEnabled ? 'Mute' : 'Unmute',
                 active: !state.micEnabled,
                 onPressed: () => unawaited(controller.toggleMic()),
@@ -482,38 +486,32 @@ class _EndedControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Space.s6,
-          Space.s4,
-          Space.s6,
-          Space.s12,
+    padding: const EdgeInsets.fromLTRB(Space.s6, Space.s4, Space.s6, Space.s12),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          state.endReason ?? 'Call ended',
+          style: context.kt.title3,
+          textAlign: TextAlign.center,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              state.endReason ?? 'Call ended',
-              style: context.kt.title3,
-              textAlign: TextAlign.center,
-            ),
-            if (state.elapsed > Duration.zero) ...<Widget>[
-              const SizedBox(height: Space.s1),
-              Text(
-                state.formattedElapsed,
-                style: context.kt.count
-                    .copyWith(color: context.kc.textSecondary),
-              ),
-            ],
-            const SizedBox(height: Space.s5),
-            KButton(
-              label: 'Back to chat',
-              size: KButtonSize.large,
-              expand: true,
-              onPressed: onDone,
-            ),
-          ],
+        if (state.elapsed > Duration.zero) ...<Widget>[
+          const SizedBox(height: Space.s1),
+          Text(
+            state.formattedElapsed,
+            style: context.kt.count.copyWith(color: context.kc.textSecondary),
+          ),
+        ],
+        const SizedBox(height: Space.s5),
+        KButton(
+          label: 'Back to chat',
+          size: KButtonSize.large,
+          expand: true,
+          onPressed: onDone,
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _CallButton extends StatelessWidget {
@@ -541,7 +539,8 @@ class _CallButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.kc;
     final fill = background ?? (active ? colors.surface4 : colors.surface2);
-    final tint = foreground ?? (active ? colors.textPrimary : colors.textSecondary);
+    final tint =
+        foreground ?? (active ? colors.textPrimary : colors.textSecondary);
 
     return KPressable(
       enabled: enabled,
@@ -579,12 +578,11 @@ class _CallButton extends StatelessWidget {
 }
 
 String _statusFor(ActiveCallState state) => switch (state.phase) {
-      CallPhase.idle => 'Connecting',
-      CallPhase.dialing => 'Ringing…',
-      CallPhase.incoming =>
-        state.isVideo ? 'Incoming video call' : 'Incoming call',
-      CallPhase.connecting => 'Connecting…',
-      CallPhase.active => state.formattedElapsed,
-      CallPhase.reconnecting => 'Reconnecting…',
-      CallPhase.ended => state.endReason ?? 'Call ended',
-    };
+  CallPhase.idle => 'Connecting',
+  CallPhase.dialing => 'Ringing…',
+  CallPhase.incoming => state.isVideo ? 'Incoming video call' : 'Incoming call',
+  CallPhase.connecting => 'Connecting…',
+  CallPhase.active => state.formattedElapsed,
+  CallPhase.reconnecting => 'Reconnecting…',
+  CallPhase.ended => state.endReason ?? 'Call ended',
+};

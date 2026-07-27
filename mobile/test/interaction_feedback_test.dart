@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:klect/core/feedback/interaction_feedback.dart';
@@ -7,122 +9,106 @@ import 'package:klect/core/storage/key_value_store.dart';
 import 'support/recording_feedback_driver.dart';
 
 void main() {
-  const target = 'item:item-1';
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-  InteractionFeedbackEvent event({
-    InteractionFeedbackAction action = InteractionFeedbackAction.like,
-    InteractionFeedbackResult result = InteractionFeedbackResult.intent,
-    bool? active = true,
-    String id = 'event-1',
-  }) => InteractionFeedbackEvent(
-    id: id,
-    action: action,
-    result: result,
-    targetKey: target,
-    active: active,
+  ProviderContainer harness(
+    RecordingFeedbackDriver driver, {
+    Map<String, String> stored = const <String, String>{},
+  }) => ProviderContainer.test(
+    overrides: [
+      interactionFeedbackDriverProvider.overrideWithValue(driver),
+      keyValueStoreProvider.overrideWithValue(MemoryKeyValueStore(stored)),
+    ],
   );
 
-  group('feedback policy', () {
-    const enabled = AppSettings();
+  group('native tap feedback', () {
+    test('one accepted tap requests the one sound and haptic', () async {
+      final driver = RecordingFeedbackDriver();
+      final container = harness(driver);
 
-    test('intent is tactile while confirmation is sonic', () {
-      final intent = feedbackDirectiveFor(event(), enabled);
-      expect(intent.haptic, InteractionFeedbackHaptic.light);
-      expect(intent.sound, isNull);
+      await container.read(interactionFeedbackProvider.notifier).tap();
 
-      final confirmed = feedbackDirectiveFor(
-        event(result: InteractionFeedbackResult.confirmed),
-        enabled,
-      );
-      expect(confirmed.sound, InteractionFeedbackSound.like);
-      expect(confirmed.haptic, isNull);
+      expect(driver.taps, hasLength(1));
+      expect(driver.taps.single.sound, isTrue);
+      expect(driver.taps.single.haptic, isTrue);
     });
 
-    test('undo, local focus, queue and failure have distinct policy', () {
-      expect(
-        feedbackDirectiveFor(
-          event(result: InteractionFeedbackResult.confirmed, active: false),
-          enabled,
-        ).sound,
-        InteractionFeedbackSound.undo,
+    test('sound and haptic preferences remain independent', () async {
+      final soundOff = RecordingFeedbackDriver();
+      final soundOffContainer = harness(
+        soundOff,
+        stored: <String, String>{
+          AppSettingsController.interactionSoundsKey: 'false',
+        },
       );
+      await soundOffContainer.read(interactionFeedbackProvider.notifier).tap();
+      expect(soundOff.taps.single.sound, isFalse);
+      expect(soundOff.taps.single.haptic, isTrue);
 
-      final immersive = feedbackDirectiveFor(
-        event(
-          action: InteractionFeedbackAction.immersiveOpen,
-          result: InteractionFeedbackResult.confirmed,
-          active: null,
-        ),
-        enabled,
+      final hapticOff = RecordingFeedbackDriver();
+      final hapticOffContainer = harness(
+        hapticOff,
+        stored: <String, String>{AppSettingsController.hapticsKey: 'false'},
       );
-      expect(immersive.sound, InteractionFeedbackSound.focus);
-      expect(immersive.haptic, InteractionFeedbackHaptic.light);
-
-      expect(
-        feedbackDirectiveFor(
-          event(result: InteractionFeedbackResult.queued),
-          enabled,
-        ).isEmpty,
-        isTrue,
-      );
-
-      final failed = feedbackDirectiveFor(
-        event(result: InteractionFeedbackResult.failed),
-        enabled,
-      );
-      expect(failed.sound, InteractionFeedbackSound.error);
-      expect(failed.haptic, InteractionFeedbackHaptic.medium);
+      await hapticOffContainer.read(interactionFeedbackProvider.notifier).tap();
+      expect(hapticOff.taps.single.sound, isTrue);
+      expect(hapticOff.taps.single.haptic, isFalse);
     });
 
-    test('separate settings disable their respective channels', () {
-      final soundOff = feedbackDirectiveFor(
-        event(result: InteractionFeedbackResult.confirmed),
-        const AppSettings(interactionSoundsEnabled: false),
+    test('both preferences disabled skip the platform boundary', () async {
+      final driver = RecordingFeedbackDriver();
+      final container = harness(
+        driver,
+        stored: <String, String>{
+          AppSettingsController.interactionSoundsKey: 'false',
+          AppSettingsController.hapticsKey: 'false',
+        },
       );
-      expect(soundOff.sound, isNull);
 
-      final hapticsOff = feedbackDirectiveFor(
-        event(),
-        const AppSettings(hapticsEnabled: false),
-      );
-      expect(hapticsOff.haptic, isNull);
+      await container.read(interactionFeedbackProvider.notifier).tap();
+
+      expect(driver.taps, isEmpty);
+    });
+
+    test('rapid accepted taps are preserved instead of coalesced', () async {
+      final driver = RecordingFeedbackDriver();
+      final container = harness(driver);
+      final controller = container.read(interactionFeedbackProvider.notifier);
+
+      await Future.wait(<Future<void>>[
+        for (var index = 0; index < 5; index++) controller.tap(),
+      ]);
+
+      expect(driver.taps, hasLength(5));
     });
   });
 
-  group('feedback controller', () {
+  group('social outcomes', () {
     test(
-      'begin and resolve share an id and produce one effect per phase',
+      'intent and resolution share an id but create no second effect',
       () async {
         final driver = RecordingFeedbackDriver();
-        final container = ProviderContainer.test(
-          overrides: [
-            interactionFeedbackDriverProvider.overrideWithValue(driver),
-            keyValueStoreProvider.overrideWithValue(MemoryKeyValueStore()),
-          ],
-        );
+        final container = harness(driver);
         final controller = container.read(interactionFeedbackProvider.notifier);
 
+        await controller.tap();
         final id = controller.begin(
-          action: InteractionFeedbackAction.like,
-          targetKey: target,
+          action: InteractionFeedbackAction.follow,
+          targetKey: 'collector-1',
+          targetLabel: 'Akash',
           active: true,
         );
-        await Future<void>.delayed(Duration.zero);
-        expect(driver.haptics, <InteractionFeedbackHaptic>[
-          InteractionFeedbackHaptic.light,
-        ]);
-        expect(container.read(interactionFeedbackProvider)?.id, id);
-
         await controller.resolve(
           id: id,
-          action: InteractionFeedbackAction.like,
+          action: InteractionFeedbackAction.follow,
           result: InteractionFeedbackResult.confirmed,
-          targetKey: target,
+          targetKey: 'collector-1',
+          targetLabel: 'Akash',
           active: true,
         );
-        expect(driver.sounds, <InteractionFeedbackSound>[
-          InteractionFeedbackSound.like,
-        ]);
+
+        expect(driver.taps, hasLength(1));
+        expect(container.read(interactionFeedbackProvider)?.id, id);
         expect(
           container.read(interactionFeedbackProvider)?.result,
           InteractionFeedbackResult.confirmed,
@@ -130,50 +116,87 @@ void main() {
       },
     );
 
-    test(
-      'cooldown suppresses duplicate effects but still delivers the event',
-      () async {
-        final driver = RecordingFeedbackDriver();
-        final container = ProviderContainer.test(
-          overrides: [
-            interactionFeedbackDriverProvider.overrideWithValue(driver),
-            keyValueStoreProvider.overrideWithValue(MemoryKeyValueStore()),
-          ],
-        );
-        final controller = container.read(interactionFeedbackProvider.notifier);
-
-        await controller.dispatch(
-          event(result: InteractionFeedbackResult.confirmed),
-        );
-        await controller.dispatch(
-          event(result: InteractionFeedbackResult.confirmed, id: 'event-2'),
-        );
-
-        expect(driver.sounds, hasLength(1));
-        expect(container.read(interactionFeedbackProvider)?.id, 'event-2');
-      },
-    );
-
-    test('persisted opt-outs prevent platform effects', () async {
+    test('queued and failed resolutions are also platform-silent', () async {
       final driver = RecordingFeedbackDriver();
-      final container = ProviderContainer.test(
-        overrides: [
-          interactionFeedbackDriverProvider.overrideWithValue(driver),
-          keyValueStoreProvider.overrideWithValue(
-            MemoryKeyValueStore(<String, String>{
-              AppSettingsController.interactionSoundsKey: 'false',
-              AppSettingsController.hapticsKey: 'false',
-            }),
-          ),
-        ],
+      final container = harness(driver);
+      final controller = container.read(interactionFeedbackProvider.notifier);
+
+      await controller.dispatch(
+        const InteractionFeedbackEvent(
+          id: 'queued',
+          action: InteractionFeedbackAction.like,
+          result: InteractionFeedbackResult.queued,
+          targetKey: 'post:1',
+          active: true,
+        ),
+      );
+      await controller.dispatch(
+        const InteractionFeedbackEvent(
+          id: 'failed',
+          action: InteractionFeedbackAction.save,
+          result: InteractionFeedbackResult.failed,
+          targetKey: 'post:1',
+          active: true,
+        ),
       );
 
-      await container
-          .read(interactionFeedbackProvider.notifier)
-          .dispatch(event(result: InteractionFeedbackResult.failed));
+      expect(driver.taps, isEmpty);
+      expect(container.read(interactionFeedbackProvider)?.id, 'failed');
+    });
+  });
 
-      expect(driver.sounds, isEmpty);
-      expect(driver.haptics, isEmpty);
+  group('platform driver', () {
+    final calls = <MethodCall>[];
+
+    setUp(() {
+      calls.clear();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            calls.add(call);
+            return null;
+          });
+    });
+
+    tearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    test('Android uses the system click and selection haptic', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+
+      await const PlatformInteractionFeedbackDriver().tap(
+        sound: true,
+        haptic: true,
+      );
+
+      expect(
+        calls.map((call) => call.method),
+        containsAll(<String>['SystemSound.play', 'HapticFeedback.vibrate']),
+      );
+      expect(
+        calls
+            .where((call) => call.method == 'SystemSound.play')
+            .single
+            .arguments,
+        'SystemSoundType.click',
+      );
+    });
+
+    test('iOS follows native convention and omits a generic click', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      await const PlatformInteractionFeedbackDriver().tap(
+        sound: true,
+        haptic: true,
+      );
+
+      expect(calls.where((call) => call.method == 'SystemSound.play'), isEmpty);
+      expect(
+        calls.where((call) => call.method == 'HapticFeedback.vibrate'),
+        hasLength(1),
+      );
     });
   });
 }
