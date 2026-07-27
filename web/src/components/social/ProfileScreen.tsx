@@ -39,7 +39,7 @@ import {
  * over for the tabs, the optimistic follow and the overflow actions.
  */
 
-const TABS = ['collections', 'items', 'posts', 'likes', 'saves'] as const;
+const TABS = ['collections', 'posts', 'items', 'likes', 'saves'] as const;
 export type ProfileTab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<ProfileTab, string> = {
@@ -301,19 +301,23 @@ export function ProfileScreen({
         </div>
 
         <div className="mt-4 flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-display text-display2 text-ink">{profile.display_name}</h1>
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="min-w-0 break-words font-display text-title1 leading-tight text-ink sm:text-display2">
+                {profile.display_name}
+              </h1>
             {profile.is_verified ? (
               <span className="text-accent" title="Verified collector">
                 <Icon name="verified" size="lg" title="Verified collector" />
               </span>
             ) : null}
-            {profile.account_visibility !== 'public' ? (
+              {profile.account_visibility !== 'public' ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-micro text-ink-2">
                 <Icon name="lock" size="xs" />
                 {profile.account_visibility === 'private' ? 'Private' : 'Followers only'}
               </span>
-            ) : null}
+              ) : null}
+            </div>
           </div>
 
           <p className="text-callout text-ink-3">@{profile.username}</p>
@@ -348,7 +352,7 @@ export function ProfileScreen({
             </span>
           </div>
 
-          <dl className="flex flex-wrap gap-x-6 gap-y-2">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
             <Stat label={plural(profile.collection_count, 'Collection')} value={profile.collection_count} />
             <Stat label={plural(profile.item_count, 'Item')} value={profile.item_count} />
             <Stat label={plural(profile.follower_count, 'Follower')} value={profile.follower_count} />
@@ -359,7 +363,7 @@ export function ProfileScreen({
         <div
           role="tablist"
           aria-label="Profile sections"
-          className="mt-6 flex gap-1 overflow-x-auto border-b border-line-subtle"
+          className="-mx-4 mt-6 flex snap-x gap-1 overflow-x-auto border-b border-line-subtle px-4 sm:mx-0 sm:px-0"
         >
           {TABS.map((value) => {
             const active = tab === value;
@@ -384,7 +388,7 @@ export function ProfileScreen({
                   }
                 }}
                 className={cn(
-                  'focus-ring -mb-px whitespace-nowrap border-b-2 px-4 py-3 text-body-strong',
+                  'focus-ring -mb-px shrink-0 snap-start whitespace-nowrap border-b-2 px-4 py-3 text-body-strong',
                   'transition-colors dur-fast ease-standard',
                   active
                     ? 'border-accent text-ink'
@@ -505,10 +509,10 @@ export function ProfileScreen({
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex items-baseline gap-1.5">
+    <div className="min-w-0">
       <dt className="sr-only">{label}</dt>
       <dd className="tabular text-title3 text-ink">{compactCount(value)}</dd>
-      <span aria-hidden className="text-caption text-ink-3">
+      <span aria-hidden className="block truncate text-caption text-ink-3">
         {label}
       </span>
     </div>

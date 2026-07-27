@@ -1,15 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api/klect_api.dart';
+import '../../core/app_version.dart';
 import '../../core/models/models.dart';
 import '../../core/offline/action_queue.dart';
 import '../../core/settings/app_settings.dart';
+import '../../core/updates/update_checker.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
 import '../auth/auth_controller.dart';
 import '../profile/profile_queries.dart';
+import '../shell/update_banner.dart';
 import 'about_screen.dart';
 import 'account_settings_screen.dart';
 import 'delete_account_sheet.dart';
@@ -35,9 +40,9 @@ class SettingsScreen extends ConsumerWidget {
     final queue = ref.watch(offlineQueueProvider);
     final themeMode = ref.watch(themeModeProvider);
 
-    Future<void> push(Widget screen) => Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(builder: (routeContext) => screen),
-        );
+    Future<void> push(Widget screen) => Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute<void>(builder: (routeContext) => screen));
 
     return KScaffold(
       appBar: const KFixedAppBar(title: 'Settings', showBack: true),
@@ -103,6 +108,7 @@ class SettingsScreen extends ConsumerWidget {
                 },
                 onTap: () => context.push('/settings/appearance'),
               ),
+              const _CheckForUpdatesRow(),
               SettingsRow(
                 icon: Icons.info_outline_rounded,
                 title: 'About KLECT',
@@ -130,8 +136,9 @@ class SettingsScreen extends ConsumerWidget {
                           child: Text(
                             '${queue.length} action'
                             '${queue.length == 1 ? '' : 's'} waiting to sync.',
-                            style: context.kt.caption
-                                .copyWith(color: colors.textTertiary),
+                            style: context.kt.caption.copyWith(
+                              color: colors.textTertiary,
+                            ),
                           ),
                         ),
                       ],
@@ -172,6 +179,50 @@ class SettingsScreen extends ConsumerWidget {
 /// The identity card at the top of Settings — who is signed in, one tap from
 /// their public profile. A real hero surface (`surface.2` + `elevation.low`),
 /// not another anonymous list row.
+class _CheckForUpdatesRow extends ConsumerStatefulWidget {
+  const _CheckForUpdatesRow();
+
+  @override
+  ConsumerState<_CheckForUpdatesRow> createState() =>
+      _CheckForUpdatesRowState();
+}
+
+class _CheckForUpdatesRowState extends ConsumerState<_CheckForUpdatesRow> {
+  bool _checking = false;
+
+  Future<void> _check() async {
+    if (_checking) return;
+    setState(() => _checking = true);
+    final result = await ref.read(updateCheckerProvider).checkNow();
+    if (!mounted) return;
+    setState(() => _checking = false);
+
+    switch (result.status) {
+      case ManualUpdateStatus.updateAvailable:
+        await UpdateSheet.show(context, result.update!);
+        return;
+      case ManualUpdateStatus.upToDate:
+        KToast.success(context, 'Klect $kAppVersion is up to date');
+        return;
+      case ManualUpdateStatus.unavailable:
+        KToast.error(
+          context,
+          'Could not check for updates. Try again when you are online.',
+        );
+        return;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SettingsRow(
+    icon: Icons.system_update_alt_rounded,
+    title: 'Check for updates',
+    subtitle: 'Android app · Version $kAppVersion',
+    value: _checking ? 'Checking…' : null,
+    onTap: () => unawaited(_check()),
+  );
+}
+
 class _ProfileHeroRow extends StatelessWidget {
   const _ProfileHeroRow({
     required this.profile,
@@ -220,16 +271,18 @@ class _ProfileHeroRow extends StatelessWidget {
                   const SizedBox(height: Space.s05),
                   Text(
                     profile.handle,
-                    style: context.kt.callout
-                        .copyWith(color: colors.textSecondary),
+                    style: context.kt.callout.copyWith(
+                      color: colors.textSecondary,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: Space.s1),
                   Text(
                     'View profile',
-                    style: context.kt.caption
-                        .copyWith(color: colors.accentDefault),
+                    style: context.kt.caption.copyWith(
+                      color: colors.accentDefault,
+                    ),
                   ),
                 ],
               ),

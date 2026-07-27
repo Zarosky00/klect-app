@@ -123,7 +123,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   message: widget.username == null
                       ? 'Your profile is still being set up.'
                       : '@${widget.username} does not exist, or is no longer '
-                          'visible to you.',
+                            'visible to you.',
                   icon: Icons.person_off_outlined,
                   actionLabel: 'Find collectors',
                   onAction: () => context.push('/search'),
@@ -157,9 +157,9 @@ class _ProfileBody extends ConsumerWidget {
   final Future<void> Function() onRefresh;
 
   List<ProfileTab> get _tabs => <ProfileTab>[
-        for (final candidate in ProfileTab.values)
-          if (isMe || !candidate.isPrivate) candidate,
-      ];
+    for (final candidate in ProfileTab.values)
+      if (isMe || !candidate.isPrivate) candidate,
+  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -247,8 +247,7 @@ class _ProfileAppBar extends ConsumerWidget {
           semanticLabel: 'More options',
           color: colors.textPrimary,
           background: colors.surfaceScrim,
-          onPressed: () =>
-              UserActions.showOverflow(context, profile: profile),
+          onPressed: () => UserActions.showOverflow(context, profile: profile),
         ),
         const SizedBox(width: Space.s3),
       ],
@@ -321,8 +320,10 @@ class _CollapsedTitle extends StatelessWidget {
         : (settings.maxExtent - settings.minExtent);
     final collapsed = settings == null || extent <= 0
         ? 1.0
-        : (1 - (settings.currentExtent - settings.minExtent) / extent)
-            .clamp(0.0, 1.0);
+        : (1 - (settings.currentExtent - settings.minExtent) / extent).clamp(
+            0.0,
+            1.0,
+          );
 
     // Fades in continuously as the banner collapses — no threshold, so a slow
     // scroll never snaps.
@@ -366,124 +367,123 @@ class _ProfileHeader extends ConsumerWidget {
     final colors = context.kc;
     final api = ref.watch(klectApiProvider);
 
-    // The whole block is lifted so the avatar overlaps the banner. The
-    // matching trailing gap below puts the layout back where it belongs —
-    // `Transform` does not change the space a child reserves.
+    // Keep the avatar inside this sliver's paint bounds. Painting it upward
+    // into the banner clips the top edge on Android's sliver viewport.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Space.s5),
-      child: Transform.translate(
-        offset: const Offset(0, -Space.s8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Container(
-                  padding: const EdgeInsets.all(Space.s05),
-                  decoration: BoxDecoration(
-                    color: colors.bgBase,
-                    shape: BoxShape.circle,
-                  ),
-                  child: KAvatar(
-                    imageUrl: avatarUrlOf(api, profile.avatarPath),
-                    name: profile.name,
-                    size: Space.s20,
-                    heroTag: 'avatar:${profile.id}',
-                  ),
+      padding: const EdgeInsets.fromLTRB(
+        Space.s5,
+        Space.s3,
+        Space.s5,
+        Space.s6,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(Space.s05),
+                decoration: BoxDecoration(
+                  color: colors.bgBase,
+                  shape: BoxShape.circle,
                 ),
-                const Spacer(),
-                if (isMe)
-                  KButton(
-                    label: 'Edit profile',
-                    variant: KButtonVariant.secondary,
-                    size: KButtonSize.small,
-                    icon: Icons.edit_outlined,
-                    onPressed: () => Navigator.of(context).push<bool>(
-                      MaterialPageRoute<bool>(
-                        builder: (routeContext) =>
-                            EditProfileScreen(profile: profile),
-                      ),
+                child: KAvatar(
+                  imageUrl: avatarUrlOf(api, profile.avatarPath),
+                  name: profile.name,
+                  size: Space.s20,
+                  heroTag: 'avatar:${profile.id}',
+                ),
+              ),
+              const Spacer(),
+              if (isMe)
+                KButton(
+                  label: 'Edit profile',
+                  variant: KButtonVariant.secondary,
+                  size: KButtonSize.small,
+                  icon: Icons.edit_outlined,
+                  onPressed: () => Navigator.of(context).push<bool>(
+                    MaterialPageRoute<bool>(
+                      builder: (routeContext) =>
+                          EditProfileScreen(profile: profile),
                     ),
-                  )
-                else ...<Widget>[
-                  KButton(
-                    label: 'Message',
-                    variant: KButtonVariant.secondary,
-                    size: KButtonSize.small,
-                    icon: Icons.forum_outlined,
-                    onPressed: () =>
-                        UserActions.message(context, ref, profile.id),
                   ),
-                  const SizedBox(width: Space.s2),
-                  FollowButton(
-                    userId: profile.id,
-                    followerCount: profile.followerCount,
-                    size: KButtonSize.small,
-                  ),
-                ],
+                )
+              else ...<Widget>[
+                KButton(
+                  label: 'Message',
+                  variant: KButtonVariant.secondary,
+                  size: KButtonSize.small,
+                  icon: Icons.forum_outlined,
+                  onPressed: () =>
+                      UserActions.message(context, ref, profile.id),
+                ),
+                const SizedBox(width: Space.s2),
+                FollowButton(
+                  userId: profile.id,
+                  followerCount: profile.followerCount,
+                  size: KButtonSize.small,
+                ),
               ],
-            ),
+            ],
+          ),
+          const SizedBox(height: Space.s3),
+          Row(
+            children: <Widget>[
+              Flexible(
+                child: Text(
+                  profile.name,
+                  style: context.kt.display2,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (profile.isVerified) ...<Widget>[
+                const SizedBox(width: Space.s2),
+                Icon(
+                  Icons.verified_rounded,
+                  size: Space.s5,
+                  color: colors.accentDefault,
+                ),
+              ],
+            ],
+          ),
+          Text(
+            profile.handle,
+            style: context.kt.callout.copyWith(color: colors.textTertiary),
+          ),
+          if (profile.bio?.isNotEmpty ?? false) ...<Widget>[
             const SizedBox(height: Space.s3),
-            Row(
+            Text(
+              profile.bio!,
+              style: context.kt.body.copyWith(color: colors.textSecondary),
+            ),
+          ],
+          if ((profile.location?.isNotEmpty ?? false) ||
+              (profile.website?.isNotEmpty ?? false)) ...<Widget>[
+            const SizedBox(height: Space.s3),
+            Wrap(
+              spacing: Space.s4,
+              runSpacing: Space.s1,
               children: <Widget>[
-                Flexible(
-                  child: Text(
-                    profile.name,
-                    style: context.kt.display2,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                if (profile.location?.isNotEmpty ?? false)
+                  _MetaLine(
+                    icon: Icons.place_outlined,
+                    label: profile.location!,
                   ),
-                ),
-                if (profile.isVerified) ...<Widget>[
-                  const SizedBox(width: Space.s2),
-                  Icon(
-                    Icons.verified_rounded,
-                    size: Space.s5,
-                    color: colors.accentDefault,
+                if (profile.website?.isNotEmpty ?? false)
+                  _MetaLine(
+                    icon: Icons.link_rounded,
+                    label: profile.website!,
+                    tint: colors.accentDefault,
                   ),
-                ],
               ],
             ),
-            Text(
-              profile.handle,
-              style: context.kt.callout.copyWith(color: colors.textTertiary),
-            ),
-            if (profile.bio?.isNotEmpty ?? false) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              Text(
-                profile.bio!,
-                style: context.kt.body.copyWith(color: colors.textSecondary),
-              ),
-            ],
-            if ((profile.location?.isNotEmpty ?? false) ||
-                (profile.website?.isNotEmpty ?? false)) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              Wrap(
-                spacing: Space.s4,
-                runSpacing: Space.s1,
-                children: <Widget>[
-                  if (profile.location?.isNotEmpty ?? false)
-                    _MetaLine(
-                      icon: Icons.place_outlined,
-                      label: profile.location!,
-                    ),
-                  if (profile.website?.isNotEmpty ?? false)
-                    _MetaLine(
-                      icon: Icons.link_rounded,
-                      label: profile.website!,
-                      tint: colors.accentDefault,
-                    ),
-                ],
-              ),
-            ],
-            const SizedBox(height: Space.s5),
-            _CountsRow(profile: profile),
-            _TasteStrip(userId: profile.id, isMe: isMe),
-            // Puts back exactly what the lift above took away.
-            const SizedBox(height: Space.s8),
           ],
-        ),
+          const SizedBox(height: Space.s5),
+          _CountsRow(profile: profile),
+          _TasteStrip(userId: profile.id, isMe: isMe),
+        ],
       ),
     );
   }
@@ -522,39 +522,46 @@ class _CountsRow extends ConsumerWidget {
     // read it from the optimistic engine when it has been hydrated, so tapping
     // Follow updates the header at the same instant as the button.
     final follow = ref.watch(followProvider(profile.id));
-    final followers =
-        follow.hydrated ? follow.followerCount : profile.followerCount;
+    final followers = follow.hydrated
+        ? follow.followerCount
+        : profile.followerCount;
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        ProfileCountStat(
-          label: 'Followers',
-          value: followers,
-          onTap: () => FollowListSheet.show(
-            context,
-            userId: profile.id,
-            followers: true,
-            subjectName: profile.name,
+        Expanded(
+          child: ProfileCountStat(
+            label: 'Followers',
+            value: followers,
+            onTap: () => FollowListSheet.show(
+              context,
+              userId: profile.id,
+              followers: true,
+              subjectName: profile.name,
+            ),
           ),
         ),
-        const SizedBox(width: Space.s8),
-        ProfileCountStat(
-          label: 'Following',
-          value: profile.followingCount,
-          onTap: () => FollowListSheet.show(
-            context,
-            userId: profile.id,
-            followers: false,
-            subjectName: profile.name,
+        Expanded(
+          child: ProfileCountStat(
+            label: 'Following',
+            value: profile.followingCount,
+            onTap: () => FollowListSheet.show(
+              context,
+              userId: profile.id,
+              followers: false,
+              subjectName: profile.name,
+            ),
           ),
         ),
-        const SizedBox(width: Space.s8),
-        ProfileCountStat(
-          label: 'Collections',
-          value: profile.collectionCount,
+        Expanded(
+          child: ProfileCountStat(
+            label: 'Collections',
+            value: profile.collectionCount,
+          ),
         ),
-        const SizedBox(width: Space.s8),
-        ProfileCountStat(label: 'Items', value: profile.itemCount),
+        Expanded(
+          child: ProfileCountStat(label: 'Items', value: profile.itemCount),
+        ),
       ],
     );
   }
@@ -587,8 +594,7 @@ class _TasteStrip extends ConsumerWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: tags.length,
-              separatorBuilder: (context, _) =>
-                  const SizedBox(width: Space.s2),
+              separatorBuilder: (context, _) => const SizedBox(width: Space.s2),
               itemBuilder: (context, index) {
                 final taste = tags[index];
                 return Center(
@@ -653,18 +659,36 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
               ),
             ),
           ),
-          child: Row(
-            children: <Widget>[
-              for (final tab in tabs)
-                Expanded(
-                  child: _TabButton(
-                    tab: tab,
-                    selected: tab == selected,
-                    onTap: () => onChanged(tab),
+          child: tabs.length <= 3
+              ? Row(
+                  children: <Widget>[
+                    for (final tab in tabs)
+                      Expanded(
+                        child: _TabButton(
+                          tab: tab,
+                          selected: tab == selected,
+                          onTap: () => onChanged(tab),
+                        ),
+                      ),
+                  ],
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: Space.s2),
+                  child: Row(
+                    children: <Widget>[
+                      for (final tab in tabs)
+                        SizedBox(
+                          width: Space.s24,
+                          child: _TabButton(
+                            tab: tab,
+                            selected: tab == selected,
+                            onTap: () => onChanged(tab),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-            ],
-          ),
         ),
       ),
     );
@@ -698,6 +722,8 @@ class _TabButton extends StatelessWidget {
           children: <Widget>[
             Text(
               tab.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: context.kt.label.copyWith(
                 color: selected ? colors.textPrimary : colors.textTertiary,
               ),
@@ -735,56 +761,60 @@ class _ProfileTabContent extends ConsumerWidget {
     return switch (tab) {
       ProfileTab.posts => _PostsSliver(userId: profile.id),
       ProfileTab.collections => _CardsSliver(
-          value: ref
-              .watch(profileCollectionsProvider(profile.id))
-              .whenData(
-                (list) => <ProfileEntityCard>[
-                  for (final collection in list)
-                    ProfileEntityCard.fromCollection(collection),
-                ],
-              ),
-          onRetry: () =>
-              ref.invalidate(profileCollectionsProvider(profile.id)),
-          emptyTitle: 'No shelves yet',
-          emptyMessage:
-              'A collection is the top of the hierarchy — "Anime", "Vinyl", '
-              '"Cameras". Everything else hangs off it.',
-          emptyAction: 'Start a collection',
-          onEmptyAction: () => context.push('/create/collection'),
-          showEmptyAction: profile.id == ref.watch(currentUserIdProvider),
-        ),
+        value: ref
+            .watch(profileCollectionsProvider(profile.id))
+            .whenData(
+              (list) => <ProfileEntityCard>[
+                for (final collection in list)
+                  ProfileEntityCard.fromCollection(collection),
+              ],
+            ),
+        onRetry: () => ref.invalidate(profileCollectionsProvider(profile.id)),
+        emptyTitle: 'No shelves yet',
+        emptyMessage:
+            'A collection is the top of the hierarchy — "Anime", "Vinyl", '
+            '"Cameras". Everything else hangs off it.',
+        emptyAction: 'Start a collection',
+        onEmptyAction: () => context.push('/create/collection'),
+        showEmptyAction: profile.id == ref.watch(currentUserIdProvider),
+      ),
       ProfileTab.items => _CardsSliver(
-          value: ref.watch(profileItemsProvider(profile.id)).whenData(
-                (list) => <ProfileEntityCard>[
-                  for (final item in list) ProfileEntityCard.fromItem(item),
-                ],
-              ),
-          onRetry: () => ref.invalidate(profileItemsProvider(profile.id)),
-          emptyTitle: 'Nothing on the shelves',
-          emptyMessage: 'Items are the things themselves — each with as many '
-              'photos as it deserves.',
-          emptyAction: 'Add an item',
-          onEmptyAction: () => context.push('/create/item'),
-          showEmptyAction: profile.id == ref.watch(currentUserIdProvider),
-        ),
+        value: ref
+            .watch(profileItemsProvider(profile.id))
+            .whenData(
+              (list) => <ProfileEntityCard>[
+                for (final item in list) ProfileEntityCard.fromItem(item),
+              ],
+            ),
+        onRetry: () => ref.invalidate(profileItemsProvider(profile.id)),
+        emptyTitle: 'Nothing on the shelves',
+        emptyMessage:
+            'Items are the things themselves — each with as many '
+            'photos as it deserves.',
+        emptyAction: 'Add an item',
+        onEmptyAction: () => context.push('/create/item'),
+        showEmptyAction: profile.id == ref.watch(currentUserIdProvider),
+      ),
       ProfileTab.likes => _CardsSliver(
-          value: ref.watch(profileLikesProvider(profile.id)),
-          onRetry: () => ref.invalidate(profileLikesProvider(profile.id)),
-          emptyTitle: 'Nothing liked yet',
-          emptyMessage: 'Tap the heart on anything — a whole collection, one '
-              'shelf inside it, or a single item.',
-          emptyAction: 'Go surfing',
-          onEmptyAction: () => context.go('/surf'),
-        ),
+        value: ref.watch(profileLikesProvider(profile.id)),
+        onRetry: () => ref.invalidate(profileLikesProvider(profile.id)),
+        emptyTitle: 'Nothing liked yet',
+        emptyMessage:
+            'Tap the heart on anything — a whole collection, one '
+            'shelf inside it, or a single item.',
+        emptyAction: 'Go surfing',
+        onEmptyAction: () => context.go('/surf'),
+      ),
       ProfileTab.saves => _CardsSliver(
-          value: ref.watch(profileSavesProvider(profile.id)),
-          onRetry: () => ref.invalidate(profileSavesProvider(profile.id)),
-          emptyTitle: 'Nothing saved yet',
-          emptyMessage: 'Saving is the brand action — it is how you build a '
-              'reference shelf from collections you do not own.',
-          emptyAction: 'Go surfing',
-          onEmptyAction: () => context.go('/surf'),
-        ),
+        value: ref.watch(profileSavesProvider(profile.id)),
+        onRetry: () => ref.invalidate(profileSavesProvider(profile.id)),
+        emptyTitle: 'Nothing saved yet',
+        emptyMessage:
+            'Saving is the brand action — it is how you build a '
+            'reference shelf from collections you do not own.',
+        emptyAction: 'Go surfing',
+        onEmptyAction: () => context.go('/surf'),
+      ),
     };
   }
 }
@@ -817,7 +847,8 @@ class _PostsSliver extends ConsumerWidget {
       return const SliverToBoxAdapter(
         child: KEmptyState(
           title: 'Nothing said yet',
-          message: 'Posts, quotes and reposts land here — the Pulse side of '
+          message:
+              'Posts, quotes and reposts land here — the Pulse side of '
               'a collector.',
           icon: Icons.bolt_outlined,
           compact: true,
@@ -841,31 +872,25 @@ class _PostsSliver extends ConsumerWidget {
                 ? KInlineError(
                     message: error.message,
                     onRetry: () => unawaited(
-                      ref
-                          .read(userPostsProvider(userId).notifier)
-                          .loadMore(),
+                      ref.read(userPostsProvider(userId).notifier).loadMore(),
                     ),
                   )
                 : state.hasMore
-                    ? KButton(
-                        label: state.loadingMore
-                            ? 'Loading…'
-                            : 'Show more posts',
-                        variant: KButtonVariant.ghost,
-                        size: KButtonSize.small,
-                        busy: state.loadingMore,
-                        expand: true,
-                        onPressed: state.loadingMore
-                            ? null
-                            : () => unawaited(
-                                  ref
-                                      .read(
-                                        userPostsProvider(userId).notifier,
-                                      )
-                                      .loadMore(),
-                                ),
-                      )
-                    : const SizedBox.shrink(),
+                ? KButton(
+                    label: state.loadingMore ? 'Loading…' : 'Show more posts',
+                    variant: KButtonVariant.ghost,
+                    size: KButtonSize.small,
+                    busy: state.loadingMore,
+                    expand: true,
+                    onPressed: state.loadingMore
+                        ? null
+                        : () => unawaited(
+                            ref
+                                .read(userPostsProvider(userId).notifier)
+                                .loadMore(),
+                          ),
+                  )
+                : const SizedBox.shrink(),
           ),
         ),
       ],
@@ -946,29 +971,29 @@ class _ProfileSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const SingleChildScrollView(
-        child: KShimmer(
-          child: Padding(
-            padding: EdgeInsets.all(Space.s5),
-            child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              KSkeleton(
-                height: Space.s24,
-                borderRadius: BorderRadius.all(Radius.circular(Radii.lg)),
-              ),
-              SizedBox(height: Space.s4),
-              KSkeleton.circle(size: Space.s20),
-              SizedBox(height: Space.s4),
-              KSkeleton.text(width: Space.s24, height: Space.s6),
-              SizedBox(height: Space.s2),
-              KSkeleton.text(width: Space.s20),
-              SizedBox(height: Space.s6),
-              KSkeleton.text(),
-              SizedBox(height: Space.s2),
-              KSkeleton.text(width: Space.s24),
-            ],
+    child: KShimmer(
+      child: Padding(
+        padding: EdgeInsets.all(Space.s5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            KSkeleton(
+              height: Space.s24,
+              borderRadius: BorderRadius.all(Radius.circular(Radii.lg)),
             ),
-          ),
+            SizedBox(height: Space.s4),
+            KSkeleton.circle(size: Space.s20),
+            SizedBox(height: Space.s4),
+            KSkeleton.text(width: Space.s24, height: Space.s6),
+            SizedBox(height: Space.s2),
+            KSkeleton.text(width: Space.s20),
+            SizedBox(height: Space.s6),
+            KSkeleton.text(),
+            SizedBox(height: Space.s2),
+            KSkeleton.text(width: Space.s24),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }

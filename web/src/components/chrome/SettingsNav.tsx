@@ -12,6 +12,7 @@ const links: Array<{ href: string; label: string; icon: IconName }> = [
   { href: routes.settingsNotifications, label: 'Notifications', icon: 'bell' },
   { href: routes.settingsBlocked, label: 'Blocked', icon: 'shield' },
   { href: routes.settingsAppearance, label: 'Appearance', icon: 'sun' },
+  { href: routes.settingsApp, label: 'App & downloads', icon: 'download' },
 ];
 
 export function SettingsNav() {

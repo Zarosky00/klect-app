@@ -30,6 +30,7 @@ export const routes = {
   settingsNotifications: '/settings/notifications',
   settingsBlocked: '/settings/blocked',
   settingsAppearance: '/settings/appearance',
+  settingsApp: '/settings/app',
 
   admin: '/admin',
   adminReports: '/admin/reports',

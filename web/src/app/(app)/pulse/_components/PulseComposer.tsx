@@ -381,33 +381,25 @@ export function PulseComposer({ onPosted, quote = null, onClearQuote, className 
           />
         ) : null}
 
-        <div className="flex items-center gap-1">
-          <IconButton
-            icon="image"
-            label={
-              photos.length >= MAX_POST_PHOTOS
-                ? `Up to ${MAX_POST_PHOTOS} photos`
-                : 'Attach photos'
-            }
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            iconLeft="image"
             size="sm"
             variant="ghost"
             disabled={photos.length >= MAX_POST_PHOTOS || busy}
             onClick={() => fileInput.current?.click()}
-          />
-          <IconButton
-            icon="grid"
-            label={
-              quote
-                ? 'Quote occupies the attachment slot'
-                : attachment
-                  ? 'Swap the shared shelf'
-                  : 'Share a collection or item'
-            }
+          >
+            {photos.length >= MAX_POST_PHOTOS ? `${MAX_POST_PHOTOS} photos` : 'Add photo'}
+          </Button>
+          <Button
+            iconLeft="grid"
             size="sm"
             variant="ghost"
             disabled={quote !== null || busy}
             onClick={() => setPicking(true)}
-          />
+          >
+            {attachment ? 'Change item' : 'Add collection'}
+          </Button>
           <input
             ref={fileInput}
             type="file"
@@ -421,9 +413,9 @@ export function PulseComposer({ onPosted, quote = null, onClearQuote, className 
           />
 
           <span className="flex-1" />
-          <span className="text-caption text-ink-3">⌘/Ctrl + Enter</span>
+          <span className="hidden text-caption text-ink-3 sm:inline">⌘/Ctrl + Enter</span>
           <Button type="submit" size="sm" loading={busy} disabled={!canPost}>
-            Post
+            {quote ? 'Quote' : 'Post'}
           </Button>
         </div>
       </div>

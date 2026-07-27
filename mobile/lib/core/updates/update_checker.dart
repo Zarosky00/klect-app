@@ -22,8 +22,10 @@ class AvailableUpdate {
   final String notes;
 
   /// Round-trips through the on-device cache.
-  Map<String, Object?> toJson() =>
-      <String, Object?>{'version': version, 'notes': notes};
+  Map<String, Object?> toJson() => <String, Object?>{
+    'version': version,
+    'notes': notes,
+  };
 
   /// Parses a cached update; null when the shape is wrong.
   static AvailableUpdate? fromJson(Object? json) {
@@ -48,6 +50,31 @@ class AvailableUpdate {
   int get hashCode => Object.hash(version, notes);
 }
 
+/// What an explicit, user-requested update check found.
+enum ManualUpdateStatus {
+  /// GitHub reports a version newer than this build.
+  updateAvailable,
+
+  /// GitHub was reached and this build is current.
+  upToDate,
+
+  /// GitHub could not be reached or returned unusable release metadata.
+  unavailable,
+}
+
+/// Result of an explicit update check from Settings.
+@immutable
+class ManualUpdateResult {
+  /// Creates a manual check result.
+  const ManualUpdateResult(this.status, {this.update});
+
+  /// The outcome shown to the user.
+  final ManualUpdateStatus status;
+
+  /// Present only when [status] is [ManualUpdateStatus.updateAvailable].
+  final AvailableUpdate? update;
+}
+
 /// Checks the public GitHub repo for a newer sideloaded Android build.
 ///
 /// Everything about this is deliberately quiet: offline, rate-limited,
@@ -66,9 +93,9 @@ class UpdateChecker {
     DateTime Function() now = DateTime.now,
   }) // ignore_for_file: prefer_initializing_formals
   : _store = store,
-        _client = client,
-        _currentVersion = currentVersion,
-        _now = now;
+       _client = client,
+       _currentVersion = currentVersion,
+       _now = now;
 
   /// Latest-release metadata. Public repo — no auth needed.
   static const String releaseEndpoint =
@@ -111,6 +138,25 @@ class UpdateChecker {
     return release;
   }
 
+  /// Checks GitHub immediately because the user explicitly requested it.
+  ///
+  /// This bypasses the six-hour background throttle and any skipped-version
+  /// preference. A skipped release should still be discoverable here.
+  Future<ManualUpdateResult> checkNow() async {
+    final release = await _fetchLatestRelease();
+    if (release == null) {
+      return const ManualUpdateResult(ManualUpdateStatus.unavailable);
+    }
+    await _cacheRelease(release);
+    if (isNewer(release.version, _currentVersion)) {
+      return ManualUpdateResult(
+        ManualUpdateStatus.updateAvailable,
+        update: release,
+      );
+    }
+    return const ManualUpdateResult(ManualUpdateStatus.upToDate);
+  }
+
   /// Persists "stop bannering [version]" — the banner stays gone until a
   /// release with a *different, newer* version appears.
   Future<void> skip(String version) =>
@@ -133,8 +179,7 @@ class UpdateChecker {
   }
 
   /// `v1.3.0-rc.1+42` → `1.3.0`, or null when the tag is not a version.
-  static String? normalize(String tag) =>
-      _parse(tag)?.join('.');
+  static String? normalize(String tag) => _parse(tag)?.join('.');
 
   /// major/minor/patch as ints, or null. Missing segments read as zero
   /// (`v2` → `[2, 0, 0]`).
@@ -174,12 +219,16 @@ class UpdateChecker {
       // so the next cold start tries the network again.
       return cached;
     }
+    await _cacheRelease(fetched);
+    return fetched;
+  }
+
+  Future<void> _cacheRelease(AvailableUpdate release) async {
     await _store.setString(
       lastCheckKey,
       _now().millisecondsSinceEpoch.toString(),
     );
-    await _store.setString(cachedReleaseKey, jsonEncode(fetched.toJson()));
-    return fetched;
+    await _store.setString(cachedReleaseKey, jsonEncode(release.toJson()));
   }
 
   bool _withinThrottleWindow() {
@@ -204,12 +253,14 @@ class UpdateChecker {
   Future<AvailableUpdate?> _fetchLatestRelease() async {
     final client = _client ?? http.Client();
     try {
-      final response = await client.get(
-        Uri.parse(releaseEndpoint),
-        headers: const <String, String>{
-          'Accept': 'application/vnd.github+json',
-        },
-      ).timeout(requestTimeout);
+      final response = await client
+          .get(
+            Uri.parse(releaseEndpoint),
+            headers: const <String, String>{
+              'Accept': 'application/vnd.github+json',
+            },
+          )
+          .timeout(requestTimeout);
       // Rate limit (403/429), missing release (404), GitHub trouble (5xx):
       // all silent.
       if (response.statusCode != 200) return null;
@@ -270,6 +321,6 @@ class UpdatePromptController extends AsyncNotifier<AvailableUpdate?> {
 /// The update the chrome should offer right now, or null.
 final availableUpdateProvider =
     AsyncNotifierProvider<UpdatePromptController, AvailableUpdate?>(
-  UpdatePromptController.new,
-  name: 'availableUpdate',
-);
+      UpdatePromptController.new,
+      name: 'availableUpdate',
+    );

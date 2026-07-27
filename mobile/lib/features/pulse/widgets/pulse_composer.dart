@@ -72,6 +72,7 @@ abstract final class PulseComposer {
         // would silently skip the "Discard post?" confirm — so the composer
         // closes via back / barrier tap only, both of which PopScope guards.
         enableDrag: false,
+        maxHeightFraction: 0.94,
         builder: (sheetContext) => _ComposerBody(subject: subject),
       );
 }
@@ -308,117 +309,122 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
         if (didPop) return;
         unawaited(_confirmDiscard());
       },
-      child: SingleChildScrollView(
+      child: SizedBox(
+        height:
+            (MediaQuery.sizeOf(context).height -
+                MediaQuery.viewInsetsOf(context).bottom) *
+            0.72,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            KTextField(
-              controller: _text,
-              hint: isQuote ? 'Add your take' : 'What is on your shelf today?',
-              maxLines: 6,
-              minLines: 3,
-              maxLength: maxBody,
-              autofocus: true,
-            ),
-            if (_photos.isNotEmpty || _preparing) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              _PhotoTray(
-                photos: _photos,
-                preparing: _preparing,
-                onRemove: _busy ? null : _removePhoto,
-              ),
-            ],
-            if (subject != null) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              PulseTargetLoader(entity: subject, interactive: false),
-            ],
-            if (subject == null) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              if (attachment == null)
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: KButton(
-                        label: 'Photos',
-                        icon: Icons.add_photo_alternate_outlined,
-                        variant: KButtonVariant.secondary,
-                        expand: true,
-                        onPressed: _photos.length >= maxPhotos || _busy
-                            ? null
-                            : () => unawaited(_addPhotos()),
-                      ),
+            Expanded(
+              child: ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                children: <Widget>[
+                  KTextField(
+                    controller: _text,
+                    hint: isQuote
+                        ? 'Add your take'
+                        : 'What is on your shelf today?',
+                    maxLines: 6,
+                    minLines: 3,
+                    maxLength: maxBody,
+                    autofocus: true,
+                  ),
+                  if (_photos.isNotEmpty || _preparing) ...<Widget>[
+                    const SizedBox(height: Space.s3),
+                    _PhotoTray(
+                      photos: _photos,
+                      preparing: _preparing,
+                      onRemove: _busy ? null : _removePhoto,
                     ),
-                    const SizedBox(width: Space.s2),
-                    Expanded(
-                      child: KButton(
-                        label: 'Something you own',
-                        icon: Icons.collections_bookmark_outlined,
-                        variant: KButtonVariant.secondary,
-                        expand: true,
-                        onPressed: _busy
-                            ? null
-                            : () => unawaited(_pickAttachment()),
+                  ],
+                  if (subject != null) ...<Widget>[
+                    const SizedBox(height: Space.s3),
+                    PulseTargetLoader(entity: subject, interactive: false),
+                  ],
+                  if (subject == null && attachment != null) ...<Widget>[
+                    const SizedBox(height: Space.s3),
+                    _AttachmentPreview(
+                      attachment: attachment,
+                      onRemove: () => setState(() => _attachment = null),
+                      onChange: () => unawaited(_pickAttachment()),
+                    ),
+                  ],
+                  if (_error != null) ...<Widget>[
+                    const SizedBox(height: Space.s3),
+                    Text(
+                      _error!,
+                      style: context.kt.caption.copyWith(
+                        color: colors.semanticDanger,
                       ),
                     ),
                   ],
-                )
-              else ...<Widget>[
-                _AttachmentPreview(
-                  attachment: attachment,
-                  onRemove: () => setState(() => _attachment = null),
-                  onChange: () => unawaited(_pickAttachment()),
-                ),
-                const SizedBox(height: Space.s2),
-                KButton(
-                  label: 'Add photos',
-                  icon: Icons.add_photo_alternate_outlined,
-                  variant: KButtonVariant.ghost,
-                  size: KButtonSize.small,
-                  onPressed: _photos.length >= maxPhotos || _busy
-                      ? null
-                      : () => unawaited(_addPhotos()),
-                ),
-              ],
-            ] else ...<Widget>[
-              const SizedBox(height: Space.s3),
-              KButton(
-                label: 'Add photos',
-                icon: Icons.add_photo_alternate_outlined,
-                variant: KButtonVariant.secondary,
-                size: KButtonSize.small,
-                onPressed: _photos.length >= maxPhotos || _busy
-                    ? null
-                    : () => unawaited(_addPhotos()),
+                  if (_progress != null) ...<Widget>[
+                    const SizedBox(height: Space.s3),
+                    Text(
+                      _progress!,
+                      style: context.kt.caption.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: Space.s4),
+                ],
               ),
-            ],
-            if (_error != null) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              Text(
-                _error!,
-                style: context.kt.caption.copyWith(
-                  color: colors.semanticDanger,
-                ),
-              ),
-            ],
-            if (_progress != null) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              Text(
-                _progress!,
-                style: context.kt.caption.copyWith(color: colors.textSecondary),
-              ),
-            ],
-            const SizedBox(height: Space.s5),
-            KButton(
-              label: isQuote ? 'Quote' : 'Post',
-              icon: Icons.bolt_rounded,
-              expand: true,
-              busy: _busy,
-              onPressed: _hasContent && !_preparing
-                  ? () => unawaited(_publish())
-                  : null,
             ),
-            SizedBox(height: MediaQuery.viewInsetsOf(context).bottom),
+            Container(
+              padding: const EdgeInsets.only(top: Space.s3),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: colors.borderSubtle,
+                    width: Strokes.hairline,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: <Widget>[
+                  KButton(
+                    key: const ValueKey<String>('pulse-add-photos'),
+                    label: 'Add photo',
+                    icon: Icons.add_photo_alternate_outlined,
+                    variant: KButtonVariant.secondary,
+                    size: KButtonSize.small,
+                    onPressed:
+                        _photos.length >= maxPhotos || _preparing || _busy
+                        ? null
+                        : () => unawaited(_addPhotos()),
+                  ),
+                  if (subject == null) ...<Widget>[
+                    const SizedBox(width: Space.s2),
+                    KIconButton(
+                      icon: Icons.collections_bookmark_outlined,
+                      semanticLabel: attachment == null
+                          ? 'Add something you own'
+                          : 'Change shared collection or item',
+                      onPressed: _busy
+                          ? null
+                          : () => unawaited(_pickAttachment()),
+                    ),
+                  ],
+                  const SizedBox(width: Space.s2),
+                  Expanded(
+                    child: KButton(
+                      key: const ValueKey<String>('pulse-submit'),
+                      label: isQuote ? 'Quote' : 'Post',
+                      icon: Icons.bolt_rounded,
+                      expand: true,
+                      busy: _busy,
+                      onPressed: _hasContent && !_preparing
+                          ? () => unawaited(_publish())
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

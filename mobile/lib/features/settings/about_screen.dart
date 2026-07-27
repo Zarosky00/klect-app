@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/app_version.dart';
 import '../../core/links.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
@@ -10,9 +11,6 @@ import 'settings_widgets.dart';
 class AboutScreen extends StatelessWidget {
   /// Creates the screen.
   const AboutScreen({super.key});
-
-  /// Shipping version. Matches `pubspec.yaml`.
-  static const String version = '1.0.0';
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +28,7 @@ class AboutScreen extends StatelessWidget {
         children: <Widget>[
           Text('KLECT', style: context.kt.display1),
           Text(
-            'Version $version',
+            'Version $kAppVersion',
             style: context.kt.caption.copyWith(color: colors.textTertiary),
           ),
           const SizedBox(height: Space.s6),
@@ -64,7 +62,8 @@ class AboutScreen extends StatelessWidget {
           ),
           const SettingsSectionHeader(
             label: 'Reporting',
-            note: 'Every item, shelf, collection, post, comment, message and '
+            note:
+                'Every item, shelf, collection, post, comment, message and '
                 'profile has a report action. Reporting the same thing twice '
                 'tells you it is already with us — it never errors.',
           ),
@@ -91,11 +90,7 @@ class _HierarchyCard extends StatelessWidget {
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          _HierarchyLine(
-            indent: 0,
-            title: 'Collection',
-            example: 'Anime',
-          ),
+          _HierarchyLine(indent: 0, title: 'Collection', example: 'Anime'),
           _HierarchyLine(
             indent: 1,
             title: 'Subcollection',
@@ -158,11 +153,7 @@ class _HierarchyLine extends StatelessWidget {
 }
 
 class _LinkRow extends StatelessWidget {
-  const _LinkRow({
-    required this.icon,
-    required this.title,
-    required this.url,
-  });
+  const _LinkRow({required this.icon, required this.title, required this.url});
 
   final IconData icon;
   final String title;
@@ -170,18 +161,18 @@ class _LinkRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SettingsRow(
-        icon: icon,
-        title: title,
-        subtitle: url,
-        onTap: () async {
-          await Clipboard.setData(ClipboardData(text: url));
-          if (!context.mounted) return;
-          KToast.show(
-            context,
-            'Link copied — open it in your browser.',
-            kind: KToastKind.success,
-            icon: Icons.link_rounded,
-          );
-        },
+    icon: icon,
+    title: title,
+    subtitle: url,
+    onTap: () async {
+      await Clipboard.setData(ClipboardData(text: url));
+      if (!context.mounted) return;
+      KToast.show(
+        context,
+        'Link copied — open it in your browser.',
+        kind: KToastKind.success,
+        icon: Icons.link_rounded,
       );
+    },
+  );
 }

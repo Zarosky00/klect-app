@@ -86,8 +86,9 @@ void main() {
         });
 
     test('surfaces a newer release with its notes', () async {
-      final update =
-          await checker(github(tag: 'v1.3.0', body: 'Shiny.')).check();
+      final update = await checker(
+        github(tag: 'v1.3.0', body: 'Shiny.'),
+      ).check();
       expect(update, isNotNull);
       expect(update!.version, '1.3.0');
       expect(update.notes, 'Shiny.');
@@ -113,22 +114,24 @@ void main() {
       expect(next!.version, '1.4.0');
     });
 
-    test('at most one network check per 6 hours, cache answers between',
-        () async {
-      final client = github();
-      expect((await checker(client).check())!.version, '1.3.0');
-      expect(networkCalls, 1);
+    test(
+      'at most one network check per 6 hours, cache answers between',
+      () async {
+        final client = github();
+        expect((await checker(client).check())!.version, '1.3.0');
+        expect(networkCalls, 1);
 
-      // Inside the window: still bannering, but from cache.
-      nowMs += const Duration(hours: 5).inMilliseconds;
-      expect((await checker(client).check())!.version, '1.3.0');
-      expect(networkCalls, 1);
+        // Inside the window: still bannering, but from cache.
+        nowMs += const Duration(hours: 5).inMilliseconds;
+        expect((await checker(client).check())!.version, '1.3.0');
+        expect(networkCalls, 1);
 
-      // Past the window: the network is consulted again.
-      nowMs += const Duration(hours: 2).inMilliseconds;
-      expect((await checker(client).check())!.version, '1.3.0');
-      expect(networkCalls, 2);
-    });
+        // Past the window: the network is consulted again.
+        nowMs += const Duration(hours: 2).inMilliseconds;
+        expect((await checker(client).check())!.version, '1.3.0');
+        expect(networkCalls, 2);
+      },
+    );
 
     test('rate limiting is silent and retried next cold start', () async {
       final limited = MockClient((request) async {
@@ -168,6 +171,42 @@ void main() {
             http.Response(jsonEncode(<String, Object?>{'body': 'hi'}), 200),
       );
       expect(await checker(tagless).check(), isNull);
+    });
+
+    test(
+      'manual check bypasses throttle and reports a newer release',
+      () async {
+        final first = checker(github(tag: 'v1.3.0'));
+        expect((await first.check())!.version, '1.3.0');
+        expect(networkCalls, 1);
+
+        final result = await checker(github(tag: 'v1.4.0')).checkNow();
+        expect(networkCalls, 2);
+        expect(result.status, ManualUpdateStatus.updateAvailable);
+        expect(result.update?.version, '1.4.0');
+      },
+    );
+
+    test('manual check distinguishes current from unavailable', () async {
+      final current = await checker(github(tag: 'v1.2.0')).checkNow();
+      expect(current.status, ManualUpdateStatus.upToDate);
+      expect(current.update, isNull);
+
+      final offline = MockClient(
+        (request) async => throw http.ClientException('offline'),
+      );
+      final unavailable = await checker(offline).checkNow();
+      expect(unavailable.status, ManualUpdateStatus.unavailable);
+      expect(unavailable.update, isNull);
+    });
+
+    test('manual check still shows a skipped release', () async {
+      final subject = checker(github());
+      await subject.skip('1.3.0');
+
+      final result = await subject.checkNow();
+      expect(result.status, ManualUpdateStatus.updateAvailable);
+      expect(result.update?.version, '1.3.0');
     });
   });
 
@@ -243,8 +282,9 @@ void main() {
       );
     });
 
-    testWidgets('skip persists the version and hides the banner',
-        (tester) async {
+    testWidgets('skip persists the version and hides the banner', (
+      tester,
+    ) async {
       final container = harness();
       await pumpBanner(tester, container);
 

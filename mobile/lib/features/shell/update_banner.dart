@@ -153,7 +153,8 @@ class _UpdateSheetBody extends ConsumerWidget {
           variant: KButtonVariant.ghost,
           expand: true,
           onPressed: () async {
-            await ref.read(availableUpdateProvider.notifier).skip();
+            await ref.read(updateCheckerProvider).skip(update.version);
+            ref.read(availableUpdateProvider.notifier).dismiss();
             if (!context.mounted) return;
             Navigator.of(context).pop();
           },
