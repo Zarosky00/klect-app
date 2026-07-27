@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-27 · Session: round 3 — P0 DB fixes, perf, thread-first Pulse, share, notifications, identity · shipped as v1.3.0
+> Last updated: 2026-07-27 · Session: mobile/web usability patch · shipped as v1.3.1
 
 ---
 
@@ -12,9 +12,9 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 34 tables, 87 RLS policies, 45 triggers, 14 realtime tables, 4 storage buckets. Smoke-tested under real JWT impersonation. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | See `BACKEND_API.md`. All RPCs live and tested. |
-| 4 | Flutter mobile app (`mobile/`) | ✅ **DONE (features)** | All feature screens implemented, zero placeholders. Chat upgraded to WhatsApp parity: swipe-to-reply, quote-jump, forward (with storage copy), in-conversation search, full **group chats** (create / add / remove / roles / rename / leave). `flutter analyze` 0 issues, all tests pass. |
-| 5 | Next.js web + admin (`web/`) | ✅ **DONE (features)** | All 31 page routes + 3 auth route handlers + sitemap/robots implemented incl. intercepting closeup modal and full `/admin` — zero placeholders. `tsc` exit 0. Group *management* UI is mobile-only for now (web renders groups fine). |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | `verify.sh` fully green 2026-07-26 (tokens 3/3 · mobile pub get/analyze/test/build web · web tsc/lint/build). Manual CHECKLIST.md sections A–H (63 seen-it-work items) still to walk through. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **DONE (features)** | All feature screens implemented, zero placeholders. v1.3.1 fixes clipped profile avatars, responsive stats/tabs, and the quote composer action bar; Settings now includes an explicit manual update check. `flutter analyze` 0 issues, 84 tests pass. |
+| 5 | Next.js web + admin (`web/`) | ✅ **DONE (features)** | All 32 page routes + 3 auth route handlers + sitemap/robots implemented incl. intercepting closeup modal and full `/admin` — zero placeholders. v1.3.1 adds responsive profile/composer polish and `/settings/app`. Group *management* UI is mobile-only for now (web renders groups fine). |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | 2026-07-27 gates green: mobile analyze + 84 tests + APK; web 9 tests + tsc + lint + production build. Manual CHECKLIST.md sections A–H (63 seen-it-work items) still to walk through. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **DONE & VERIFIED** | Migration **0017 applied to live DB** + all 5 group RPCs smoke-tested under JWT impersonation (incl. owner auto-transfer). Advisors: 0 ERROR. `database.types.ts` regenerated. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
@@ -28,6 +28,18 @@
   compile"). Each passes cleanly in isolation — run the verify phases sequentially on this machine.
 - Riverpod 3's `NotifierProvider.family` **does** accept a constructor arg (`InteractionController.new`
   taking `EntityRef`) — verified by compilation, in case it looks wrong to you.
+
+**v1.3.1 verification (2026-07-27):**
+- Mobile: `flutter analyze --no-pub` **0 issues**; complete `flutter test --no-pub`
+  **84/84 passed**; release APK verified as `com.klect.klect`, version `1.3.1` / code `5`,
+  SHA-256 `6b862bb3baa0fdc2eba1f85ec4edff48d124e28f56a93b8069fcd7a79d8e28db`.
+- Web: Vitest **9/9**, `tsc --noEmit`, `next lint`, and `next build` all green.
+  Production deployment `dpl_21gAWwZgzMzVphpY4vZvvWWEdeN5` is **READY** at
+  `https://klect-web.vercel.app`; post-deploy error/fatal log scan and Chrome console are clean.
+- Mobile-width production check at 390×844: profile document width equals viewport width,
+  avatar is fully visible, stats use a 2×2 grid, and the five-section tab rail scrolls horizontally.
+- GitHub release `v1.3.1` is published with `klect.apk`; the stable
+  `releases/latest/download/klect.apk` URL resolves with HTTP 200 and the correct APK MIME type.
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 
@@ -247,13 +259,34 @@ touched the search/trigram/feed indexes. Re-check once real usage exists before 
   `lib/core/app_version.dart` must move in lockstep with pubspec.yaml + the release tag —
   releasing without bumping all three breaks the banner logic. 15 tests cover it.
 
+### 2026-07-27 — mobile/web usability patch (v1.3.1)
+- Fixed the Android profile clipping shown in device screenshots by keeping the avatar inside
+  the header sliver's paint bounds. Replaced fixed stat gaps with four equal columns and made
+  five-tab profiles horizontally scrollable, so long names/counts/tabs no longer collide.
+- Rebuilt the mobile Pulse composer as scrollable content plus a fixed action bar. `Add photo`
+  and `Quote`/`Post` remain visible at phone height and with the keyboard open; quote target
+  previews and selected photos stay in the scrollable section. Added a regression widget test.
+- Added Settings → App → **Check for updates**. Manual checks bypass the background six-hour
+  throttle and skipped-version preference, and clearly report update available / current /
+  unavailable. About now reads the shared version constant instead of a stale hardcoded `1.0.0`.
+- Web parity: responsive profile name/stats/tab rail; labeled composer media actions and a real
+  `Quote` label; new `/settings/app` page explains automatic web updates and links the latest APK.
+- Released Android `v1.3.1`, pushed `main`, configured the three required public Vercel production
+  environment variables, and deployed the verified web build to production. No Supabase schema
+  or data changes were required.
+
 ---
 
 ## Next actions
 
-1. Walk through manual sections A–H of `CHECKLIST.md` (63 items — gestures, optimistic social
+1. Install v1.3.1 on a real phone and smoke-test the exact repaired paths: own + other profile at
+   normal/large text, quote repost with text and photo, submit, then Settings → Check for updates
+   (it should report v1.3.1 is current). Also recheck the signed-in web composer at phone width.
+2. Walk through manual sections A–H of `CHECKLIST.md` (63 items — gestures, optimistic social
    mechanics, realtime chat/calls incl. the new groups, moderation flows, RLS from a second
    account, craft). Section I is automated by `verify.sh` and is green.
-2. Web parity for chat management (edit/pin/mute/archive/group admin on web) — deliberate gap.
-3. ~~Optional platform proof: `flutter build apk`~~ ✅ done — 95.9 MB release APK builds clean.
-4. TURN server for reliable WebRTC calls across NATs (still unconfigured).
+3. Web parity for chat management (edit/pin/mute/archive/group admin on web) — deliberate gap.
+4. Triage the current production `npm audit --omit=dev` result (3 high, 0 critical; `next`,
+   transitive `postcss` and `sharp`). The registry's proposed fix is an invalid Next.js downgrade,
+   so do not apply `npm audit fix --force`; upgrade through a tested supported Next release.
+5. TURN server for reliable WebRTC calls across NATs (still unconfigured).
