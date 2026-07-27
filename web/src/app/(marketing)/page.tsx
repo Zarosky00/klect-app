@@ -89,10 +89,10 @@ export default async function MarketingHomePage() {
           <div className="absolute inset-0 bg-gradient-to-b from-base/70 via-base/90 to-base" />
         </div>
 
-        <div className="content-max relative px-4 pb-20 pt-20 sm:px-6 md:pb-28 md:pt-32">
+        <div className="content-max relative min-w-0 px-4 pb-16 pt-14 sm:px-6 sm:pb-20 sm:pt-20 md:pb-28 md:pt-32">
           <p className="text-label uppercase tracking-widest text-accent">{SITE_TAGLINE}</p>
 
-          <h1 className="mt-5 max-w-[16ch] font-display text-display1 text-ink">
+          <h1 className="mt-5 max-w-[16ch] break-words font-display text-display2 text-ink sm:text-display1">
             The things you keep say more than the things you post.
           </h1>
 
@@ -103,8 +103,8 @@ export default async function MarketingHomePage() {
             repostable, and yours.
           </p>
 
-          <div className="mt-9 flex flex-wrap items-center gap-3">
-            <ButtonLink href={routes.signUp} size="lg">
+          <div className="mt-9 grid w-full max-w-[32rem] grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:items-center">
+            <ButtonLink href={routes.signUp} size="lg" className="w-full sm:w-auto">
               Start collecting
             </ButtonLink>
             <ButtonLink
@@ -112,6 +112,7 @@ export default async function MarketingHomePage() {
               size="lg"
               variant="secondary"
               iconRight="chevron-right"
+              className="w-full sm:w-auto"
             >
               Surf without an account
             </ButtonLink>
@@ -124,6 +125,7 @@ export default async function MarketingHomePage() {
               download
               target="_blank"
               rel="noopener"
+              className="w-full sm:w-auto"
             >
               Get the Android app
             </ButtonLink>

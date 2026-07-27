@@ -397,6 +397,7 @@ export interface PulseTarget {
   type: EntityType;
   id: string;
   unavailable?: boolean;
+  availability?: 'available' | 'unavailable';
   title?: string | null;
   subtitle?: string | null;
   body?: string | null;
@@ -413,6 +414,10 @@ export interface PulseTarget {
    *  reposted comment can deep-link into its discussion. */
   parent_type?: EntityType | null;
   parent_id?: string | null;
+  /** Complete ordered media for this target (at most four descriptors). */
+  media?: PulseMedia[];
+  /** One immutable nested attachment level for quoted posts. */
+  attached_target?: PulseTarget | null;
 }
 
 export interface PulseEntry {

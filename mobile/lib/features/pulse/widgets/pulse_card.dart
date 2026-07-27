@@ -8,6 +8,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../../core/api/klect_api.dart';
 import '../../../core/links.dart';
 import '../../../core/models/models.dart';
+import '../../../core/settings/app_settings.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
 import '../../surf/surf.dart';
@@ -122,6 +123,12 @@ class PulseCard extends ConsumerWidget {
         .watch(klectApiProvider)
         .publicUrl(presenter?.avatarPath, bucket: StorageBucket.avatars);
     final destination = _destination;
+    final mediaForward =
+        ref.watch(appSettingsProvider).pulseLayout ==
+        PulseLayoutPreference.mediaForward;
+    final streamMediaHeight = mediaForward
+        ? PostMediaGrid.streamMaxHeight
+        : Space.s24 * 2.5;
 
     return KGestureRegion(
       semanticLabel: body ?? presenter?.name,
@@ -204,19 +211,26 @@ class PulseCard extends ConsumerWidget {
                         const SizedBox(height: Space.s1),
                         Text(body, style: text.body),
                       ],
-                      if (item.media.isNotEmpty) ...<Widget>[
+                      if (item.kind != PulseKind.repost &&
+                          item.media.isNotEmpty) ...<Widget>[
                         const SizedBox(height: Space.s3),
                         // Bounded in the stream: a tall photo previews inside
                         // the row instead of masquerading as a masonry tile.
                         PostMediaGrid(
                           media: item.media,
-                          maxHeight: PostMediaGrid.streamMaxHeight,
+                          maxHeight: streamMediaHeight,
                         ),
                       ],
                       if (inlinePost != null) ...<Widget>[
                         if (inlinePost.unavailable) ...<Widget>[
                           const SizedBox(height: Space.s3),
                           PulseTargetCard(target: inlinePost),
+                        ] else if (inlinePost.media.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          PostMediaGrid(
+                            media: inlinePost.media,
+                            maxHeight: streamMediaHeight,
+                          ),
                         ] else if (inlinePost.coverPath != null) ...<Widget>[
                           const SizedBox(height: Space.s3),
                           _InlinePostCover(target: inlinePost),

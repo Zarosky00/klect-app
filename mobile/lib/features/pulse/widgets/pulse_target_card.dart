@@ -58,8 +58,9 @@ class PulseTargetCard extends ConsumerWidget {
       return const _TargetTombstone();
     }
 
+    final resolvedMedia = media.isEmpty ? target.media : media;
     final card = switch (target.type!) {
-      EntityType.post => _QuotedPostBody(target: target, media: media),
+      EntityType.post => _QuotedPostBody(target: target, media: resolvedMedia),
       EntityType.comment => _CommentBody(target: target),
       _ => _EntityBody(target: target),
     };
@@ -245,6 +246,10 @@ class _QuotedPostBody extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(Radii.md),
                 semanticLabel: body ?? 'Post photo',
               ),
+            ],
+            if (target.attachedTarget case final attached?) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              PulseTargetCard(target: attached, interactive: false),
             ],
           ],
         ),

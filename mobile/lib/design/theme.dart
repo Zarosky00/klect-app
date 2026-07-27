@@ -28,21 +28,48 @@ class KlectTextStyles {
     required this.count,
   });
 
-  factory KlectTextStyles.forColor(Color color) => KlectTextStyles(
-        display1: KlectTypography.style(TypeScale.display1, color),
-        display2: KlectTypography.style(TypeScale.display2, color),
-        display3: KlectTypography.style(TypeScale.display3, color),
-        title1: KlectTypography.style(TypeScale.title1, color),
-        title2: KlectTypography.style(TypeScale.title2, color),
-        title3: KlectTypography.style(TypeScale.title3, color),
-        body: KlectTypography.style(TypeScale.body, color),
-        bodyStrong: KlectTypography.style(TypeScale.bodyStrong, color),
-        callout: KlectTypography.style(TypeScale.callout, color),
-        label: KlectTypography.style(TypeScale.label, color),
-        caption: KlectTypography.style(TypeScale.caption, color),
-        micro: KlectTypography.style(TypeScale.micro, color),
-        count: KlectTypography.style(TypeScale.count, color),
-      );
+  factory KlectTextStyles.forColor(
+    Color color, {
+    String fontPack = 'editorial',
+  }) => KlectTextStyles(
+    display1: KlectTypography.style(
+      TypeScale.display1,
+      color,
+      fontPack: fontPack,
+    ),
+    display2: KlectTypography.style(
+      TypeScale.display2,
+      color,
+      fontPack: fontPack,
+    ),
+    display3: KlectTypography.style(
+      TypeScale.display3,
+      color,
+      fontPack: fontPack,
+    ),
+    title1: KlectTypography.style(TypeScale.title1, color, fontPack: fontPack),
+    title2: KlectTypography.style(TypeScale.title2, color, fontPack: fontPack),
+    title3: KlectTypography.style(TypeScale.title3, color, fontPack: fontPack),
+    body: KlectTypography.style(TypeScale.body, color, fontPack: fontPack),
+    bodyStrong: KlectTypography.style(
+      TypeScale.bodyStrong,
+      color,
+      fontPack: fontPack,
+    ),
+    callout: KlectTypography.style(
+      TypeScale.callout,
+      color,
+      fontPack: fontPack,
+    ),
+    label: KlectTypography.style(TypeScale.label, color, fontPack: fontPack),
+    caption: KlectTypography.style(
+      TypeScale.caption,
+      color,
+      fontPack: fontPack,
+    ),
+    micro: KlectTypography.style(TypeScale.micro, color, fontPack: fontPack),
+    count: KlectTypography.style(TypeScale.count, color, fontPack: fontPack),
+  );
 
   final TextStyle display1;
   final TextStyle display2;
@@ -87,21 +114,28 @@ abstract final class KlectTypography {
   /// [FontVariation] — never rounded to the static hundreds. Fraunces also
   /// carries an optical-size axis (9–144); pinning `opsz` to the rendered size
   /// is what gives display type its editorial bite.
-  static TextStyle style(TypeStep step, Color color) {
+  static TextStyle style(
+    TypeStep step,
+    Color color, {
+    String fontPack = 'editorial',
+  }) {
+    final family = fontPack == 'editorial' ? step.family : Fonts.sans;
+    final readable = fontPack == 'readable';
     return TextStyle(
       color: color,
-      fontFamily: step.family,
+      fontFamily: family,
       fontSize: step.size,
-      height: step.heightFactor,
+      height: readable ? step.heightFactor * 1.08 : step.heightFactor,
       fontWeight: weight(step.weight),
       fontVariations: <FontVariation>[
         FontVariation.weight(step.weight.toDouble()),
-        if (step.family == Fonts.display)
+        if (family == Fonts.display)
           FontVariation.opticalSize(step.size.clamp(9.0, 144.0).toDouble()),
       ],
       letterSpacing: step.tracking,
-      fontFeatures:
-          step.tabular ? const <FontFeature>[FontFeature.tabularFigures()] : null,
+      fontFeatures: step.tabular
+          ? const <FontFeature>[FontFeature.tabularFigures()]
+          : null,
       leadingDistribution: TextLeadingDistribution.even,
     );
   }
@@ -188,13 +222,19 @@ extension KlectThemeContext on BuildContext {
 /// Builds the whole [ThemeData] from tokens — dark and light.
 abstract final class KlectThemeData {
   /// The dark theme. This is the product's default: a private gallery at night.
-  static ThemeData dark() => _build(const KlectColorsDark(), Brightness.dark);
+  static ThemeData dark({String fontPack = 'editorial'}) =>
+      _build(const KlectColorsDark(), Brightness.dark, fontPack);
 
   /// The light theme, same tokens, light ramp.
-  static ThemeData light() => _build(const KlectColorsLight(), Brightness.light);
+  static ThemeData light({String fontPack = 'editorial'}) =>
+      _build(const KlectColorsLight(), Brightness.light, fontPack);
 
-  static ThemeData _build(KlectColors c, Brightness brightness) {
-    final text = KlectTextStyles.forColor(c.textPrimary);
+  static ThemeData _build(
+    KlectColors c,
+    Brightness brightness,
+    String fontPack,
+  ) {
+    final text = KlectTextStyles.forColor(c.textPrimary, fontPack: fontPack);
     final scheme = ColorScheme(
       brightness: brightness,
       primary: c.accentDefault,
@@ -400,9 +440,7 @@ abstract final class KlectThemeData {
           TargetPlatform.fuchsia: FadeForwardsPageTransitionsBuilder(),
         },
       ),
-      extensions: <ThemeExtension<dynamic>>[
-        KlectTheme(colors: c, text: text),
-      ],
+      extensions: <ThemeExtension<dynamic>>[KlectTheme(colors: c, text: text)],
     );
   }
 }

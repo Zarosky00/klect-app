@@ -17,6 +17,7 @@ import 'chat_api.dart';
 import 'group_errors.dart';
 import 'thread_controller.dart';
 import 'widgets/group_avatar.dart';
+import 'widgets/group_avatar_editor.dart';
 import 'widgets/member_picker.dart';
 
 /// The hard ceiling on active rows: the owner plus 64 members.
@@ -50,10 +51,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
   /// Runs one management RPC, refetches the thread (members and conversation
   /// both live there), and reports the outcome as a toast.
-  Future<bool> _run(
-    Future<void> Function() action, {
-    String? success,
-  }) async {
+  Future<bool> _run(Future<void> Function() action, {String? success}) async {
     try {
       await action();
     } on KlectError catch (error) {
@@ -87,6 +85,54 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
+  Future<void> _replaceAvatar() async {
+    final image = await GroupAvatarEditor.pick(context);
+    if (image == null || !mounted) return;
+    await _run(() async {
+      final path = await _api.uploadGroupAvatar(image);
+      await _api.updateGroupInfo(widget.conversationId, avatarPath: path);
+    }, success: 'Group photo updated.');
+  }
+
+  Future<void> _removeAvatar() async {
+    await _run(
+      () => _api.clearGroupAvatar(widget.conversationId),
+      success: 'Group photo removed.',
+    );
+  }
+
+  Future<void> _avatarActions(Conversation conversation) async {
+    await KSheet.show<void>(
+      context: context,
+      title: 'Group photo',
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _InfoRow(
+            icon: Icons.photo_camera_outlined,
+            label: conversation.avatarPath == null
+                ? 'Add group photo'
+                : 'Replace group photo',
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              unawaited(_replaceAvatar());
+            },
+          ),
+          if (conversation.avatarPath != null)
+            _InfoRow(
+              icon: Icons.delete_outline_rounded,
+              label: 'Remove group photo',
+              destructive: true,
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                unawaited(_removeAvatar());
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _addMembers(List<ConversationMember> active) async {
     final capacity = _maxActiveMembers - active.length;
     final picked = await MemberPickerSheet.show(
@@ -97,10 +143,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
     if (picked == null || picked.isEmpty || !mounted) return;
     try {
-      final joined = await _api.addGroupMembers(
-        widget.conversationId,
-        <String>[for (final profile in picked) profile.id],
-      );
+      final joined = await _api.addGroupMembers(widget.conversationId, <String>[
+        for (final profile in picked) profile.id,
+      ]);
       await _thread.refresh();
       if (!mounted) return;
       KToast.success(
@@ -119,7 +164,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final confirmed = await KConfirmDialog.show(
       context,
       title: 'Remove $name?',
-      message: 'They leave the group immediately. '
+      message:
+          'They leave the group immediately. '
           'An admin can always add them back.',
       confirmLabel: 'Remove',
       destructive: true,
@@ -137,7 +183,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       final confirmed = await KConfirmDialog.show(
         context,
         title: 'Make $name the owner?',
-        message: 'Ownership moves to them and you become an admin. '
+        message:
+            'Ownership moves to them and you become an admin. '
             'Only they can hand it back.',
         confirmLabel: 'Transfer',
       );
@@ -159,9 +206,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       title: 'Leave this group?',
       message: isOwner && othersCount > 0
           ? 'Ownership passes to the longest-standing admin — or member — '
-              'and the conversation disappears from your inbox.'
+                'and the conversation disappears from your inbox.'
           : 'The conversation disappears from your inbox. '
-              'An admin can add you back later.',
+                'An admin can add you back later.',
       confirmLabel: 'Leave',
       destructive: true,
     );
@@ -304,7 +351,13 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           Space.s10,
         ),
         children: <Widget>[
-          _Header(conversation: conversation, memberCount: active.length),
+          _Header(
+            conversation: conversation,
+            memberCount: active.length,
+            onAvatarTap: viewerIsAdmin
+                ? () => unawaited(_avatarActions(conversation))
+                : null,
+          ),
           const SizedBox(height: Space.s6),
           _MembersHeader(
             count: active.length,
@@ -320,16 +373,17 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               // Only rows the viewer can actually act on get the sheet: the
               // owner manages everyone else; admins manage everyone but the
               // owner; nobody manages themselves (leaving lives below).
-              onActions: member.userId != viewerId &&
+              onActions:
+                  member.userId != viewerId &&
                       (viewerIsOwner ||
                           (viewerIsAdmin && member.role != 'owner'))
                   ? () => unawaited(
-                        _memberActions(
-                          member,
-                          viewerIsOwner: viewerIsOwner,
-                          viewerIsAdmin: viewerIsAdmin,
-                        ),
-                      )
+                      _memberActions(
+                        member,
+                        viewerIsOwner: viewerIsOwner,
+                        viewerIsAdmin: viewerIsAdmin,
+                      ),
+                    )
                   : null,
             ),
           const SizedBox(height: Space.s6),
@@ -340,10 +394,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             label: 'Leave group',
             destructive: true,
             onTap: () => unawaited(
-              _leave(
-                isOwner: viewerIsOwner,
-                othersCount: active.length - 1,
-              ),
+              _leave(isOwner: viewerIsOwner, othersCount: active.length - 1),
             ),
           ),
         ],
@@ -370,35 +421,71 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   static int _rolePriority(String role) => switch (role) {
-        'owner' => 0,
-        'admin' => 1,
-        _ => 2,
-      };
+    'owner' => 0,
+    'admin' => 1,
+    _ => 2,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────── sections ──
 
 class _Header extends ConsumerWidget {
-  const _Header({required this.conversation, required this.memberCount});
+  const _Header({
+    required this.conversation,
+    required this.memberCount,
+    this.onAvatarTap,
+  });
 
   final Conversation conversation;
   final int memberCount;
+  final VoidCallback? onAvatarTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
-          conversation.avatarPath,
-          bucket: StorageBucket.avatars,
-        );
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(conversation.avatarPath, bucket: StorageBucket.avatars);
     final description = conversation.description;
 
     return Column(
       children: <Widget>[
-        GroupAvatar(
-          imageUrl: avatarUrl,
-          name: conversation.displayTitle,
-          size: Space.s20,
+        KPressable(
+          semanticLabel: onAvatarTap == null ? null : 'Change group photo',
+          onTap: onAvatarTap,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              GroupAvatar(
+                imageUrl: avatarUrl,
+                name: conversation.displayTitle,
+                size: Space.s20,
+              ),
+              if (onAvatarTap != null)
+                Positioned(
+                  right: -Space.s1,
+                  bottom: -Space.s1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.accentDefault,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: colors.surface1,
+                        width: Strokes.thick,
+                      ),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.all(Space.s15),
+                      child: Icon(
+                        Icons.edit_outlined,
+                        size: Space.s4,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: Space.s4),
         Text(
@@ -437,9 +524,7 @@ class _MembersHeader extends StatelessWidget {
         Expanded(
           child: Text(
             'Members',
-            style: context.kt.label.copyWith(
-              color: context.kc.textSecondary,
-            ),
+            style: context.kt.label.copyWith(color: context.kc.textSecondary),
           ),
         ),
         if (onAdd != null)
@@ -467,10 +552,10 @@ class _MemberRow extends StatelessWidget {
   final VoidCallback? onActions;
 
   static String? _roleLabel(String role) => switch (role) {
-        'owner' => 'Owner',
-        'admin' => 'Admin',
-        _ => null,
-      };
+    'owner' => 'Owner',
+    'admin' => 'Admin',
+    _ => null,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -551,22 +636,23 @@ class _EditGroupSheet extends StatefulWidget {
     BuildContext context, {
     required String title,
     required String description,
-  }) =>
-      KSheet.show<({String title, String description})>(
-        context: context,
-        title: 'Edit group',
-        builder: (_) => _EditGroupSheet(title: title, description: description),
-      );
+  }) => KSheet.show<({String title, String description})>(
+    context: context,
+    title: 'Edit group',
+    builder: (_) => _EditGroupSheet(title: title, description: description),
+  );
 
   @override
   State<_EditGroupSheet> createState() => _EditGroupSheetState();
 }
 
 class _EditGroupSheetState extends State<_EditGroupSheet> {
-  late final TextEditingController _title =
-      TextEditingController(text: widget.title);
-  late final TextEditingController _description =
-      TextEditingController(text: widget.description);
+  late final TextEditingController _title = TextEditingController(
+    text: widget.title,
+  );
+  late final TextEditingController _description = TextEditingController(
+    text: widget.description,
+  );
   bool _titleMissing = false;
 
   @override
@@ -582,8 +668,9 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
       setState(() => _titleMissing = true);
       return;
     }
-    Navigator.of(context)
-        .pop((title: title, description: _description.text.trim()));
+    Navigator.of(
+      context,
+    ).pop((title: title, description: _description.text.trim()));
   }
 
   @override

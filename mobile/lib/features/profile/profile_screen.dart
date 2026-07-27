@@ -13,6 +13,7 @@ import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
 import '../auth/auth_controller.dart';
+import '../pulse/data/pulse_entry_view.dart';
 import '../pulse/widgets/pulse_card.dart';
 import 'edit_profile_screen.dart';
 import 'entity_tile.dart';
@@ -823,14 +824,31 @@ class _ProfileTabContent extends ConsumerWidget {
 
 /// The Posts tab — `user_posts` (0021) rendered with the exact stream row
 /// the Pulse feed uses, so a post reads identically on both surfaces.
-class _PostsSliver extends ConsumerWidget {
+enum _ProfilePulseTab {
+  posts('Posts'),
+  replies('Replies'),
+  media('Media');
+
+  const _ProfilePulseTab(this.label);
+
+  final String label;
+}
+
+class _PostsSliver extends ConsumerStatefulWidget {
   const _PostsSliver({required this.userId});
 
   final String userId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(userPostsProvider(userId));
+  ConsumerState<_PostsSliver> createState() => _PostsSliverState();
+}
+
+class _PostsSliverState extends ConsumerState<_PostsSliver> {
+  _ProfilePulseTab _tab = _ProfilePulseTab.posts;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(userPostsProvider(widget.userId));
 
     if (state.loading && state.items.isEmpty) {
       return const SliverToBoxAdapter(child: KSkeletonList(rows: 3));
@@ -841,32 +859,82 @@ class _PostsSliver extends ConsumerWidget {
         child: KErrorState(
           error: error,
           compact: true,
-          onRetry: () => ref.invalidate(userPostsProvider(userId)),
-        ),
-      );
-    }
-    if (state.items.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: KEmptyState(
-          title: 'Nothing said yet',
-          message:
-              'Posts, quotes and reposts land here — the Pulse side of '
-              'a collector.',
-          icon: Icons.bolt_outlined,
-          compact: true,
+          onRetry: () => ref.invalidate(userPostsProvider(widget.userId)),
         ),
       );
     }
 
+    final visible = state.items
+        .where((item) {
+          return switch (_tab) {
+            _ProfilePulseTab.posts => item.kind != PulseKind.reply,
+            _ProfilePulseTab.replies => item.kind == PulseKind.reply,
+            _ProfilePulseTab.media =>
+              item.media.isNotEmpty ||
+                  (item.target?.media.isNotEmpty ?? false) ||
+                  item.target?.coverPath != null,
+          };
+        })
+        .toList(growable: false);
+
     return SliverMainAxisGroup(
       slivers: <Widget>[
-        SliverList.builder(
-          itemCount: state.items.length,
-          itemBuilder: (context, index) {
-            final item = state.items[index];
-            return PulseCard(key: ValueKey<String>(item.key), item: item);
-          },
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Space.s4,
+              Space.s3,
+              Space.s4,
+              Space.s2,
+            ),
+            child: Row(
+              children: <Widget>[
+                for (final tab in _ProfilePulseTab.values) ...<Widget>[
+                  KChip(
+                    label: tab.label,
+                    selected: tab == _tab,
+                    dense: true,
+                    onTap: () => setState(() => _tab = tab),
+                  ),
+                  const SizedBox(width: Space.s2),
+                ],
+              ],
+            ),
+          ),
         ),
+        if (visible.isEmpty)
+          SliverToBoxAdapter(
+            child: KEmptyState(
+              title: switch (_tab) {
+                _ProfilePulseTab.posts => 'Nothing said yet',
+                _ProfilePulseTab.replies => 'No replies yet',
+                _ProfilePulseTab.media => 'No media posts yet',
+              },
+              message: switch (_tab) {
+                _ProfilePulseTab.posts =>
+                  'Posts, quotes and reposts land here — the Pulse side of '
+                      'a collector.',
+                _ProfilePulseTab.replies =>
+                  'Replies stay separate so conversations are easy to follow.',
+                _ProfilePulseTab.media =>
+                  'Posts with photographs and collected stories appear here.',
+              },
+              icon: switch (_tab) {
+                _ProfilePulseTab.posts => Icons.bolt_outlined,
+                _ProfilePulseTab.replies => Icons.reply_rounded,
+                _ProfilePulseTab.media => Icons.perm_media_outlined,
+              },
+              compact: true,
+            ),
+          )
+        else
+          SliverList.builder(
+            itemCount: visible.length,
+            itemBuilder: (context, index) {
+              final item = visible[index];
+              return PulseCard(key: ValueKey<String>(item.key), item: item);
+            },
+          ),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.all(Space.s4),
@@ -874,7 +942,9 @@ class _PostsSliver extends ConsumerWidget {
                 ? KInlineError(
                     message: error.message,
                     onRetry: () => unawaited(
-                      ref.read(userPostsProvider(userId).notifier).loadMore(),
+                      ref
+                          .read(userPostsProvider(widget.userId).notifier)
+                          .loadMore(),
                     ),
                   )
                 : state.hasMore
@@ -888,7 +958,7 @@ class _PostsSliver extends ConsumerWidget {
                         ? null
                         : () => unawaited(
                             ref
-                                .read(userPostsProvider(userId).notifier)
+                                .read(userPostsProvider(widget.userId).notifier)
                                 .loadMore(),
                           ),
                   )

@@ -1,3 +1,4 @@
+import 'catalog.dart';
 import 'enums.dart';
 import 'json.dart';
 import 'profile.dart';
@@ -138,6 +139,9 @@ class PulseTarget {
     this.author,
     this.parentType,
     this.parentId,
+    this.availability = 'available',
+    this.media = const <ItemMedia>[],
+    this.attachedTarget,
   });
 
   /// Parses the envelope's `target` block.
@@ -161,6 +165,13 @@ class PulseTarget {
       author: author.isEmpty ? null : Profile.fromJson(author),
       parentType: EntityType.tryParse(json['parent_type']),
       parentId: asStringOrNull(json['parent_id']),
+      availability: asStringOrNull(json['availability']) ?? 'available',
+      media: <ItemMedia>[
+        for (final item in asMapList(json['media'])) ItemMedia.fromJson(item),
+      ]..sort((a, b) => a.position.compareTo(b.position)),
+      attachedTarget: asMap(json['attached_target']).isEmpty
+          ? null
+          : PulseTarget.fromJson(asMap(json['attached_target'])),
     );
   }
 
@@ -215,6 +226,15 @@ class PulseTarget {
 
   /// For a comment target: the id of the entity the comment sits on.
   final String? parentId;
+
+  /// Explicit server-side visibility state.
+  final String availability;
+
+  /// Complete ordered media for the target (at most four descriptors).
+  final List<ItemMedia> media;
+
+  /// One immutable nested attachment level for quoted posts.
+  final PulseTarget? attachedTarget;
 
   /// Cover aspect ratio, or null when unknown.
   double? get coverAspect {

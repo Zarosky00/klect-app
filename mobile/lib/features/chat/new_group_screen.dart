@@ -8,9 +8,11 @@ import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../router.dart';
 import '../../ui/ui.dart';
+import '../create/media/image_pipeline.dart';
 import 'chat_api.dart';
 import 'group_errors.dart';
 import 'widgets/group_avatar.dart';
+import 'widgets/group_avatar_editor.dart';
 import 'widgets/member_picker.dart';
 
 /// `create_group` caps the member array at this, owner excluded.
@@ -38,6 +40,8 @@ class _NewGroupScreenState extends ConsumerState<NewGroupScreen> {
   bool _naming = false;
   bool _creating = false;
   bool _titleMissing = false;
+  PreparedImage? _avatar;
+  String? _uploadedAvatarPath;
 
   @override
   void dispose() {
@@ -67,11 +71,19 @@ class _NewGroupScreenState extends ConsumerState<NewGroupScreen> {
     if (_creating) return;
     setState(() => _creating = true);
     try {
+      if (_avatar != null && _uploadedAvatarPath == null) {
+        _uploadedAvatarPath = await ref
+            .read(chatApiProvider)
+            .uploadGroupAvatar(_avatar!);
+      }
       final description = _description.text.trim();
-      final conversationId = await ref.read(chatApiProvider).createGroup(
+      final conversationId = await ref
+          .read(chatApiProvider)
+          .createGroup(
             title: title,
             memberIds: <String>[..._selected.keys],
             description: description.isEmpty ? null : description,
+            avatarPath: _uploadedAvatarPath,
           );
       if (!mounted) return;
       // The inbox adopts the new conversation over realtime; replacing this
@@ -82,6 +94,15 @@ class _NewGroupScreenState extends ConsumerState<NewGroupScreen> {
       setState(() => _creating = false);
       KToast.error(context, groupErrorCopy(error));
     }
+  }
+
+  Future<void> _pickAvatar() async {
+    final image = await GroupAvatarEditor.pick(context);
+    if (image == null || !mounted) return;
+    setState(() {
+      _avatar = image;
+      _uploadedAvatarPath = null;
+    });
   }
 
   @override
@@ -133,11 +154,12 @@ class _NewGroupScreenState extends ConsumerState<NewGroupScreen> {
           label: _selected.isEmpty
               ? 'Pick at least one person'
               : 'Next · ${_selected.length} '
-                  '${_selected.length == 1 ? 'person' : 'people'}',
+                    '${_selected.length == 1 ? 'person' : 'people'}',
           trailingIcon: Icons.arrow_forward_rounded,
           expand: true,
-          onPressed:
-              _selected.isEmpty ? null : () => setState(() => _naming = true),
+          onPressed: _selected.isEmpty
+              ? null
+              : () => setState(() => _naming = true),
         ),
       ],
     );
@@ -149,7 +171,59 @@ class _NewGroupScreenState extends ConsumerState<NewGroupScreen> {
       key: const ValueKey<String>('details'),
       children: <Widget>[
         const SizedBox(height: Space.s4),
-        const Center(child: GroupAvatar(size: Space.s20)),
+        Center(
+          child: KPressable(
+            semanticLabel: _avatar == null
+                ? 'Add group photo'
+                : 'Change group photo',
+            onTap: _creating ? null : _pickAvatar,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                if (_avatar == null)
+                  const GroupAvatar(size: Space.s20)
+                else
+                  ClipOval(
+                    child: Image.memory(
+                      _avatar!.bytes,
+                      width: Space.s20,
+                      height: Space.s20,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                Positioned(
+                  right: -Space.s1,
+                  bottom: -Space.s1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: context.kc.accentDefault,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: context.kc.surface1,
+                        width: Strokes.thick,
+                      ),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.all(Space.s15),
+                      child: Icon(
+                        Icons.photo_camera_outlined,
+                        size: Space.s4,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: Space.s2),
+        Text(
+          _avatar == null ? 'Add group photo' : 'Tap to crop or replace',
+          textAlign: TextAlign.center,
+          style: context.kt.caption.copyWith(color: colors.textSecondary),
+        ),
         const SizedBox(height: Space.s6),
         KTextField(
           controller: _title,
@@ -183,8 +257,7 @@ class _NewGroupScreenState extends ConsumerState<NewGroupScreen> {
           spacing: Space.s2,
           runSpacing: Space.s2,
           children: <Widget>[
-            for (final profile in _selected.values)
-              KChip(label: profile.name),
+            for (final profile in _selected.values) KChip(label: profile.name),
           ],
         ),
         const SizedBox(height: Space.s6),

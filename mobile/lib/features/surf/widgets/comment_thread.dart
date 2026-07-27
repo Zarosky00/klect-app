@@ -13,6 +13,50 @@ import '../../../ui/ui.dart';
 import '../../pulse/widgets/comment_action_bar.dart';
 import '../data/comments_controller.dart';
 
+/// Shared draft and reply target for a comment thread.
+///
+/// Closeups keep this above the draggable sheet so the same composer can stay
+/// pinned above navigation and the keyboard while the thread itself scrolls.
+class CommentDraftController extends ChangeNotifier {
+  /// The editable comment text.
+  final TextEditingController text = TextEditingController();
+
+  /// The comment currently being replied to.
+  CommentModel? replyTo;
+
+  /// Arms a reply without losing the current draft.
+  void startReply(CommentModel comment) {
+    replyTo = comment;
+    notifyListeners();
+  }
+
+  /// Returns to a root comment.
+  void cancelReply() {
+    replyTo = null;
+    notifyListeners();
+  }
+
+  /// Clears the accepted draft and reply target.
+  void clearAccepted() {
+    text.clear();
+    replyTo = null;
+    notifyListeners();
+  }
+
+  /// Restores a failed draft for editing and retry.
+  void restore(String value) {
+    text.text = value;
+    text.selection = TextSelection.collapsed(offset: value.length);
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    text.dispose();
+    super.dispose();
+  }
+}
+
 /// One rendered line of the thread: a comment plus how far to indent it.
 class _ThreadRow {
   const _ThreadRow(this.comment, this.depth);
@@ -42,6 +86,8 @@ class CommentThread extends ConsumerStatefulWidget {
   const CommentThread({
     required this.entity,
     required this.focusNode,
+    this.draftController,
+    this.showComposer = true,
     super.key,
   });
 
@@ -52,18 +98,37 @@ class CommentThread extends ConsumerStatefulWidget {
   /// straight into typing.
   final FocusNode focusNode;
 
+  /// Shares the draft with a pinned composer owned by the parent screen.
+  final CommentDraftController? draftController;
+
+  /// Whether the composer is rendered inline under the comments.
+  final bool showComposer;
+
   @override
   ConsumerState<CommentThread> createState() => _CommentThreadState();
 }
 
 class _CommentThreadState extends ConsumerState<CommentThread> {
-  final TextEditingController _draft = TextEditingController();
   final Set<String> _expanded = <String>{};
-  CommentModel? _replyTo;
+  late CommentDraftController _draft;
+  late bool _ownsDraft;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsDraft = widget.draftController == null;
+    _draft = widget.draftController ?? CommentDraftController();
+    _draft.addListener(_draftChanged);
+  }
+
+  void _draftChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
-    _draft.dispose();
+    _draft.removeListener(_draftChanged);
+    if (_ownsDraft) _draft.dispose();
     super.dispose();
   }
 
@@ -85,8 +150,9 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
     }
 
     int byTime(CommentModel a, CommentModel b) =>
-        (a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-            .compareTo(b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0));
+        (a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)).compareTo(
+          b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+        );
 
     int descendants(String id) {
       final children = byParent[id];
@@ -100,7 +166,9 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
 
     final rows = <Object>[];
     void walk(List<CommentModel> level, int depth) {
-      level.sort(byTime);
+      // The RPC already ranks roots by Top/New. Replies alone are
+      // chronological, so never destroy the selected root ordering here.
+      if (depth > 0) level.sort(byTime);
       for (final comment in level) {
         rows.add(_ThreadRow(comment, depth));
         final children = byParent[comment.id];
@@ -130,19 +198,20 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
   static const int maxIndent = CommentsController.maxDepth - 1;
 
   void _startReply(CommentModel comment) {
-    setState(() => _replyTo = comment);
+    _draft.startReply(comment);
     widget.focusNode.requestFocus();
   }
 
-  void _cancelReply() => setState(() => _replyTo = null);
+  void _cancelReply() => _draft.cancelReply();
 
   Future<void> _send() async {
-    final body = _draft.text;
+    final body = _draft.text.text;
     if (body.trim().isEmpty) return;
-    final parent = _replyTo;
-    _draft.clear();
-    setState(() => _replyTo = null);
-    await ref.read(commentsProvider(widget.entity).notifier).post(
+    final parent = _draft.replyTo;
+    _draft.clearAccepted();
+    await ref
+        .read(commentsProvider(widget.entity).notifier)
+        .post(
           body: body,
           parentId: parent?.id,
           parentDepth: parent?.depth ?? 0,
@@ -155,12 +224,14 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
     final state = ref.watch(commentsProvider(widget.entity));
     final meId = ref.watch(currentUserIdProvider);
 
-    ref.listen<CommentsState>(commentsProvider(widget.entity),
-        (previous, next) {
+    ref.listen<CommentsState>(commentsProvider(widget.entity), (
+      previous,
+      next,
+    ) {
       final draft = next.failedDraft;
       if (draft == null || draft == previous?.failedDraft) return;
       // A failed comment must never lose the user's words.
-      _draft.text = draft;
+      _draft.restore(draft);
       ref.read(commentsProvider(widget.entity).notifier).draftRestored();
       final error = next.error;
       if (error != null) KToast.error(context, error.message);
@@ -182,10 +253,10 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
                   onTap: state.loading
                       ? null
                       : () => unawaited(
-                            ref
-                                .read(commentsProvider(widget.entity).notifier)
-                                .setSort(sort),
-                          ),
+                          ref
+                              .read(commentsProvider(widget.entity).notifier)
+                              .setSort(sort),
+                        ),
                 ),
                 const SizedBox(width: Space.s2),
               ],
@@ -226,30 +297,30 @@ class _CommentThreadState extends ConsumerState<CommentThread> {
             Padding(
               padding: const EdgeInsets.only(top: Space.s2),
               child: KButton(
-                label: state.loadingMore
-                    ? 'Loading…'
-                    : 'Show more comments',
+                label: state.loadingMore ? 'Loading…' : 'Show more comments',
                 variant: KButtonVariant.ghost,
                 size: KButtonSize.small,
                 busy: state.loadingMore,
                 onPressed: state.loadingMore
                     ? null
                     : () => unawaited(
-                          ref
-                              .read(commentsProvider(widget.entity).notifier)
-                              .loadMore(),
-                        ),
+                        ref
+                            .read(commentsProvider(widget.entity).notifier)
+                            .loadMore(),
+                      ),
               ),
             ),
         ],
-        const SizedBox(height: Space.s4),
-        _Composer(
-          controller: _draft,
-          focusNode: widget.focusNode,
-          replyTo: _replyTo,
-          onCancelReply: _cancelReply,
-          onSend: () => unawaited(_send()),
-        ),
+        if (widget.showComposer) ...<Widget>[
+          const SizedBox(height: Space.s4),
+          CommentComposer(
+            controller: _draft.text,
+            focusNode: widget.focusNode,
+            replyTo: _draft.replyTo,
+            onCancelReply: _cancelReply,
+            onSend: () => unawaited(_send()),
+          ),
+        ],
       ],
     );
   }
@@ -278,7 +349,8 @@ class _ShowRepliesRow extends StatelessWidget {
         child: KPressable(
           onTap: onExpand,
           enforceMinTapTarget: false,
-          semanticLabel: 'Show ${row.count} '
+          semanticLabel:
+              'Show ${row.count} '
               '${row.count == 1 ? 'reply' : 'replies'}',
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: Space.s1),
@@ -293,8 +365,7 @@ class _ShowRepliesRow extends StatelessWidget {
                 const SizedBox(width: Space.s1),
                 Text(
                   'Show ${row.count} ${row.count == 1 ? 'reply' : 'replies'}',
-                  style: context.kt.micro
-                      .copyWith(color: colors.accentDefault),
+                  style: context.kt.micro.copyWith(color: colors.accentDefault),
                 ),
               ],
             ),
@@ -335,10 +406,9 @@ class _CommentRow extends ConsumerWidget {
     final colors = context.kc;
     final text = context.kt;
     final comment = row.comment;
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
-          comment.author?.avatarPath,
-          bucket: StorageBucket.avatars,
-        );
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(comment.author?.avatarPath, bucket: StorageBucket.avatars);
 
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,7 +418,9 @@ class _CommentRow extends ConsumerWidget {
           children: <Widget>[
             Flexible(
               child: Text(
-                comment.author?.name ?? 'Someone',
+                comment.tombstone
+                    ? 'Deleted'
+                    : comment.author?.name ?? 'Someone',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: text.label,
@@ -366,10 +438,23 @@ class _CommentRow extends ConsumerWidget {
             ),
           ],
         ),
+        if (comment.replyingToUsername case final username?) ...<Widget>[
+          const SizedBox(height: Space.s1),
+          Text(
+            'Replying to @$username',
+            style: text.micro.copyWith(color: colors.textTertiary),
+          ),
+        ],
         const SizedBox(height: Space.s1),
-        Text(comment.body, style: text.body),
+        Text(
+          comment.tombstone ? '[deleted]' : comment.body,
+          style: text.body.copyWith(
+            color: comment.tombstone ? colors.textTertiary : colors.textPrimary,
+            fontStyle: comment.tombstone ? FontStyle.italic : null,
+          ),
+        ),
         const SizedBox(height: Space.s1),
-        if (!comment.isPending)
+        if (!comment.isPending && !comment.tombstone)
           Row(
             children: <Widget>[
               // The 0021 compact bar: like · save · repost · reply · share —
@@ -401,35 +486,51 @@ class _CommentRow extends ConsumerWidget {
       opacity: comment.isPending ? Opacities.pressed : 1,
       child: Padding(
         padding: EdgeInsets.only(
-          left: row.depth * Space.s6,
+          left: row.depth == 0 ? 0 : (row.depth - 1) * Space.s6,
           top: Space.s3,
           bottom: Space.s3,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            KAvatar(
-              imageUrl: avatarUrl,
-              name: comment.author?.name,
-              size: Space.s8,
-              isVerified: comment.author?.isVerified ?? false,
-            ),
-            const SizedBox(width: Space.s3),
-            Expanded(child: body),
-          ],
+        child: Container(
+          decoration: row.depth == 0
+              ? null
+              : BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: colors.borderDefault,
+                      width: Strokes.hairline,
+                    ),
+                  ),
+                ),
+          padding: EdgeInsets.only(left: row.depth == 0 ? 0 : Space.s4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              KAvatar(
+                imageUrl: comment.tombstone ? null : avatarUrl,
+                name: comment.tombstone ? null : comment.author?.name,
+                size: Space.s8,
+                isVerified:
+                    !comment.tombstone && (comment.author?.isVerified ?? false),
+              ),
+              const SizedBox(width: Space.s3),
+              Expanded(child: body),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _Composer extends StatelessWidget {
-  const _Composer({
+class CommentComposer extends StatelessWidget {
+  /// Creates the shared, keyboard-safe comment composer.
+  const CommentComposer({
     required this.controller,
     required this.focusNode,
     required this.replyTo,
     required this.onCancelReply,
     required this.onSend,
+    super.key,
   });
 
   final TextEditingController controller;
@@ -443,48 +544,66 @@ class _Composer extends StatelessWidget {
     final colors = context.kc;
     final reply = replyTo;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        if (reply != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: Space.s2),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: KChip(
-                label: 'Replying to ${reply.author?.name ?? 'comment'}',
-                icon: Icons.reply_rounded,
-                selected: true,
-                dense: true,
-                onRemove: onCancelReply,
-              ),
-            ),
-          ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface1,
+        border: Border(
+          top: BorderSide(color: colors.borderSubtle, width: Strokes.hairline),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        Space.s4,
+        Space.s2,
+        Space.s4,
+        Space.s2,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Expanded(
-              child: KTextField(
-                controller: controller,
-                focusNode: focusNode,
-                hint: reply == null ? 'Add a comment' : 'Write a reply',
-                maxLines: 4,
-                minLines: 1,
-                maxLength: 1000,
-                textInputAction: TextInputAction.newline,
+            if (reply != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: Space.s2),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: KChip(
+                    label: 'Replying to ${reply.author?.name ?? 'comment'}',
+                    icon: Icons.reply_rounded,
+                    selected: true,
+                    dense: true,
+                    onRemove: onCancelReply,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(width: Space.s2),
-            KIconButton(
-              icon: Icons.send_rounded,
-              semanticLabel: 'Post comment',
-              color: colors.textOnAccent,
-              background: colors.accentDefault,
-              onPressed: onSend,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                Expanded(
+                  child: KTextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    hint: reply == null ? 'Add a comment' : 'Write a reply',
+                    maxLines: 4,
+                    minLines: 1,
+                    maxLength: 1000,
+                    textInputAction: TextInputAction.newline,
+                  ),
+                ),
+                const SizedBox(width: Space.s2),
+                KIconButton(
+                  icon: Icons.send_rounded,
+                  semanticLabel: 'Post comment',
+                  color: colors.textOnAccent,
+                  background: colors.accentDefault,
+                  onPressed: onSend,
+                ),
+              ],
             ),
           ],
         ),
-      ],
+      ),
     );
   }
 }
