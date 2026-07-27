@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../design/motion.dart';
 import '../design/theme.dart';
+import 'k_pressable.dart';
 
 /// What a toast is telling the user.
 enum KToastKind {
@@ -65,17 +66,20 @@ abstract final class KToast {
   }
 
   /// Shorthand for a success toast.
-  static void success(BuildContext context, String message) =>
-      show(context, message,
-          kind: KToastKind.success, icon: Icons.check_rounded);
+  static void success(BuildContext context, String message) => show(
+    context,
+    message,
+    kind: KToastKind.success,
+    icon: Icons.check_rounded,
+  );
 
   /// Shorthand for an error toast.
   static void error(BuildContext context, String message) => show(
-        context,
-        message,
-        kind: KToastKind.error,
-        icon: Icons.error_outline_rounded,
-      );
+    context,
+    message,
+    kind: KToastKind.error,
+    icon: Icons.error_outline_rounded,
+  );
 
   /// Removes the current toast, if any.
   static void dismiss() {
@@ -170,7 +174,9 @@ class _KToastHostState extends State<_KToastHost>
           ),
           if (widget.actionLabel != null) ...<Widget>[
             const SizedBox(width: Space.s4),
-            GestureDetector(
+            KPressable(
+              enforceMinTapTarget: false,
+              semanticLabel: widget.actionLabel!,
               onTap: widget.onAction,
               child: Text(
                 widget.actionLabel!,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/feedback/interaction_feedback.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
 
@@ -53,7 +54,12 @@ class SettingsSectionHeader extends StatelessWidget {
 /// of identical grey slabs.
 class SettingsSection extends StatelessWidget {
   /// Creates a section.
-  const SettingsSection({required this.children, super.key, this.header, this.note});
+  const SettingsSection({
+    required this.children,
+    super.key,
+    this.header,
+    this.note,
+  });
 
   /// The rows, in order. Use the flat row widgets from this file.
   final List<Widget> children;
@@ -98,10 +104,10 @@ class _RowDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        height: Strokes.hairline,
-        margin: const EdgeInsetsDirectional.only(start: Space.s4),
-        color: context.kc.borderSubtle,
-      );
+    height: Strokes.hairline,
+    margin: const EdgeInsetsDirectional.only(start: Space.s4),
+    color: context.kc.borderSubtle,
+  );
 }
 
 /// The tinted square behind a row's leading glyph.
@@ -201,12 +207,16 @@ class SettingsRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(title, style: context.kt.bodyStrong.copyWith(color: tint)),
+                  Text(
+                    title,
+                    style: context.kt.bodyStrong.copyWith(color: tint),
+                  ),
                   if (subtitle != null)
                     Text(
                       subtitle!,
-                      style: context.kt.caption
-                          .copyWith(color: colors.textTertiary),
+                      style: context.kt.caption.copyWith(
+                        color: colors.textTertiary,
+                      ),
                     ),
                 ],
               ),
@@ -215,8 +225,7 @@ class SettingsRow extends StatelessWidget {
               const SizedBox(width: Space.s3),
               Text(
                 value!,
-                style: context.kt.callout
-                    .copyWith(color: colors.textSecondary),
+                style: context.kt.callout.copyWith(color: colors.textSecondary),
               ),
             ],
             const SizedBox(width: Space.s1),
@@ -286,15 +295,22 @@ class SettingsToggleRow extends StatelessWidget {
                   if (subtitle != null)
                     Text(
                       subtitle!,
-                      style: context.kt.caption
-                          .copyWith(color: colors.textTertiary),
+                      style: context.kt.caption.copyWith(
+                        color: colors.textTertiary,
+                      ),
                     ),
                 ],
               ),
             ),
             const SizedBox(width: Space.s3),
             ExcludeSemantics(
-              child: Switch(value: value, onChanged: onChanged),
+              child: Switch(
+                value: value,
+                onChanged: (next) {
+                  triggerInteractionTapFeedback(context);
+                  onChanged(next);
+                },
+              ),
             ),
           ],
         ),
@@ -358,8 +374,9 @@ class SettingsChoiceRow extends StatelessWidget {
                   if (subtitle != null)
                     Text(
                       subtitle!,
-                      style: context.kt.caption
-                          .copyWith(color: colors.textTertiary),
+                      style: context.kt.caption.copyWith(
+                        color: colors.textTertiary,
+                      ),
                     ),
                 ],
               ),

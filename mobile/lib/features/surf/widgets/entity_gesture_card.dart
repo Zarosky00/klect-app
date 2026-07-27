@@ -1,11 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/links.dart';
 import '../../../design/motion.dart';
@@ -30,7 +26,7 @@ import 'peek_menu.dart';
 /// window. A naive `GestureDetector(onTap:, onDoubleTap:)` would charge every
 /// single tap ~260ms for the privilege, and that is what makes an app feel
 /// cheap.
-class KEntityGestureCard extends ConsumerWidget {
+class KEntityGestureCard extends StatelessWidget {
   /// Wraps [child] in the gesture contract for [entity].
   const KEntityGestureCard({
     required this.entity,
@@ -91,13 +87,7 @@ class KEntityGestureCard extends ConsumerWidget {
   /// single tap is now definitive.
   final VoidCallback? onSettled;
 
-  void _open(BuildContext context, WidgetRef ref) {
-    ref
-        .read(interactionFeedbackProvider.notifier)
-        .begin(
-          action: InteractionFeedbackAction.imageOpen,
-          targetKey: entity.key,
-        );
+  void _open(BuildContext context) {
     final override = onOpen;
     if (override != null) {
       override();
@@ -106,15 +96,7 @@ class KEntityGestureCard extends ConsumerWidget {
     context.push(KlectLinks.closeupPath(entity.type, entity.id));
   }
 
-  void _escalate(BuildContext context, WidgetRef ref) {
-    unawaited(
-      ref
-          .read(interactionFeedbackProvider.notifier)
-          .local(
-            action: InteractionFeedbackAction.immersiveOpen,
-            targetKey: entity.key,
-          ),
-    );
+  void _escalate(BuildContext context) {
     final override = onImmersive;
     if (override != null) {
       override();
@@ -129,13 +111,13 @@ class KEntityGestureCard extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final content = pressFeedback ? KPressFeedback(child: child) : child;
     return KGestureRegion(
       enabled: enabled,
       semanticLabel: title,
-      onTap: () => _open(context, ref),
-      onDoubleTap: () => _escalate(context, ref),
+      onTap: () => _open(context),
+      onDoubleTap: () => _escalate(context),
       onTapSettled: onSettled,
       onLongPress: () => KPeekMenu.show(
         context,

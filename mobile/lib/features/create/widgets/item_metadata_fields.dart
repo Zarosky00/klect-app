@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
@@ -13,25 +14,26 @@ import '../create_providers.dart';
 class ItemDraft {
   /// Creates a draft, optionally pre-filled from an existing row.
   ItemDraft({ItemModel? from})
-      : title = TextEditingController(text: from?.title ?? ''),
-        description = TextEditingController(text: from?.description ?? ''),
-        brand = TextEditingController(text: from?.brand ?? ''),
-        model = TextEditingController(text: from?.model ?? ''),
-        year = TextEditingController(text: from?.year?.toString() ?? ''),
-        acquisitionPlace =
-            TextEditingController(text: from?.acquisitionPlace ?? ''),
-        price = TextEditingController(
-          text: from?.purchasePrice == null
-              ? ''
-              : _trimZeros(from!.purchasePrice!),
-        ),
-        condition = from?.condition,
-        rarity = from?.rarity,
-        acquisitionDate = from?.acquisitionDate,
-        currency = from?.currency ?? kCurrencyOptions.first,
-        isFavorite = from?.isFavorite ?? false,
-        visibility = from?.visibility,
-        tags = <String>[...asStringList(from?.attributes['tags'])];
+    : title = TextEditingController(text: from?.title ?? ''),
+      description = TextEditingController(text: from?.description ?? ''),
+      brand = TextEditingController(text: from?.brand ?? ''),
+      model = TextEditingController(text: from?.model ?? ''),
+      year = TextEditingController(text: from?.year?.toString() ?? ''),
+      acquisitionPlace = TextEditingController(
+        text: from?.acquisitionPlace ?? '',
+      ),
+      price = TextEditingController(
+        text: from?.purchasePrice == null
+            ? ''
+            : _trimZeros(from!.purchasePrice!),
+      ),
+      condition = from?.condition,
+      rarity = from?.rarity,
+      acquisitionDate = from?.acquisitionDate,
+      currency = from?.currency ?? kCurrencyOptions.first,
+      isFavorite = from?.isFavorite ?? false,
+      visibility = from?.visibility,
+      tags = <String>[...asStringList(from?.attributes['tags'])];
 
   /// Item title. Required.
   final TextEditingController title;
@@ -308,6 +310,7 @@ class ItemMetadataFields extends StatelessWidget {
               value: draft.isFavorite,
               onChanged: enabled
                   ? (value) {
+                      triggerInteractionTapFeedback(context);
                       draft.isFavorite = value;
                       onChanged();
                     }
@@ -361,7 +364,10 @@ class _TagFieldState extends State<TagField> {
   }
 
   void _add(String raw) {
-    final value = raw.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9_-]'), '');
+    final value = raw.trim().toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9_-]'),
+      '',
+    );
     if (value.isEmpty ||
         widget.tags.contains(value) ||
         widget.tags.length >= widget.maxTags) {
@@ -372,12 +378,10 @@ class _TagFieldState extends State<TagField> {
     _input.clear();
   }
 
-  void _remove(String value) => widget.onChanged(
-        <String>[
-          for (final tag in widget.tags)
-            if (tag != value) tag,
-        ],
-      );
+  void _remove(String value) => widget.onChanged(<String>[
+    for (final tag in widget.tags)
+      if (tag != value) tag,
+  ]);
 
   @override
   Widget build(BuildContext context) {
@@ -467,7 +471,10 @@ class _ChipGroup extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Text(label, style: context.kt.label.copyWith(color: colors.textSecondary)),
+        Text(
+          label,
+          style: context.kt.label.copyWith(color: colors.textSecondary),
+        ),
         const SizedBox(height: Space.s2),
         Wrap(
           spacing: Space.s2,
@@ -506,7 +513,7 @@ class _AcquisitionDateField extends StatelessWidget {
     final label = value == null
         ? 'Pick a date'
         : '${value!.year}-${value!.month.toString().padLeft(2, '0')}-'
-            '${value!.day.toString().padLeft(2, '0')}';
+              '${value!.day.toString().padLeft(2, '0')}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -613,6 +620,7 @@ class _CurrencyField extends StatelessWidget {
             child: DropdownButton<String>(
               value: value,
               isDense: true,
+              enableFeedback: false,
               borderRadius: BorderRadius.circular(Radii.md),
               dropdownColor: colors.surface3,
               style: context.kt.body,
@@ -623,8 +631,14 @@ class _CurrencyField extends StatelessWidget {
               ),
               onChanged: enabled
                   ? (next) {
-                      if (next != null) onChanged(next);
+                      if (next != null) {
+                        triggerInteractionTapFeedback(context);
+                        onChanged(next);
+                      }
                     }
+                  : null,
+              onTap: enabled
+                  ? () => triggerInteractionTapFeedback(context)
                   : null,
               items: <DropdownMenuItem<String>>[
                 for (final code in kCurrencyOptions)

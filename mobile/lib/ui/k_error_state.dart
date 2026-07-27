@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/api/api_error.dart';
 import '../design/theme.dart';
 import 'k_empty_state.dart';
+import 'k_pressable.dart';
 
 /// Every error state offers a retry. There are no dead ends.
 ///
@@ -42,37 +43,39 @@ class KErrorState extends StatelessWidget {
     final normalised = error == null ? null : KlectError.from(error!);
     return switch (normalised?.kind) {
       KlectErrorKind.network => (
-          title: 'You are offline',
-          message: 'We will pick this up the moment you are back. '
-              'Anything you tapped is saved.',
-          icon: Icons.wifi_off_rounded,
-        ),
+        title: 'You are offline',
+        message:
+            'We will pick this up the moment you are back. '
+            'Anything you tapped is saved.',
+        icon: Icons.wifi_off_rounded,
+      ),
       KlectErrorKind.forbidden => (
-          title: 'Not available',
-          message: 'This is no longer visible to you.',
-          icon: Icons.lock_outline_rounded,
-        ),
+        title: 'Not available',
+        message: 'This is no longer visible to you.',
+        icon: Icons.lock_outline_rounded,
+      ),
       KlectErrorKind.suspended => (
-          title: 'Account suspended',
-          message: normalised?.message ??
-              'Your account is suspended, so this action was refused.',
-          icon: Icons.gavel_rounded,
-        ),
+        title: 'Account suspended',
+        message:
+            normalised?.message ??
+            'Your account is suspended, so this action was refused.',
+        icon: Icons.gavel_rounded,
+      ),
       KlectErrorKind.notFound => (
-          title: 'Gone',
-          message: 'Whatever was here has been removed.',
-          icon: Icons.search_off_rounded,
-        ),
+        title: 'Gone',
+        message: 'Whatever was here has been removed.',
+        icon: Icons.search_off_rounded,
+      ),
       KlectErrorKind.messagesBlocked => (
-          title: 'Messages closed',
-          message: 'This person is not accepting messages.',
-          icon: Icons.forum_outlined,
-        ),
+        title: 'Messages closed',
+        message: 'This person is not accepting messages.',
+        icon: Icons.forum_outlined,
+      ),
       _ => (
-          title: 'Something broke',
-          message: normalised?.message ?? 'That did not work. Try once more.',
-          icon: Icons.error_outline_rounded,
-        ),
+        title: 'Something broke',
+        message: normalised?.message ?? 'That did not work. Try once more.',
+        icon: Icons.error_outline_rounded,
+      ),
     };
   }
 
@@ -129,7 +132,9 @@ class KInlineError extends StatelessWidget {
             ),
           ),
           if (onRetry != null)
-            GestureDetector(
+            KPressable(
+              enforceMinTapTarget: false,
+              semanticLabel: 'Retry',
               onTap: onRetry,
               child: Text(
                 'Retry',

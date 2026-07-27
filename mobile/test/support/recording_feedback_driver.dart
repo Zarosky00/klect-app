@@ -1,29 +1,24 @@
 import 'package:klect/core/feedback/interaction_feedback.dart';
 
-/// Records effects without touching audio or haptic platform channels.
+/// One invocation of the platform-native tap boundary.
+class RecordedTapFeedback {
+  /// Creates a recorded call.
+  const RecordedTapFeedback({required this.sound, required this.haptic});
+
+  /// Whether the Android system click was requested.
+  final bool sound;
+
+  /// Whether the light selection haptic was requested.
+  final bool haptic;
+}
+
+/// Records effects without touching platform channels.
 class RecordingFeedbackDriver implements InteractionFeedbackDriver {
-  int preloadCalls = 0;
-  int disposeCalls = 0;
-  final List<InteractionFeedbackSound> sounds = <InteractionFeedbackSound>[];
-  final List<InteractionFeedbackHaptic> haptics = <InteractionFeedbackHaptic>[];
+  /// Every accepted tap in call order.
+  final List<RecordedTapFeedback> taps = <RecordedTapFeedback>[];
 
   @override
-  Future<void> preload() async {
-    preloadCalls++;
-  }
-
-  @override
-  Future<void> play(InteractionFeedbackSound sound) async {
-    sounds.add(sound);
-  }
-
-  @override
-  Future<void> haptic(InteractionFeedbackHaptic haptic) async {
-    haptics.add(haptic);
-  }
-
-  @override
-  Future<void> dispose() async {
-    disposeCalls++;
+  Future<void> tap({required bool sound, required bool haptic}) async {
+    taps.add(RecordedTapFeedback(sound: sound, haptic: haptic));
   }
 }

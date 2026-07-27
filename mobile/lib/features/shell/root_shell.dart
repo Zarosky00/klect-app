@@ -9,18 +9,16 @@ import '../../core/api/klect_api.dart';
 import '../../core/supabase.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
+import '../../ui/k_pressable.dart';
 import '../notifications/notification_events.dart';
 import '../notifications/notification_surfaces.dart';
 import 'update_banner.dart';
 
 /// Unread notification count, for the tab badge.
-final unreadNotificationCountProvider = FutureProvider<int>(
-  (ref) async {
-    if (ref.watch(currentUserIdProvider) == null) return 0;
-    return ref.watch(klectApiProvider).fetchUnreadNotificationCount();
-  },
-  name: 'unreadNotificationCount',
-);
+final unreadNotificationCountProvider = FutureProvider<int>((ref) async {
+  if (ref.watch(currentUserIdProvider) == null) return 0;
+  return ref.watch(klectApiProvider).fetchUnreadNotificationCount();
+}, name: 'unreadNotificationCount');
 
 /// The five-tab shell: surf · pulse · create · notifications · profile.
 ///
@@ -202,8 +200,8 @@ class _Tab extends StatelessWidget {
         button: true,
         label: badge > 0 ? '$label, $badge unread' : label,
         excludeSemantics: true,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        child: KPressable(
+          enforceMinTapTarget: false,
           // `initialLocation: true` on a re-tap pops that branch to its root,
           // which is the behaviour people expect from a tab bar.
           onTap: () => shell.goBranch(index, initialLocation: selected),
@@ -240,8 +238,9 @@ class _Tab extends StatelessWidget {
                         child: Text(
                           badge > 99 ? '99+' : '$badge',
                           textAlign: TextAlign.center,
-                          style: context.kt.micro
-                              .copyWith(color: colors.textInverse),
+                          style: context.kt.micro.copyWith(
+                            color: colors.textInverse,
+                          ),
                         ),
                       ),
                     ),

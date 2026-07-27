@@ -715,8 +715,8 @@ class _TabButton extends StatelessWidget {
       button: true,
       label: tab.label,
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: KPressable(
+        enforceMinTapTarget: false,
         onTap: onTap,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

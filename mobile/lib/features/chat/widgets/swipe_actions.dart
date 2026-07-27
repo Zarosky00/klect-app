@@ -3,6 +3,7 @@ import 'package:flutter/physics.dart';
 
 import '../../../design/motion.dart';
 import '../../../design/theme.dart';
+import '../../../ui/k_pressable.dart';
 
 /// One action revealed by swiping a row.
 class SwipeAction {
@@ -102,7 +103,8 @@ class _KSwipeActionsState extends State<KSwipeActions>
 
   void _onDragEnd(DragEndDetails details) {
     final velocity = -details.velocity.pixelsPerSecond.dx;
-    final shouldOpen = velocity > _actionWidth || _controller.value > _extent / 2;
+    final shouldOpen =
+        velocity > _actionWidth || _controller.value > _extent / 2;
     _settle(shouldOpen ? _extent : 0, velocity: velocity);
   }
 
@@ -175,17 +177,19 @@ class _ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    final background = action.tint ??
+    final background =
+        action.tint ??
         (action.destructive ? colors.semanticDangerSubtle : colors.surface2);
-    final foreground =
-        action.destructive ? colors.semanticDanger : colors.textSecondary;
+    final foreground = action.destructive
+        ? colors.semanticDanger
+        : colors.textSecondary;
 
     return Semantics(
       button: true,
       label: action.label,
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: KPressable(
+        enforceMinTapTarget: false,
         onTap: onTap,
         child: Container(
           width: width,
