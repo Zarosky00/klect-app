@@ -22,7 +22,7 @@ void main() {
   );
 
   group('native tap feedback', () {
-    test('one accepted tap requests the one sound and haptic', () async {
+    test('one accepted tap defaults to sound without haptic', () async {
       final driver = RecordingFeedbackDriver();
       final container = harness(driver);
 
@@ -30,7 +30,7 @@ void main() {
 
       expect(driver.taps, hasLength(1));
       expect(driver.taps.single.sound, isTrue);
-      expect(driver.taps.single.haptic, isTrue);
+      expect(driver.taps.single.haptic, isFalse);
     });
 
     test('sound and haptic preferences remain independent', () async {
@@ -39,6 +39,7 @@ void main() {
         soundOff,
         stored: <String, String>{
           AppSettingsController.interactionSoundsKey: 'false',
+          AppSettingsController.hapticsKey: 'true',
         },
       );
       await soundOffContainer.read(interactionFeedbackProvider.notifier).tap();

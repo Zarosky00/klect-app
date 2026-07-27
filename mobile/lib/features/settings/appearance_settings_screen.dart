@@ -70,7 +70,8 @@ class AppearanceSettingsScreen extends ConsumerWidget {
               ),
               SettingsToggleRow(
                 title: 'Haptic feedback',
-                subtitle: 'A light selection click for in-app controls.',
+                subtitle:
+                    'Optional light touch feedback. Off by default on new installs.',
                 icon: Icons.vibration_rounded,
                 value: settings.hapticsEnabled,
                 onChanged: controller.setHapticsEnabled,

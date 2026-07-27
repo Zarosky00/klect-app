@@ -39,9 +39,9 @@ class PulseCard extends ConsumerWidget {
 
   /// Whose name and avatar head the card.
   Profile? get _presenter => switch (item.kind) {
-        PulseKind.quote => item.reposter ?? item.author,
-        _ => item.author ?? item.reposter,
-      };
+    PulseKind.quote => item.reposter ?? item.author,
+    _ => item.author ?? item.reposter,
+  };
 
   /// The "X reposted" line, shown only for a bare repost — a quote already
   /// reads as the quoter's own post.
@@ -98,10 +98,29 @@ class PulseCard extends ConsumerWidget {
     final body = inlinePost == null
         ? item.text
         : (inlinePost.unavailable ? null : inlinePost.body);
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
-          presenter?.avatarPath,
-          bucket: StorageBucket.avatars,
-        );
+    final actionEntity = item.entity;
+    final firstMedia = item.media.isEmpty ? null : item.media.first;
+    final quotePreview = actionEntity.type == EntityType.post
+        ? inlinePost ??
+              PulseTarget(
+                id: actionEntity.id,
+                type: EntityType.post,
+                body: body,
+                coverPath: firstMedia?.storagePath,
+                coverBlurhash: firstMedia?.blurhash,
+                coverWidth: firstMedia?.width,
+                coverHeight: firstMedia?.height,
+                createdAt: item.sortAt,
+                author: presenter,
+              )
+        : (item.target?.id == actionEntity.id ? item.target : null);
+    final quoteMedia =
+        actionEntity.type == EntityType.post && inlinePost == null
+        ? item.media
+        : const <ItemMedia>[];
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(presenter?.avatarPath, bucket: StorageBucket.avatars);
     final destination = _destination;
 
     return KGestureRegion(
@@ -153,8 +172,7 @@ class PulseCard extends ConsumerWidget {
                         '${reposter.name} reposted',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: text.micro
-                            .copyWith(color: colors.textSecondary),
+                        style: text.micro.copyWith(color: colors.textSecondary),
                       ),
                     ),
                   ],
@@ -171,8 +189,9 @@ class PulseCard extends ConsumerWidget {
                   isVerified: presenter?.isVerified ?? false,
                   onTap: presenter == null || presenter.username.isEmpty
                       ? null
-                      : () => context
-                          .push(KlectLinks.profilePath(presenter.username)),
+                      : () => context.push(
+                          KlectLinks.profilePath(presenter.username),
+                        ),
                 ),
                 const SizedBox(width: Space.s3),
                 Expanded(
@@ -215,11 +234,13 @@ class PulseCard extends ConsumerWidget {
                       ],
                       const SizedBox(height: Space.s2),
                       KActionBar(
-                        entity: item.entity,
+                        entity: actionEntity,
                         seed: item.seed,
                         compact: true,
                         alignment: MainAxisAlignment.start,
                         shareTitle: body ?? presenter?.name,
+                        quotePreview: quotePreview,
+                        quoteMedia: quoteMedia,
                         onComment: destination == null
                             ? null
                             : () => context.push(destination),
@@ -294,8 +315,7 @@ class PostMediaGrid extends ConsumerWidget {
     double width,
     double? maxHeight,
   ) {
-    final clamped =
-        intrinsic.clamp(Aspect.gridMin, Aspect.gridMax).toDouble();
+    final clamped = intrinsic.clamp(Aspect.gridMin, Aspect.gridMax).toDouble();
     if (maxHeight == null || maxHeight <= 0 || width <= 0) return clamped;
     final floor = width / maxHeight;
     return clamped < floor ? floor : clamped;
@@ -308,12 +328,12 @@ class PostMediaGrid extends ConsumerWidget {
     final shots = media.take(4).toList(growable: false);
 
     Widget image(ItemMedia m, {double? aspectRatio}) => KBlurhashImage(
-          url: api.publicUrl(m.storagePath),
-          blurhash: m.blurhash,
-          aspectRatio: aspectRatio,
-          borderRadius: BorderRadius.zero,
-          semanticLabel: m.altText ?? 'Post photo',
-        );
+      url: api.publicUrl(m.storagePath),
+      blurhash: m.blurhash,
+      aspectRatio: aspectRatio,
+      borderRadius: BorderRadius.zero,
+      semanticLabel: m.altText ?? 'Post photo',
+    );
 
     if (shots.length == 1) {
       final m = shots.first;
@@ -337,50 +357,50 @@ class PostMediaGrid extends ConsumerWidget {
 
     final grid = switch (shots.length) {
       2 => Row(
-          children: <Widget>[
-            Expanded(child: image(shots[0])),
-            const SizedBox(width: _gap),
-            Expanded(child: image(shots[1])),
-          ],
-        ),
+        children: <Widget>[
+          Expanded(child: image(shots[0])),
+          const SizedBox(width: _gap),
+          Expanded(child: image(shots[1])),
+        ],
+      ),
       3 => Row(
-          children: <Widget>[
-            Expanded(child: image(shots[0])),
-            const SizedBox(width: _gap),
-            Expanded(
-              child: Column(
-                children: <Widget>[
-                  Expanded(child: image(shots[1])),
-                  const SizedBox(height: _gap),
-                  Expanded(child: image(shots[2])),
-                ],
-              ),
+        children: <Widget>[
+          Expanded(child: image(shots[0])),
+          const SizedBox(width: _gap),
+          Expanded(
+            child: Column(
+              children: <Widget>[
+                Expanded(child: image(shots[1])),
+                const SizedBox(height: _gap),
+                Expanded(child: image(shots[2])),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
       _ => Column(
-          children: <Widget>[
-            Expanded(
-              child: Row(
-                children: <Widget>[
-                  Expanded(child: image(shots[0])),
-                  const SizedBox(width: _gap),
-                  Expanded(child: image(shots[1])),
-                ],
-              ),
+        children: <Widget>[
+          Expanded(
+            child: Row(
+              children: <Widget>[
+                Expanded(child: image(shots[0])),
+                const SizedBox(width: _gap),
+                Expanded(child: image(shots[1])),
+              ],
             ),
-            const SizedBox(height: _gap),
-            Expanded(
-              child: Row(
-                children: <Widget>[
-                  Expanded(child: image(shots[2])),
-                  const SizedBox(width: _gap),
-                  Expanded(child: image(shots[3])),
-                ],
-              ),
+          ),
+          const SizedBox(height: _gap),
+          Expanded(
+            child: Row(
+              children: <Widget>[
+                Expanded(child: image(shots[2])),
+                const SizedBox(width: _gap),
+                Expanded(child: image(shots[3])),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     };
 
     return ClipRRect(

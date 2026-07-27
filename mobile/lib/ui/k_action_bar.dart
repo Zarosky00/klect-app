@@ -32,6 +32,8 @@ class KActionBar extends ConsumerStatefulWidget {
     this.showViews = false,
     this.showShare = true,
     this.alignment = MainAxisAlignment.spaceBetween,
+    this.quotePreview,
+    this.quoteMedia = const <ItemMedia>[],
   });
 
   /// Which entity these actions apply to.
@@ -61,6 +63,12 @@ class KActionBar extends ConsumerStatefulWidget {
 
   /// Row alignment.
   final MainAxisAlignment alignment;
+
+  /// Already-loaded representation of this entity for an immediate quote.
+  final PulseTarget? quotePreview;
+
+  /// Original post media shown inside the immutable quote preview.
+  final List<ItemMedia> quoteMedia;
 
   @override
   ConsumerState<KActionBar> createState() => _KActionBarState();
@@ -146,7 +154,14 @@ class _KActionBarState extends ConsumerState<KActionBar> {
       case _RepostChoice.repost:
         unawaited(_controller.toggleRepost());
       case _RepostChoice.quote:
-        final entry = await PulseComposer.show(context, subject: widget.entity);
+        final entry = await PulseComposer.show(
+          context,
+          subject: PulseComposerSubject(
+            entity: widget.entity,
+            preview: widget.quotePreview,
+            media: widget.quoteMedia,
+          ),
+        );
         if (entry != null && mounted) {
           KToast.success(context, 'Shared to Pulse');
         }

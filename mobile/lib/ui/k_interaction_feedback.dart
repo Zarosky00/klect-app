@@ -3,19 +3,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/api/klect_api.dart';
 import '../core/feedback/interaction_feedback.dart';
+import '../core/models/enums.dart';
 import '../design/motion.dart';
 import '../design/theme.dart';
+import 'k_avatar.dart';
 
-/// Renders concise action outcomes in the app's top-right corner.
+/// Renders follow outcomes and exceptional social-action notices above the app.
 ///
-/// Accepted taps receive platform feedback at the control itself. This host
-/// only presents follow confirmations and queued/failed social outcomes.
+/// Follow outcomes use the wide avatar-backed panel from the supplied visual
+/// reference. Queued and failed non-follow actions retain the smaller corner
+/// treatment so routine social activity never becomes noisy.
 class KInteractionFeedbackHost extends ConsumerStatefulWidget {
   /// Wraps the app router with the global outcome presentation layer.
   const KInteractionFeedbackHost({required this.child, super.key});
 
-  /// The application below the floating status pill.
+  /// The application below the floating outcome presentation.
   final Widget child;
 
   @override
@@ -36,7 +40,7 @@ class _KInteractionFeedbackHostState
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: KDurations.base,
+      duration: KDurations.medium,
       reverseDuration: KDurations.fast,
     );
   }
@@ -92,40 +96,66 @@ class _KInteractionFeedbackHostState
 
     final event = _event;
     final content = event == null ? null : _contentFor(event);
+    final avatarUrl =
+        content?.presentation == _ToastPresentation.followPanel &&
+            content?.avatarPath != null
+        ? ref
+              .watch(klectApiProvider)
+              .publicUrl(content?.avatarPath, bucket: StorageBucket.avatars)
+        : null;
+
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
         widget.child,
         if (content != null)
-          _InteractionStatusPill(
-            content: content,
-            animation: _controller,
-            onDismiss: () => unawaited(_dismiss()),
-          ),
+          switch (content.presentation) {
+            _ToastPresentation.followPanel => _FollowOutcomePanel(
+              content: content,
+              avatarUrl: avatarUrl,
+              animation: _controller,
+              onDismiss: () => unawaited(_dismiss()),
+            ),
+            _ToastPresentation.compact => _InteractionStatusPill(
+              content: content,
+              animation: _controller,
+              onDismiss: () => unawaited(_dismiss()),
+            ),
+          },
       ],
     );
   }
 }
 
+enum _ToastPresentation { followPanel, compact }
+
 @immutable
 class _ToastContent {
   const _ToastContent({
     required this.title,
+    required this.semanticLabel,
     required this.icon,
     required this.tone,
     required this.dwell,
+    required this.presentation,
+    this.targetName,
+    this.avatarPath,
   });
 
   final String title;
+  final String semanticLabel;
   final IconData icon;
   final _ToastTone tone;
   final Duration dwell;
+  final _ToastPresentation presentation;
+  final String? targetName;
+  final String? avatarPath;
 }
 
 enum _ToastTone { success, neutral, like, save, repost, warning, error }
 
-const Duration _successDwell = Duration(milliseconds: 1800);
-const Duration _attentionDwell = Duration(milliseconds: 2600);
+final Duration _successDwell = KDurations.deliberate * 5;
+final Duration _attentionDwell = KDurations.base * 16;
 
 _ToastContent? _contentFor(InteractionFeedbackEvent event) {
   if (event.result == InteractionFeedbackResult.intent) return null;
@@ -140,57 +170,76 @@ _ToastContent? _contentFor(InteractionFeedbackEvent event) {
       : 'this collector';
 
   if (event.action == InteractionFeedbackAction.follow) {
-    return switch (event.result) {
+    final content = switch (event.result) {
       InteractionFeedbackResult.confirmed =>
         active
-            ? _ToastContent(
-                title: 'Following $name',
-                icon: Icons.check_rounded,
-                tone: _ToastTone.success,
-                dwell: _successDwell,
+            ? (
+                'Following! Their new shelves and posts will appear in your Pulse.',
+                _ToastTone.success,
+                _successDwell,
               )
-            : _ToastContent(
-                title: 'Unfollowed $name',
-                icon: Icons.remove_rounded,
-                tone: _ToastTone.neutral,
-                dwell: _successDwell,
+            : (
+                'Unfollowed. Their new activity will no longer appear in your Pulse.',
+                _ToastTone.neutral,
+                _successDwell,
               ),
-      InteractionFeedbackResult.queued => _ToastContent(
-        title: '${active ? 'Follow' : 'Unfollow'} queued \u00b7 $name',
-        icon: Icons.schedule_rounded,
-        tone: _ToastTone.warning,
-        dwell: _attentionDwell,
-      ),
-      InteractionFeedbackResult.failed => _ToastContent(
-        title:
-            '${active ? 'Couldn\u2019t follow' : 'Couldn\u2019t unfollow'} $name',
-        icon: Icons.error_outline_rounded,
-        tone: _ToastTone.error,
-        dwell: _attentionDwell,
-      ),
+      InteractionFeedbackResult.queued =>
+        active
+            ? (
+                'Follow queued. We\u2019ll add their activity when you\u2019re back online.',
+                _ToastTone.warning,
+                _attentionDwell,
+              )
+            : (
+                'Unfollow queued. We\u2019ll update your Pulse when you\u2019re back online.',
+                _ToastTone.warning,
+                _attentionDwell,
+              ),
+      InteractionFeedbackResult.failed =>
+        active
+            ? (
+                'Couldn\u2019t follow $name. Nothing changed\u2014try again.',
+                _ToastTone.error,
+                _attentionDwell,
+              )
+            : (
+                'Couldn\u2019t unfollow $name. Nothing changed\u2014try again.',
+                _ToastTone.error,
+                _attentionDwell,
+              ),
       InteractionFeedbackResult.intent => throw StateError('Filtered above'),
     };
+
+    return _ToastContent(
+      title: content.$1,
+      semanticLabel:
+          '${active ? 'Following' : 'Unfollowed'} $name. '
+          '${content.$1}',
+      icon: Icons.person_rounded,
+      tone: content.$2,
+      dwell: content.$3,
+      presentation: _ToastPresentation.followPanel,
+      targetName: name,
+      avatarPath: event.targetAvatarPath,
+    );
   }
 
   if (event.result == InteractionFeedbackResult.queued) {
     return switch (event.action) {
-      InteractionFeedbackAction.like => _ToastContent(
+      InteractionFeedbackAction.like => _compact(
         title: active ? 'Like queued' : 'Unlike queued',
         icon: Icons.schedule_rounded,
         tone: _ToastTone.like,
-        dwell: _attentionDwell,
       ),
-      InteractionFeedbackAction.save => _ToastContent(
+      InteractionFeedbackAction.save => _compact(
         title: active ? 'Save queued' : 'Remove save queued',
         icon: Icons.schedule_rounded,
         tone: _ToastTone.save,
-        dwell: _attentionDwell,
       ),
-      InteractionFeedbackAction.repost => _ToastContent(
+      InteractionFeedbackAction.repost => _compact(
         title: active ? 'Repost queued' : 'Undo repost queued',
         icon: Icons.schedule_rounded,
         tone: _ToastTone.repost,
-        dwell: _attentionDwell,
       ),
       InteractionFeedbackAction.follow => throw StateError('Handled above'),
     };
@@ -198,33 +247,150 @@ _ToastContent? _contentFor(InteractionFeedbackEvent event) {
 
   if (event.result == InteractionFeedbackResult.failed) {
     return switch (event.action) {
-      InteractionFeedbackAction.like => _ToastContent(
+      InteractionFeedbackAction.like => _compact(
         title: active ? 'Couldn\u2019t like this' : 'Couldn\u2019t unlike this',
         icon: Icons.error_outline_rounded,
         tone: _ToastTone.error,
-        dwell: _attentionDwell,
       ),
-      InteractionFeedbackAction.save => _ToastContent(
+      InteractionFeedbackAction.save => _compact(
         title: active
             ? 'Couldn\u2019t save this'
             : 'Couldn\u2019t remove this save',
         icon: Icons.error_outline_rounded,
         tone: _ToastTone.error,
-        dwell: _attentionDwell,
       ),
-      InteractionFeedbackAction.repost => _ToastContent(
+      InteractionFeedbackAction.repost => _compact(
         title: active
             ? 'Couldn\u2019t repost this'
             : 'Couldn\u2019t undo the repost',
         icon: Icons.error_outline_rounded,
         tone: _ToastTone.error,
-        dwell: _attentionDwell,
       ),
       InteractionFeedbackAction.follow => throw StateError('Handled above'),
     };
   }
 
   return null;
+}
+
+_ToastContent _compact({
+  required String title,
+  required IconData icon,
+  required _ToastTone tone,
+}) => _ToastContent(
+  title: title,
+  semanticLabel: title,
+  icon: icon,
+  tone: tone,
+  dwell: _attentionDwell,
+  presentation: _ToastPresentation.compact,
+);
+
+class _FollowOutcomePanel extends StatelessWidget {
+  const _FollowOutcomePanel({
+    required this.content,
+    required this.avatarUrl,
+    required this.animation,
+    required this.onDismiss,
+  });
+
+  final _ToastContent content;
+  final String? avatarUrl;
+  final Animation<double> animation;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = KMotion.reduced(context);
+    final scheme = Theme.of(context).colorScheme;
+    final fade = CurvedAnimation(
+      parent: animation,
+      curve: reduced ? KCurves.linear : KCurves.emphasized,
+      reverseCurve: KCurves.accelerate,
+    );
+    final settle = CurvedAnimation(
+      parent: animation,
+      curve: reduced ? KCurves.linear : KCurves.overshoot,
+      reverseCurve: KCurves.accelerate,
+    );
+
+    final panel = Semantics(
+      liveRegion: true,
+      container: true,
+      label: content.semanticLabel,
+      child: ExcludeSemantics(
+        child: Container(
+          key: const ValueKey<String>('interaction-follow-panel'),
+          constraints: const BoxConstraints(maxWidth: Layout.readableMaxWidth),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Space.s3,
+            vertical: Space.s2,
+          ),
+          decoration: BoxDecoration(
+            color: scheme.inverseSurface,
+            borderRadius: BorderRadius.circular(Radii.xl),
+            boxShadow: KlectTheme.shadow(Elevation.high),
+          ),
+          child: Row(
+            children: <Widget>[
+              KAvatar(
+                imageUrl: avatarUrl,
+                name: content.targetName,
+                size: Space.s10,
+              ),
+              const SizedBox(width: Space.s3),
+              Expanded(
+                child: Text(
+                  content.title,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.kt.bodyStrong.copyWith(
+                    color: scheme.onInverseSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final animated = FadeTransition(
+      opacity: fade,
+      child: reduced
+          ? panel
+          : SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, -0.34),
+                end: Offset.zero,
+              ).animate(settle),
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.96, end: 1).animate(settle),
+                child: panel,
+              ),
+            ),
+    );
+
+    return Positioned(
+      top: MediaQuery.viewPaddingOf(context).top + Space.s3,
+      left: Space.s4,
+      right: Space.s4,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          triggerInteractionTapFeedback(context);
+          onDismiss();
+        },
+        onVerticalDragEnd: (details) {
+          if ((details.primaryVelocity ?? 0) < -80) onDismiss();
+        },
+        onHorizontalDragEnd: (details) {
+          if ((details.primaryVelocity ?? 0).abs() > 80) onDismiss();
+        },
+        child: animated,
+      ),
+    );
+  }
 }
 
 class _InteractionStatusPill extends StatelessWidget {
@@ -272,7 +438,7 @@ class _InteractionStatusPill extends StatelessWidget {
     final pill = Semantics(
       liveRegion: true,
       container: true,
-      label: content.title,
+      label: content.semanticLabel,
       child: ExcludeSemantics(
         child: Container(
           key: const ValueKey<String>('interaction-feedback-pill'),

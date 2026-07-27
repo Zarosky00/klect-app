@@ -167,6 +167,7 @@ class _CloseupOwnerRowState extends ConsumerState<CloseupOwnerRow> {
           FollowButton(
             userId: owner.id,
             displayName: owner.name,
+            avatarPath: owner.avatarPath,
             followerCount: owner.followerCount,
             initiallyFollowing: widget.closeup.viewer.follows,
             size: KButtonSize.small,

@@ -376,6 +376,7 @@ class FollowController extends Notifier<FollowState> {
   bool _busy = false;
   String? _feedbackId;
   String? _targetLabel;
+  String? _targetAvatarPath;
 
   @override
   FollowState build() => const FollowState();
@@ -394,11 +395,14 @@ class FollowController extends Notifier<FollowState> {
   }
 
   /// Follow / unfollow, optimistic and coalesced exactly like the toggles.
-  Future<void> toggle({String? targetLabel}) async {
+  Future<void> toggle({String? targetLabel, String? targetAvatarPath}) async {
     final desired = !state.following;
     _desired = desired;
     if (targetLabel?.trim().isNotEmpty == true) {
       _targetLabel = targetLabel!.trim();
+    }
+    if (targetAvatarPath?.trim().isNotEmpty == true) {
+      _targetAvatarPath = targetAvatarPath!.trim();
     }
     final feedback = ref.read(interactionFeedbackProvider.notifier);
     _feedbackId = feedback.begin(
@@ -406,6 +410,7 @@ class FollowController extends Notifier<FollowState> {
       targetKey: userId,
       active: desired,
       targetLabel: _targetLabel,
+      targetAvatarPath: _targetAvatarPath,
     );
     final optimistic = state.followerCount + (desired ? 1 : -1);
     state = state.copyWith(
@@ -435,6 +440,7 @@ class FollowController extends Notifier<FollowState> {
           targetKey: userId,
           active: _serverActive,
           targetLabel: _targetLabel,
+          targetAvatarPath: _targetAvatarPath,
         ),
       );
     } on KlectError catch (error) {
@@ -450,6 +456,7 @@ class FollowController extends Notifier<FollowState> {
             targetKey: userId,
             active: _desired,
             targetLabel: _targetLabel,
+            targetAvatarPath: _targetAvatarPath,
           ),
         );
       } else {
@@ -468,6 +475,7 @@ class FollowController extends Notifier<FollowState> {
             targetKey: userId,
             active: attempted,
             targetLabel: _targetLabel,
+            targetAvatarPath: _targetAvatarPath,
           ),
         );
       }
