@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-27 · Session: native mobile tap feedback correction · shipped as v1.4.1
+> Last updated: 2026-07-27 · Session: Pinterest follow panel + X-style quote composer · shipped as v1.4.2
 
 ---
 
@@ -12,9 +12,9 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 34 tables, 87 RLS policies, 45 triggers, 14 realtime tables, 4 storage buckets. Smoke-tested under real JWT impersonation. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | See `BACKEND_API.md`. All RPCs live and tested. |
-| 4 | Flutter mobile app (`mobile/`) | ✅ **DONE (features)** | All feature screens implemented, zero placeholders. v1.4.1 replaces the custom sound palette with Android's native click plus one light selection haptic for accepted in-app controls, keeps system back/gestures/background replay silent, and uses compact top-right action notices. Sound and haptic preferences remain separate and persisted. `flutter analyze` 0 issues, 107 tests pass. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **DONE (features)** | All feature screens implemented, zero placeholders. v1.4.2 adds the wide avatar-led follow outcome panel and a full-screen, keyboard-safe X-style quote composer with immutable original previews plus up to four editable commentary photos. Native tap feedback remains centralized; sound defaults on and haptics now default off while explicit preferences persist. `dart analyze` 0 issues, 113 tests pass. |
 | 5 | Next.js web + admin (`web/`) | ✅ **DONE (features)** | All 32 page routes + 3 auth route handlers + sitemap/robots implemented incl. intercepting closeup modal and full `/admin` — zero placeholders. v1.3.1 adds responsive profile/composer polish and `/settings/app`. Group *management* UI is mobile-only for now (web renders groups fine). |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | 2026-07-27 gates green: mobile analyze + 107 tests + clean v1.4.1 APK; web 9 tests + tsc + lint + production build. Manual CHECKLIST.md sections A–H (63 seen-it-work items) plus real-device native click/haptic feel still need to be walked through. |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | 2026-07-27 gates green: mobile analyze + 113 tests + clean v1.4.2 APK; web 9 tests + tsc + lint + production build. Manual CHECKLIST.md sections A–H (63 seen-it-work items) plus real-device follow-panel, quote-composer, keyboard, native-click, and optional-haptic feel still need to be walked through. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **DONE & VERIFIED** | Migration **0017 applied to live DB** + all 5 group RPCs smoke-tested under JWT impersonation (incl. owner auto-transfer). Advisors: 0 ERROR. `database.types.ts` regenerated. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
@@ -66,6 +66,22 @@
   Supabase or Vercel change was required. Physical normal/vibrate/silent-mode, touch-sounds,
   hardware/gesture-back, and music-playback checks remain pending because no Android device was
   attached to the build machine.
+
+**v1.4.2 verification (2026-07-27):**
+- Mobile: `dart analyze` **0 issues**; complete Flutter test suite **113/113 passed**; clean release
+  APK verified as `com.klect.klect`, version `1.4.2` / code `8`, min SDK 24, target SDK 36,
+  size 102,314,499 bytes, SHA-256
+  `699d602114788c19f25d226bb5ab3f4cf0fd9843dd80c92527df7fca1930fdbb`.
+- PR **#2** was merged to `main` at commit `f05d7e8b94ca60fd43d58f6a409ea728669293f0`.
+  GitHub release `v1.4.2` is published with the required `klect.apk` asset and
+  `application/vnd.android.package-archive` MIME type. The latest-release API reports the expected
+  tag, filename, size, state, and digest; the stable `releases/latest/download/klect.apk` URL
+  follows through to HTTP 200.
+- A fresh download of the public asset matched the local clean build byte-for-byte. APK inspection
+  reconfirmed version `1.4.2+8` and found no custom WAV/MP3/OGG or `audioplayers` artifacts.
+  No Supabase schema, Vercel, or web changes were required. Physical Gboard, small/large text,
+  dark/light theme, offline queueing, avatar-failure, and first-launch haptic checks remain pending
+  because no Android device was attached to the build machine.
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 
@@ -318,15 +334,30 @@ touched the search/trigram/feed indexes. Re-check once real usage exists before 
   comment/reply, and compact-toast coverage. Released the verified Android build as `v1.4.1`
   through PR #1.
 
+### 2026-07-27 — Pinterest follow panel + X-style quote composer (v1.4.2)
+- Replaced the compact follow pill with a centered, near-full-width inverse-surface panel that uses
+  the target profile avatar or initials, contextual follow/unfollow/queued/error copy, safe-area
+  placement, live semantics, reduced-motion support, timed entrance/exit, and gesture dismissal.
+- Rebuilt Pulse posting and quoting as one full-screen, keyboard-safe composer with a fixed header
+  and media toolbar, scrollable draft content, immediate preloaded quote data with provider
+  fallback, X-style immutable original cards, complete 1–4 image grids, and unavailable tombstones.
+- Commentary now accepts up to four photos with original-byte retention, crop presets,
+  quarter-turn rotation, image-pipeline reprocessing, horizontal reordering, individual removal,
+  preparation indicators, retryable failures, and the unchanged `create_post` contract.
+- Haptics now default off while sound defaults on and explicitly persisted choices remain intact.
+  Added follow-panel golden/widget coverage, keyboard-inset and quote-preview regressions, and
+  preference tests. Released the verified Android build as `v1.4.2` through PR #2.
+
 ---
 
 ## Next actions
 
-1. Install v1.4.1 on a real Android phone and verify the native click/haptic feel with touch sounds
-   enabled/disabled, normal/vibrate/silent modes, music playing, visible app back buttons, hardware
-   back, and edge-gesture back. Only accepted in-app controls should respond; system navigation
-   must stay silent. Also smoke-test profile clipping, quote repost, and Settings → Check for
-   updates (it should report v1.4.1 is current).
+1. Install v1.4.2 on a real Android phone and verify the wide avatar follow panel, every
+   follow/unfollow/queued/error state, quote preview loading, four-photo edit/reorder/remove flow,
+   and composer layout with Gboard open at small/large text sizes in dark/light themes. Confirm
+   haptics start disabled for a fresh install, explicit sound/haptic preferences persist, offline
+   queueing behaves correctly, avatar failures fall back to initials, and Settings → Check for
+   updates reports v1.4.2 is current.
 2. Walk through manual sections A–H of `CHECKLIST.md` (63 items — gestures, optimistic social
    mechanics, realtime chat/calls incl. the new groups, moderation flows, RLS from a second
    account, craft). Section I is automated by `verify.sh` and is green.
