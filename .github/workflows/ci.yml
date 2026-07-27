@@ -41,6 +41,10 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://dikhuygcwxnrsckqglzg.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_nwJjxG8yJ01lTjrv6pXQww_mQ9MNq5t
+      NEXT_PUBLIC_SITE_URL: https://klect-web.vercel.app
     defaults:
       run:
         working-directory: web
