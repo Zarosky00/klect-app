@@ -8,6 +8,7 @@ import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/models/models.dart';
 import '../../../core/offline/feed_page_cache.dart';
+import '../../../core/storage/key_value_store.dart';
 import '../../../core/supabase.dart';
 import 'pulse_entry_view.dart';
 
@@ -177,7 +178,9 @@ class PulseFeedController extends Notifier<PulseFeedState> {
     final cursor = reset ? null : _oldestOnScreen();
 
     try {
-      final rows = await ref.read(klectApiProvider).pulseFeed(
+      final rows = await ref
+          .read(klectApiProvider)
+          .pulseFeed(
             limit: pageSize,
             before: cursor?.sortAt,
             beforeId: cursor?.cursorId,
@@ -288,11 +291,24 @@ final pulseFeedProvider =
 /// Which Pulse tab is on screen. Lives outside the screen so the composer can
 /// prepend into the feed the user is actually looking at.
 class PulseModeController extends Notifier<PulseMode> {
+  static const String _storageKey = 'klect.pulse.mode';
+
   @override
-  PulseMode build() => PulseMode.foryou;
+  PulseMode build() {
+    final saved = ref.read(keyValueStoreProvider).getString(_storageKey);
+    return PulseMode.values.firstWhere(
+      (mode) => mode.wire == saved,
+      orElse: () => PulseMode.foryou,
+    );
+  }
 
   /// Switches tab.
-  void select(PulseMode mode) => state = mode;
+  void select(PulseMode mode) {
+    state = mode;
+    unawaited(
+      ref.read(keyValueStoreProvider).setString(_storageKey, mode.wire),
+    );
+  }
 }
 
 /// The active Pulse tab.

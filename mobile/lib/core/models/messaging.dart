@@ -26,7 +26,9 @@ class Conversation {
   /// Parses a `conversations` row.
   factory Conversation.fromJson(Map<String, dynamic> json) {
     final members = <ConversationMember>[
-      for (final m in asMapList(json['conversation_members'] ?? json['members']))
+      for (final m in asMapList(
+        json['conversation_members'] ?? json['members'],
+      ))
         ConversationMember.fromJson(m),
     ];
     final other = asMap(json['other_member'] ?? json['other']);
@@ -88,7 +90,9 @@ class Conversation {
 
   /// Inbox row title.
   String get displayTitle =>
-      title ?? otherMember?.name ?? (kind == ConversationKind.dm ? 'Direct message' : 'Group');
+      title ??
+      otherMember?.name ??
+      (kind == ConversationKind.dm ? 'Direct message' : 'Group');
 
   /// Whether the badge should show.
   bool get hasUnread => unreadCount > 0;
@@ -100,22 +104,21 @@ class Conversation {
     DateTime? lastMessageAt,
     Profile? otherMember,
     List<ConversationMember>? members,
-  }) =>
-      Conversation(
-        id: id,
-        kind: kind,
-        title: title,
-        description: description,
-        avatarPath: avatarPath,
-        createdBy: createdBy,
-        lastMessageAt: lastMessageAt ?? this.lastMessageAt,
-        lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-        members: members ?? this.members,
-        unreadCount: unreadCount ?? this.unreadCount,
-        otherMember: otherMember ?? this.otherMember,
-      );
+  }) => Conversation(
+    id: id,
+    kind: kind,
+    title: title,
+    description: description,
+    avatarPath: avatarPath,
+    createdBy: createdBy,
+    lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+    lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    members: members ?? this.members,
+    unreadCount: unreadCount ?? this.unreadCount,
+    otherMember: otherMember ?? this.otherMember,
+  );
 }
 
 /// A row of `public.conversation_members`. Composite key `(conversation_id, user_id)`.
@@ -129,6 +132,8 @@ class ConversationMember {
     this.lastReadAt,
     this.unreadCount = 0,
     this.mutedUntil,
+    this.requestState = 'accepted',
+    this.notificationLevel = 'all',
     this.leftAt,
     this.profile,
   });
@@ -144,6 +149,8 @@ class ConversationMember {
       lastReadAt: asDateOrNull(json['last_read_at']),
       unreadCount: asInt(json['unread_count']),
       mutedUntil: asDateOrNull(json['muted_until']),
+      requestState: asString(json['request_state'], 'accepted'),
+      notificationLevel: asString(json['notification_level'], 'all'),
       leftAt: asDateOrNull(json['left_at']),
       profile: profile.isEmpty ? null : Profile.fromJson(profile),
     );
@@ -169,6 +176,12 @@ class ConversationMember {
 
   /// Notifications muted until this instant.
   final DateTime? mutedUntil;
+
+  /// `pending`, `accepted`, or `declined` for message requests.
+  final String requestState;
+
+  /// `all`, `mentions`, or `muted` for per-chat notifications.
+  final String notificationLevel;
 
   /// Set when they leave a group.
   final DateTime? leftAt;
@@ -291,26 +304,25 @@ class MessageModel {
     bool? failed,
     DateTime? createdAt,
     Profile? author,
-  }) =>
-      MessageModel(
-        id: id ?? this.id,
-        conversationId: conversationId,
-        authorId: authorId,
-        body: body ?? this.body,
-        kind: kind,
-        attachments: attachments,
-        sharedEntityType: sharedEntityType,
-        sharedEntityId: sharedEntityId,
-        replyToId: replyToId,
-        callId: callId,
-        editedAt: editedAt,
-        deletedAt: deletedAt,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt,
-        author: author ?? this.author,
-        isPending: isPending ?? this.isPending,
-        failed: failed ?? this.failed,
-      );
+  }) => MessageModel(
+    id: id ?? this.id,
+    conversationId: conversationId,
+    authorId: authorId,
+    body: body ?? this.body,
+    kind: kind,
+    attachments: attachments,
+    sharedEntityType: sharedEntityType,
+    sharedEntityId: sharedEntityId,
+    replyToId: replyToId,
+    callId: callId,
+    editedAt: editedAt,
+    deletedAt: deletedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt,
+    author: author ?? this.author,
+    isPending: isPending ?? this.isPending,
+    failed: failed ?? this.failed,
+  );
 }
 
 /// A row of `public.calls`.
@@ -332,22 +344,23 @@ class CallModel {
 
   /// Parses a `calls` row.
   factory CallModel.fromJson(Map<String, dynamic> json) => CallModel(
-        id: asString(json['id']),
-        conversationId: asString(json['conversation_id']),
-        kind: CallKind.parse(json['kind']),
-        status: CallStatus.parse(json['status']),
-        createdBy: asStringOrNull(json['created_by']),
-        startedAt: asDateOrNull(json['started_at']),
-        endedAt: asDateOrNull(json['ended_at']),
-        durationSeconds: asIntOrNull(json['duration_seconds']),
-        endReason: asStringOrNull(json['end_reason']),
-        createdAt: asDateOrNull(json['created_at']),
-        participants: <CallParticipant>[
-          for (final p
-              in asMapList(json['call_participants'] ?? json['participants']))
-            CallParticipant.fromJson(p),
-        ],
-      );
+    id: asString(json['id']),
+    conversationId: asString(json['conversation_id']),
+    kind: CallKind.parse(json['kind']),
+    status: CallStatus.parse(json['status']),
+    createdBy: asStringOrNull(json['created_by']),
+    startedAt: asDateOrNull(json['started_at']),
+    endedAt: asDateOrNull(json['ended_at']),
+    durationSeconds: asIntOrNull(json['duration_seconds']),
+    endReason: asStringOrNull(json['end_reason']),
+    createdAt: asDateOrNull(json['created_at']),
+    participants: <CallParticipant>[
+      for (final p in asMapList(
+        json['call_participants'] ?? json['participants'],
+      ))
+        CallParticipant.fromJson(p),
+    ],
+  );
 
   /// Primary key.
   final String id;
@@ -452,14 +465,14 @@ class CallSignal {
 
   /// Parses a `call_signals` row.
   factory CallSignal.fromJson(Map<String, dynamic> json) => CallSignal(
-        id: asString(json['id']),
-        callId: asString(json['call_id']),
-        type: CallSignalType.parse(json['type']),
-        senderId: asStringOrNull(json['sender_id']),
-        recipientId: asStringOrNull(json['recipient_id']),
-        payload: asMap(json['payload']),
-        createdAt: asDateOrNull(json['created_at']),
-      );
+    id: asString(json['id']),
+    callId: asString(json['call_id']),
+    type: CallSignalType.parse(json['type']),
+    senderId: asStringOrNull(json['sender_id']),
+    recipientId: asStringOrNull(json['recipient_id']),
+    payload: asMap(json['payload']),
+    createdAt: asDateOrNull(json['created_at']),
+  );
 
   /// Primary key.
   final String id;

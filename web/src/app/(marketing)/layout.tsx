@@ -11,10 +11,10 @@ export default async function MarketingLayout({ children }: { children: ReactNod
   const { user } = await getViewerBootstrap();
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh min-w-0 flex-col overflow-x-clip">
       <header className="glass sticky top-0 z-sticky border-b border-line-subtle">
-        <div className="content-max flex items-center gap-4 px-4 py-3 sm:px-6">
-          <Wordmark />
+        <div className="content-max flex min-w-0 items-center gap-2 px-4 py-3 sm:gap-4 sm:px-6">
+          <Wordmark className="shrink-0" />
           <nav aria-label="Marketing" className="ml-4 hidden items-center gap-4 sm:flex">
             <Link
               href={routes.about}
@@ -30,7 +30,7 @@ export default async function MarketingLayout({ children }: { children: ReactNod
             </Link>
           </nav>
 
-          <div className="flex-1" />
+          <div className="min-w-0 flex-1" />
           <ThemeToggle className="hidden sm:inline-flex" />
 
           {user ? (
@@ -39,18 +39,24 @@ export default async function MarketingLayout({ children }: { children: ReactNod
             </ButtonLink>
           ) : (
             <>
-              <ButtonLink href={routes.signIn} variant="ghost" size="sm">
+              <ButtonLink
+                href={routes.signIn}
+                variant="ghost"
+                size="sm"
+                className="hidden sm:inline-flex"
+              >
                 Sign in
               </ButtonLink>
               <ButtonLink href={routes.signUp} size="sm">
-                Start collecting
+                <span className="sm:hidden">Join</span>
+                <span className="hidden sm:inline">Start collecting</span>
               </ButtonLink>
             </>
           )}
         </div>
       </header>
 
-      <main id="main" className="flex-1">
+      <main id="main" className="min-w-0 flex-1 overflow-x-clip">
         {children}
       </main>
 

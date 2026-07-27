@@ -230,17 +230,17 @@ class KlectApi {
     } on KlectError catch (error) {
       throw switch (error.raw.trim()) {
         'post_not_found' => KlectError(
-            KlectErrorKind.notFound,
-            'This post is gone — or is no longer visible to you.',
-            code: error.code,
-            cause: error,
-          ),
+          KlectErrorKind.notFound,
+          'This post is gone — or is no longer visible to you.',
+          code: error.code,
+          cause: error,
+        ),
         'bad_sort' => KlectError(
-            KlectErrorKind.unknown,
-            'Comments could not be sorted that way.',
-            code: error.code,
-            cause: error,
-          ),
+          KlectErrorKind.unknown,
+          'Comments could not be sorted that way.',
+          code: error.code,
+          cause: error,
+        ),
         _ => error,
       };
     }
@@ -923,6 +923,27 @@ class KlectApi {
     return <CommentModel>[for (final row in rows) CommentModel.fromJson(row)];
   }
 
+  /// Root-paged, fully hydrated comment tree shared by every discussion
+  /// surface. Descendants arrive with their paged root, so replies never
+  /// detach from their parent and viewer state never requires N+1 queries.
+  Future<CommentThreadPage> getCommentThread({
+    required EntityType type,
+    required String id,
+    CommentSort sort = CommentSort.top,
+    int limit = 20,
+    Map<String, dynamic>? cursor,
+  }) async => CommentThreadPage.fromJson(
+    asMap(
+      await _rpc('get_comment_thread', <String, dynamic>{
+        'p_type': type.wire,
+        'p_id': id,
+        'p_limit': limit,
+        'p_cursor': cursor,
+        'p_sort': sort.wire,
+      }),
+    ),
+  );
+
   /// Every reply on an entity's thread, oldest first. One query serves every
   /// loaded root — the view attaches each reply to its parent.
   Future<List<CommentModel>> fetchCommentReplies({
@@ -1151,17 +1172,11 @@ class KlectApi {
     required String conversationId,
     CallKind kind = CallKind.audio,
   }) async {
-    final row = await _guard(
-      () => _client
-          .from('calls')
-          .insert(<String, dynamic>{
-            'conversation_id': conversationId,
-            'created_by': requireUserId,
-            'kind': kind.wire,
-            'status': CallStatus.ringing.wire,
-          })
-          .select()
-          .single(),
+    final row = asMap(
+      await _rpc('start_call', <String, dynamic>{
+        'p_conversation': conversationId,
+        'p_kind': kind.wire,
+      }),
     );
     return CallModel.fromJson(row);
   }
@@ -1180,40 +1195,46 @@ class KlectApi {
     CallStatus status, {
     int? durationSeconds,
     String? endReason,
-  }) => _guard(
-    () => _client
-        .from('calls')
-        .update(<String, dynamic>{
-          'status': status.wire,
-          if (status == CallStatus.active)
-            'started_at': DateTime.now().toUtc().toIso8601String(),
-          if (!status.isLive)
-            'ended_at': DateTime.now().toUtc().toIso8601String(),
-          'duration_seconds': ?durationSeconds,
-          'end_reason': ?endReason,
-        })
-        .eq('id', callId),
-  );
+  }) async {
+    switch (status) {
+      case CallStatus.ringing:
+        return;
+      case CallStatus.active:
+        await joinCall(callId);
+        return;
+      case CallStatus.declined:
+        await _rpc('decline_call', <String, dynamic>{'p_call': callId});
+        return;
+      case CallStatus.ended || CallStatus.missed || CallStatus.failed:
+        await _rpc('end_call', <String, dynamic>{
+          'p_call': callId,
+          'p_reason': endReason ?? status.wire,
+          'p_outcome': status.wire,
+        });
+        return;
+    }
+  }
+
+  /// Accepts a ringing call through the transactional state machine.
+  Future<CallModel> answerCall(String callId, {String? deviceId}) async =>
+      CallModel.fromJson(
+        asMap(
+          await _rpc('answer_call', <String, dynamic>{
+            'p_call': callId,
+            'p_device_id': deviceId,
+          }),
+        ),
+      );
 
   /// Records that the viewer joined the media session.
-  Future<void> joinCall(String callId) => _guard(
-    () => _client.from('call_participants').upsert(<String, dynamic>{
-      'call_id': callId,
-      'user_id': requireUserId,
-      'joined_at': DateTime.now().toUtc().toIso8601String(),
-    }),
-  );
+  Future<void> joinCall(String callId) async {
+    await _rpc('join_call', <String, dynamic>{'p_call': callId});
+  }
 
   /// Records that the viewer left the media session.
-  Future<void> leaveCall(String callId) => _guard(
-    () => _client
-        .from('call_participants')
-        .update(<String, dynamic>{
-          'left_at': DateTime.now().toUtc().toIso8601String(),
-        })
-        .eq('call_id', callId)
-        .eq('user_id', requireUserId),
-  );
+  Future<void> leaveCall(String callId) async {
+    await _rpc('leave_call', <String, dynamic>{'p_call': callId});
+  }
 
   /// Sends one WebRTC signal. Signals are applied in `created_at` order.
   Future<void> sendCallSignal({
@@ -1221,15 +1242,20 @@ class KlectApi {
     required CallSignalType type,
     required Map<String, dynamic> payload,
     String? recipientId,
-  }) => _guard(
-    () => _client.from('call_signals').insert(<String, dynamic>{
-      'call_id': callId,
-      'sender_id': requireUserId,
-      'recipient_id': recipientId,
-      'type': type.wire,
-      'payload': payload,
-    }),
-  );
+  }) async {
+    if (recipientId == null) {
+      throw const KlectError(
+        KlectErrorKind.unknown,
+        'The call recipient is unavailable.',
+      );
+    }
+    await _rpc('send_call_signal', <String, dynamic>{
+      'p_call': callId,
+      'p_recipient': recipientId,
+      'p_type': type.wire,
+      'p_payload': payload,
+    });
+  }
 
   // ────────────────────────────────────────────────────────────── storage ──
 

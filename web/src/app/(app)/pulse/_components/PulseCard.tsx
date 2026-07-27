@@ -105,7 +105,9 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
   const threadHref = entry.post_id ? postHref(entry.post_id) : null;
 
   const isQuote = Boolean(entry.quote_text);
-  const media = entry.media ?? [];
+  // Repost envelopes also carry target media for older clients. The canonical
+  // target card owns that media; only an authored post renders entry.media.
+  const media = entry.feed_kind === 'post' ? (entry.media ?? []) : [];
   const quoteSubject = onQuote ? quoteSubjectOf(entry) : null;
 
   return (

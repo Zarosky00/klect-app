@@ -4,6 +4,8 @@
 /// how the *media* path is negotiated.
 library;
 
+import '../../../core/supabase.dart';
+
 /// ICE configuration for the peer connection.
 ///
 /// ## ⚠️ TURN IS REQUIRED FOR PRODUCTION — READ THIS
@@ -55,9 +57,10 @@ abstract final class KlectCallIce {
   /// ```
   static const List<Map<String, dynamic>> turnServers =
       <Map<String, dynamic>>[];
+  static bool _hasTurn = false;
 
   /// Whether a relay path is available. False means cross-NAT calls can fail.
-  static bool get hasTurn => turnServers.isNotEmpty;
+  static bool get hasTurn => _hasTurn;
 
   /// The `RTCConfiguration` handed to `createPeerConnection`.
   ///
@@ -65,12 +68,12 @@ abstract final class KlectCallIce {
   /// removed from modern WebRTC stacks. `iceCandidatePoolSize` warms candidate
   /// gathering so the first offer already carries host candidates.
   static Map<String, dynamic> configuration() => <String, dynamic>{
-        'iceServers': <Map<String, dynamic>>[...stunServers, ...turnServers],
-        'sdpSemantics': 'unified-plan',
-        'iceCandidatePoolSize': 2,
-        'bundlePolicy': 'max-bundle',
-        'rtcpMuxPolicy': 'require',
-      };
+    'iceServers': <Map<String, dynamic>>[...stunServers, ...turnServers],
+    'sdpSemantics': 'unified-plan',
+    'iceCandidatePoolSize': 2,
+    'bundlePolicy': 'max-bundle',
+    'rtcpMuxPolicy': 'require',
+  };
 
   /// The configuration the call engine actually uses.
   ///
@@ -78,7 +81,32 @@ abstract final class KlectCallIce {
   /// credential-minting edge function and return
   /// `{...configuration(), 'iceServers': [...stunServers, ...fetchedTurn]}`.
   /// It is already awaited on every call setup, so nothing else has to change.
-  static Future<Map<String, dynamic>> resolve() async => configuration();
+  static Future<Map<String, dynamic>> resolve() async {
+    final response = await KlectSupabase.client.functions.invoke(
+      'turn-credentials',
+    );
+    final data = response.data;
+    if (data is! Map) {
+      throw StateError('TURN credentials are unavailable.');
+    }
+    final rawServers = data['iceServers'];
+    if (rawServers is! List || rawServers.isEmpty) {
+      throw StateError('TURN credentials are unavailable.');
+    }
+    final servers = <Map<String, dynamic>>[
+      for (final server in rawServers)
+        if (server is Map)
+          <String, dynamic>{
+            for (final entry in server.entries)
+              entry.key.toString(): entry.value,
+          },
+    ];
+    _hasTurn = servers.any(
+      (server) => server['username'] != null && server['credential'] != null,
+    );
+    if (!_hasTurn) throw StateError('TURN credentials are unavailable.');
+    return <String, dynamic>{...configuration(), 'iceServers': servers};
+  }
 
   /// Media constraints for a call of the given kind.
   static Map<String, dynamic> mediaConstraints({required bool video}) =>

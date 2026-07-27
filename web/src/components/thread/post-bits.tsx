@@ -114,40 +114,46 @@ export function PostTargetCard({ target }: { target: PulseTarget }) {
 /** A quoted post (or comment): author row, words, first photo. */
 function QuotedPostCard({ target }: { target: PulseTarget }) {
   const author = target.author;
+  const targetMedia = (target.media ?? []).slice(0, 4);
   return (
-    <Link
-      href={targetHref(target)}
+    <div
       className={cn(
         'focus-ring block rounded-lg border border-line bg-surface-1 p-3',
         'transition-colors dur-fast ease-standard hover:border-line-strong',
       )}
     >
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Avatar
-          path={author?.avatar_path}
-          name={author?.display_name}
-          username={author?.username}
-          size="xs"
-          verified={author?.is_verified ?? false}
-        />
-        <span className="text-callout font-medium text-ink">
-          {author?.display_name ?? 'Collector'}
-        </span>
-        <span className="text-caption text-ink-3">@{author?.username ?? 'unknown'}</span>
-        {target.created_at ? (
-          <time dateTime={target.created_at} className="text-caption text-ink-3">
-            {shortTimeAgo(target.created_at)}
-          </time>
-        ) : null}
-      </p>
-
-      {target.body ? (
-        <p className="mt-1.5 line-clamp-4 whitespace-pre-wrap break-words text-body text-ink-2">
-          {target.body}
+      <Link href={targetHref(target)} className="focus-ring block rounded-md">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Avatar
+            path={author?.avatar_path}
+            name={author?.display_name}
+            username={author?.username}
+            size="xs"
+            verified={author?.is_verified ?? false}
+          />
+          <span className="text-callout font-medium text-ink">
+            {author?.display_name ?? 'Collector'}
+          </span>
+          <span className="text-caption text-ink-3">@{author?.username ?? 'unknown'}</span>
+          {target.created_at ? (
+            <time dateTime={target.created_at} className="text-caption text-ink-3">
+              {shortTimeAgo(target.created_at)}
+            </time>
+          ) : null}
         </p>
-      ) : null}
 
-      {target.cover_path ? (
+        {target.body ? (
+          <p className="mt-1.5 line-clamp-4 whitespace-pre-wrap break-words text-body text-ink-2">
+            {target.body}
+          </p>
+        ) : null}
+      </Link>
+
+      {targetMedia.length > 0 ? (
+        <div className="mt-2">
+          <PostMediaGrid media={targetMedia} href={targetHref(target)} />
+        </div>
+      ) : target.cover_path ? (
         <div className="mt-2 overflow-hidden rounded-md border border-line-subtle">
           <BlurhashImage
             src={mediaUrl(target.cover_path)}
@@ -160,7 +166,13 @@ function QuotedPostCard({ target }: { target: PulseTarget }) {
           />
         </div>
       ) : null}
-    </Link>
+
+      {target.attached_target ? (
+        <div className="mt-2">
+          <PostTargetCard target={target.attached_target} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

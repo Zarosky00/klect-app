@@ -7,6 +7,7 @@ import 'core/offline/action_queue.dart';
 import 'core/settings/app_settings.dart';
 import 'core/supabase.dart';
 import 'design/theme.dart';
+import 'features/chat/widgets/incoming_call_overlay.dart';
 import 'router.dart';
 import 'ui/ui.dart';
 
@@ -50,7 +51,26 @@ class _KlectAppState extends ConsumerState<KlectApp>
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
-    final themeMode = ref.watch(themeModeProvider);
+    final settings = ref.watch(appSettingsProvider);
+    final themeMode = settings.themeMode;
+    final lightTheme = KlectThemeData.light(fontPack: settings.fontPack.name)
+        .copyWith(
+          visualDensity: settings.density == ContentDensity.compact
+              ? VisualDensity.compact
+              : VisualDensity.standard,
+        );
+    var darkTheme = KlectThemeData.dark(fontPack: settings.fontPack.name)
+        .copyWith(
+          visualDensity: settings.density == ContentDensity.compact
+              ? VisualDensity.compact
+              : VisualDensity.standard,
+        );
+    if (settings.oled) {
+      darkTheme = darkTheme.copyWith(
+        scaffoldBackgroundColor: Colors.black,
+        canvasColor: Colors.black,
+      );
+    }
 
     // A fresh session means a fresh queue drain — we may have come back from
     // a long offline stretch.
@@ -64,11 +84,27 @@ class _KlectAppState extends ConsumerState<KlectApp>
       title: 'KLECT',
       debugShowCheckedModeBanner: false,
       routerConfig: router,
-      theme: KlectThemeData.light(),
-      darkTheme: KlectThemeData.dark(),
+      theme: lightTheme,
+      darkTheme: darkTheme,
       themeMode: themeMode,
-      builder: (context, child) =>
-          KInteractionFeedbackHost(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) {
+        final media = MediaQuery.of(context);
+        final systemScale = media.textScaler.scale(1);
+        final reduceMotion =
+            settings.motion == MotionPreference.reduced ||
+            (settings.motion == MotionPreference.system &&
+                media.disableAnimations);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: TextScaler.linear(systemScale * settings.textScale),
+            disableAnimations: reduceMotion,
+            boldText: settings.highContrast || media.boldText,
+          ),
+          child: KInteractionFeedbackHost(
+            child: IncomingCallOverlay(child: child ?? const SizedBox.shrink()),
+          ),
+        );
+      },
     );
   }
 }

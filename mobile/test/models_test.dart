@@ -147,13 +147,21 @@ void main() {
       expect(closeup.entityType, EntityType.item);
       expect(closeup.title, 'Gojo — Vol. 11 Cover');
       expect(closeup.counts.like, 5);
-      expect(closeup.viewer.isOwner, isFalse,
-          reason: 'null is_owner reads as "not the owner"');
-      expect(closeup.media.first.position, 0,
-          reason: 'media is sorted by position');
+      expect(
+        closeup.viewer.isOwner,
+        isFalse,
+        reason: 'null is_owner reads as "not the owner"',
+      );
+      expect(
+        closeup.media.first.position,
+        0,
+        reason: 'media is sorted by position',
+      );
       expect(closeup.media.map((m) => m.id).toList(), <String>['m1', 'm2']);
-      expect(closeup.breadcrumb!.trail.map((e) => e.name).toList(),
-          <String>['Anime', 'JJK']);
+      expect(closeup.breadcrumb!.trail.map((e) => e.name).toList(), <String>[
+        'Anime',
+        'JJK',
+      ]);
       expect(closeup.siblings.single.title, 'Sukuna Finger Replica');
       expect(closeup.immersivePaths.length, 2);
     });
@@ -200,6 +208,107 @@ void main() {
     });
   });
 
+  group('PulseTargetEnvelope', () {
+    test('keeps ordered media and one immutable nested attachment', () {
+      final target = PulseTarget.fromJson(<String, dynamic>{
+        'type': 'post',
+        'id': 'post-1',
+        'availability': 'available',
+        'body': 'The original words',
+        'media': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'second',
+            'storage_path': 'u/posts/second.jpg',
+            'position': 1,
+          },
+          <String, dynamic>{
+            'id': 'first',
+            'storage_path': 'u/posts/first.jpg',
+            'position': 0,
+          },
+        ],
+        'author': <String, dynamic>{
+          'id': 'u',
+          'username': 'aria',
+          'display_name': 'Aria Vale',
+        },
+        'attached_target': <String, dynamic>{
+          'type': 'collection',
+          'id': 'collection-1',
+          'availability': 'available',
+          'title': 'Collected stories',
+          'media': <Map<String, dynamic>>[],
+        },
+      });
+
+      expect(target.unavailable, isFalse);
+      expect(target.availability, 'available');
+      expect(target.media.map((item) => item.id), <String>['first', 'second']);
+      expect(target.attachedTarget?.type, EntityType.collection);
+      expect(target.attachedTarget?.title, 'Collected stories');
+    });
+
+    test('parses an unavailable target as a renderable tombstone', () {
+      final target = PulseTarget.fromJson(<String, dynamic>{
+        'type': 'post',
+        'id': 'gone',
+        'availability': 'unavailable',
+        'unavailable': true,
+        'media': <Map<String, dynamic>>[],
+      });
+
+      expect(target.unavailable, isTrue);
+      expect(target.media, isEmpty);
+    });
+  });
+
+  group('CommentThreadPage', () {
+    test('hydrates reply context, tombstones and its opaque cursor', () {
+      final page = CommentThreadPage.fromJson(<String, dynamic>{
+        'nodes': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'root',
+            'entity_type': 'post',
+            'entity_id': 'post-1',
+            'author_id': 'u1',
+            'body': null,
+            'depth': 0,
+            'relative_depth': 0,
+            'root_id': 'root',
+            'deleted': true,
+            'tombstone': true,
+            'viewer': <String, dynamic>{},
+          },
+          <String, dynamic>{
+            'id': 'reply',
+            'entity_type': 'post',
+            'entity_id': 'post-1',
+            'author_id': 'u2',
+            'body': 'The surviving reply',
+            'parent_id': 'root',
+            'depth': 1,
+            'relative_depth': 1,
+            'root_id': 'root',
+            'replying_to': <String, dynamic>{'id': 'root', 'username': 'aria'},
+            'viewer': <String, dynamic>{'liked': true},
+          },
+        ],
+        'has_more': true,
+        'next_cursor': <String, dynamic>{
+          'created_at': '2026-07-27T12:00:00Z',
+          'id': 'root',
+          'like_count': 4,
+        },
+      });
+
+      expect(page.hasMore, isTrue);
+      expect(page.nextCursor?['id'], 'root');
+      expect(page.nodes.first.tombstone, isTrue);
+      expect(page.nodes.last.replyingToUsername, 'aria');
+      expect(page.nodes.last.viewerLiked, isTrue);
+    });
+  });
+
   group('enums', () {
     test('entity types map to their counter tables', () {
       expect(EntityType.collection.table, 'collections');
@@ -210,21 +319,18 @@ void main() {
     });
 
     test('report reasons match the Postgres enum exactly', () {
-      expect(
-        ReportReason.values.map((r) => r.wire).toList(),
-        <String>[
-          'spam',
-          'nudity',
-          'harassment',
-          'hate',
-          'violence',
-          'self_harm',
-          'ip_violation',
-          'misinformation',
-          'impersonation',
-          'other',
-        ],
-      );
+      expect(ReportReason.values.map((r) => r.wire).toList(), <String>[
+        'spam',
+        'nudity',
+        'harassment',
+        'hate',
+        'violence',
+        'self_harm',
+        'ip_violation',
+        'misinformation',
+        'impersonation',
+        'other',
+      ]);
     });
 
     test('unknown wire values fall back rather than throwing', () {
