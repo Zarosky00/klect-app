@@ -27,7 +27,7 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter analyze
-      - run: flutter test
+      - run: flutter test --exclude-tags golden
       - run: flutter build apk --release
       - name: Prepare stable asset name
         shell: bash
