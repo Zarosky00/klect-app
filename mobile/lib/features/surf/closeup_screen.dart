@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/api/api_error.dart';
 import '../../core/api/klect_api.dart';
+import '../../core/feedback/interaction_feedback.dart';
 import '../../core/interactions/interactions.dart';
 import '../../core/links.dart';
 import '../../core/models/models.dart';
@@ -172,6 +173,14 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
   }
 
   void _openImmersive(int index) {
+    unawaited(
+      ref
+          .read(interactionFeedbackProvider.notifier)
+          .local(
+            action: InteractionFeedbackAction.immersiveOpen,
+            targetKey: '${widget.entityType.wire}:${widget.entityId}',
+          ),
+    );
     context.push(
       '${KlectLinks.immersivePath(widget.entityType, widget.entityId)}?i=$index',
     );

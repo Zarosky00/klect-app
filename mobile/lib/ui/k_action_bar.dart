@@ -161,17 +161,6 @@ class _KActionBarState extends ConsumerState<KActionBar> {
     final state = ref.watch(interactionProvider(widget.entity));
     final colors = context.kc;
 
-    ref.listen<InteractionState>(interactionProvider(widget.entity), (
-      previous,
-      next,
-    ) {
-      final error = next.error;
-      if (error != null && error != previous?.error) {
-        KToast.error(context, error.message);
-        _controller.clearError();
-      }
-    });
-
     final gap = widget.compact ? Space.s3 : Space.s5;
 
     return Row(

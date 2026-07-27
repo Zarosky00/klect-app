@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../design/motion.dart';
 import '../design/theme.dart';
 import 'k_pressable.dart';
 
@@ -43,6 +44,7 @@ class KButton extends StatelessWidget {
     this.trailingIcon,
     this.expand = false,
     this.busy = false,
+    this.animateChanges = false,
     this.semanticLabel,
   });
 
@@ -70,67 +72,75 @@ class KButton extends StatelessWidget {
   /// Shows a spinner and blocks input.
   final bool busy;
 
+  /// Animates label and icon changes without changing button geometry.
+  final bool animateChanges;
+
   /// Screen-reader override.
   final String? semanticLabel;
 
   double get _height => switch (size) {
-        KButtonSize.small => Space.s8,
-        KButtonSize.medium => Space.s12,
-        KButtonSize.large => Space.s14,
-      };
+    KButtonSize.small => Space.s8,
+    KButtonSize.medium => Space.s12,
+    KButtonSize.large => Space.s14,
+  };
 
   double get _horizontalPadding => switch (size) {
-        KButtonSize.small => Space.s3,
-        KButtonSize.medium => Space.s5,
-        KButtonSize.large => Space.s6,
-      };
+    KButtonSize.small => Space.s3,
+    KButtonSize.medium => Space.s5,
+    KButtonSize.large => Space.s6,
+  };
 
   double get _radius => switch (size) {
-        KButtonSize.small => Radii.sm,
-        KButtonSize.medium => Radii.md,
-        KButtonSize.large => Radii.lg,
-      };
+    KButtonSize.small => Radii.sm,
+    KButtonSize.medium => Radii.md,
+    KButtonSize.large => Radii.lg,
+  };
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
     final enabled = onPressed != null && !busy;
 
-    final (Color background, Color foreground, Color border) =
-        switch (variant) {
+    final (
+      Color background,
+      Color foreground,
+      Color border,
+    ) = switch (variant) {
       KButtonVariant.primary => (
-          colors.accentDefault,
-          colors.textOnAccent,
-          colors.accentDefault,
-        ),
+        colors.accentDefault,
+        colors.textOnAccent,
+        colors.accentDefault,
+      ),
       KButtonVariant.secondary => (
-          colors.surface2,
-          colors.textPrimary,
-          colors.borderDefault,
-        ),
+        colors.surface2,
+        colors.textPrimary,
+        colors.borderDefault,
+      ),
       KButtonVariant.ghost => (
-          colors.surface1.withValues(alpha: 0),
-          colors.textSecondary,
-          colors.surface1.withValues(alpha: 0),
-        ),
+        colors.surface1.withValues(alpha: 0),
+        colors.textSecondary,
+        colors.surface1.withValues(alpha: 0),
+      ),
       KButtonVariant.danger => (
-          colors.semanticDangerSubtle,
-          colors.semanticDanger,
-          colors.semanticDanger,
-        ),
+        colors.semanticDangerSubtle,
+        colors.semanticDanger,
+        colors.semanticDanger,
+      ),
     };
 
-    final textStyle = (size == KButtonSize.small
-            ? context.kt.label
-            : context.kt.bodyStrong)
-        .copyWith(color: foreground);
+    final textStyle =
+        (size == KButtonSize.small ? context.kt.label : context.kt.bodyStrong)
+            .copyWith(color: foreground);
 
-    final content = Row(
-      mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        if (busy)
-          SizedBox(
+    Widget iconWidget(IconData value) => Icon(
+      value,
+      key: ValueKey<IconData>(value),
+      size: Space.s5,
+      color: foreground,
+    );
+    final leading = busy
+        ? SizedBox(
+            key: const ValueKey<String>('busy'),
             width: Space.s4,
             height: Space.s4,
             child: CircularProgressIndicator(
@@ -138,16 +148,42 @@ class KButton extends StatelessWidget {
               color: foreground,
             ),
           )
-        else if (icon != null)
-          Icon(icon, size: Space.s5, color: foreground),
-        if (busy || icon != null) const SizedBox(width: Space.s2),
+        : icon == null
+        ? null
+        : iconWidget(icon!);
+    final animatedLeading = leading == null || !animateChanges
+        ? leading
+        : AnimatedSwitcher(
+            duration: KMotion.duration(context, KDurations.fast),
+            switchInCurve: KCurves.emphasized,
+            switchOutCurve: KCurves.accelerate,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(scale: animation, child: child),
+            ),
+            child: leading,
+          );
+    final labelWidget = Text(
+      label,
+      key: ValueKey<String>(label),
+      style: textStyle,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+
+    final content = Row(
+      mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        ?animatedLeading,
+        if (animatedLeading != null) const SizedBox(width: Space.s2),
         Flexible(
-          child: Text(
-            label,
-            style: textStyle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: animateChanges
+              ? AnimatedSwitcher(
+                  duration: KMotion.duration(context, KDurations.fast),
+                  child: labelWidget,
+                )
+              : labelWidget,
         ),
         if (trailingIcon != null) ...<Widget>[
           const SizedBox(width: Space.s2),
@@ -169,9 +205,7 @@ class KButton extends StatelessWidget {
           color: background,
           borderRadius: BorderRadius.circular(_radius),
           border: Border.all(
-            color: variant == KButtonVariant.ghost
-                ? background
-                : border,
+            color: variant == KButtonVariant.ghost ? background : border,
             width: Strokes.thin,
           ),
         ),

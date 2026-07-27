@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/links.dart';
 import '../../../design/motion.dart';
@@ -26,7 +30,7 @@ import 'peek_menu.dart';
 /// window. A naive `GestureDetector(onTap:, onDoubleTap:)` would charge every
 /// single tap ~260ms for the privilege, and that is what makes an app feel
 /// cheap.
-class KEntityGestureCard extends StatelessWidget {
+class KEntityGestureCard extends ConsumerWidget {
   /// Wraps [child] in the gesture contract for [entity].
   const KEntityGestureCard({
     required this.entity,
@@ -41,6 +45,7 @@ class KEntityGestureCard extends StatelessWidget {
     this.enabled = true,
     this.pressFeedback = true,
     this.onOpen,
+    this.onImmersive,
     this.onSettled,
   });
 
@@ -79,11 +84,20 @@ class KEntityGestureCard extends StatelessWidget {
   /// inline instead of pushing a route.
   final VoidCallback? onOpen;
 
+  /// Overrides the immersive route transition, primarily for inline hosts.
+  final VoidCallback? onImmersive;
+
   /// Fires when the double-tap window closes with no second tap, i.e. the
   /// single tap is now definitive.
   final VoidCallback? onSettled;
 
-  void _open(BuildContext context) {
+  void _open(BuildContext context, WidgetRef ref) {
+    ref
+        .read(interactionFeedbackProvider.notifier)
+        .begin(
+          action: InteractionFeedbackAction.imageOpen,
+          targetKey: entity.key,
+        );
     final override = onOpen;
     if (override != null) {
       override();
@@ -92,7 +106,20 @@ class KEntityGestureCard extends StatelessWidget {
     context.push(KlectLinks.closeupPath(entity.type, entity.id));
   }
 
-  void _escalate(BuildContext context) {
+  void _escalate(BuildContext context, WidgetRef ref) {
+    unawaited(
+      ref
+          .read(interactionFeedbackProvider.notifier)
+          .local(
+            action: InteractionFeedbackAction.immersiveOpen,
+            targetKey: entity.key,
+          ),
+    );
+    final override = onImmersive;
+    if (override != null) {
+      override();
+      return;
+    }
     // The closeup was already pushed by the first tap; swap it for the
     // immersive viewer so `back` returns to the grid, not to a closeup the
     // user never asked for.
@@ -102,13 +129,13 @@ class KEntityGestureCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final content = pressFeedback ? KPressFeedback(child: child) : child;
     return KGestureRegion(
       enabled: enabled,
       semanticLabel: title,
-      onTap: () => _open(context),
-      onDoubleTap: () => _escalate(context),
+      onTap: () => _open(context, ref),
+      onDoubleTap: () => _escalate(context, ref),
       onTapSettled: onSettled,
       onLongPress: () => KPeekMenu.show(
         context,

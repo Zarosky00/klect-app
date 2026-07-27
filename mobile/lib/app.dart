@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/feedback/interaction_feedback.dart';
 import 'core/offline/action_queue.dart';
 import 'core/settings/app_settings.dart';
 import 'core/supabase.dart';
 import 'design/theme.dart';
 import 'router.dart';
+import 'ui/ui.dart';
 
 /// The application root.
 ///
@@ -30,6 +32,7 @@ class _KlectAppState extends ConsumerState<KlectApp>
     // Anything queued while offline (or before the app was killed) replays now.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(ref.read(offlineQueueProvider).flush());
+      unawaited(ref.read(interactionFeedbackProvider.notifier).preload());
     });
   }
 
@@ -66,6 +69,8 @@ class _KlectAppState extends ConsumerState<KlectApp>
       theme: KlectThemeData.light(),
       darkTheme: KlectThemeData.dark(),
       themeMode: themeMode,
+      builder: (context, child) =>
+          KInteractionFeedbackHost(child: child ?? const SizedBox.shrink()),
     );
   }
 }

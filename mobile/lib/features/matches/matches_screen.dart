@@ -45,7 +45,8 @@ class MatchesScreen extends ConsumerWidget {
           ? FillViewport(
               child: KEmptyState(
                 title: 'Taste matching is off',
-                message: 'You turned similarity off in Privacy, so we do not '
+                message:
+                    'You turned similarity off in Privacy, so we do not '
                     'compare your shelves with anyone else.',
                 icon: Icons.visibility_off_outlined,
                 actionLabel: 'Open privacy settings',
@@ -53,9 +54,7 @@ class MatchesScreen extends ConsumerWidget {
               ),
             )
           : matches.when(
-              loading: () => const FillViewport(
-                child: KSkeletonList(rows: 4),
-              ),
+              loading: () => const FillViewport(child: KSkeletonList(rows: 4)),
               error: (error, _) => FillViewport(
                 child: KErrorState(
                   error: error,
@@ -66,7 +65,8 @@ class MatchesScreen extends ConsumerWidget {
                   ? FillViewport(
                       child: KEmptyState(
                         title: 'No matches yet',
-                        message: 'Matching runs on the tags your collections '
+                        message:
+                            'Matching runs on the tags your collections '
                             'carry. Add a few things and collectors with the '
                             'same taste will surface here.',
                         icon: Icons.auto_awesome_outlined,
@@ -153,8 +153,9 @@ class MatchCard extends ConsumerWidget {
                     ),
                     Text(
                       person.handle,
-                      style: context.kt.caption
-                          .copyWith(color: colors.textTertiary),
+                      style: context.kt.caption.copyWith(
+                        color: colors.textTertiary,
+                      ),
                     ),
                     const SizedBox(height: Space.s15),
                     Row(
@@ -214,6 +215,7 @@ class MatchCard extends ConsumerWidget {
               Expanded(
                 child: FollowButton(
                   userId: person.id,
+                  displayName: person.name,
                   followerCount: person.followerCount,
                   expand: true,
                 ),
@@ -225,8 +227,7 @@ class MatchCard extends ConsumerWidget {
                   icon: Icons.forum_outlined,
                   variant: KButtonVariant.secondary,
                   expand: true,
-                  onPressed: () =>
-                      UserActions.message(context, ref, person.id),
+                  onPressed: () => UserActions.message(context, ref, person.id),
                 ),
               ),
             ],
@@ -280,29 +281,29 @@ class _ShelfThumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => KPressable(
-        onTap: () => context.push(
-          KlectLinks.closeupPath(EntityType.collection, collection.id),
+    onTap: () => context.push(
+      KlectLinks.closeupPath(EntityType.collection, collection.id),
+    ),
+    enforceMinTapTarget: false,
+    semanticLabel: '${collection.name}, ${collection.itemCount} items',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        KBlurhashImage(
+          url: api.publicUrl(collection.coverPath),
+          blurhash: collection.coverBlurhash,
+          aspectRatio: Aspect.cover,
+          borderRadius: BorderRadius.circular(Radii.md),
+          semanticLabel: collection.name,
         ),
-        enforceMinTapTarget: false,
-        semanticLabel: '${collection.name}, ${collection.itemCount} items',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            KBlurhashImage(
-              url: api.publicUrl(collection.coverPath),
-              blurhash: collection.coverBlurhash,
-              aspectRatio: Aspect.cover,
-              borderRadius: BorderRadius.circular(Radii.md),
-              semanticLabel: collection.name,
-            ),
-            const SizedBox(height: Space.s1),
-            Text(
-              collection.name,
-              style: context.kt.caption,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+        const SizedBox(height: Space.s1),
+        Text(
+          collection.name,
+          style: context.kt.caption,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-      );
+      ],
+    ),
+  );
 }

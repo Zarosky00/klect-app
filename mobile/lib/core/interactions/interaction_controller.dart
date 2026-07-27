@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error.dart';
 import '../api/klect_api.dart';
+import '../feedback/interaction_feedback.dart';
 import '../models/models.dart';
 import '../offline/action_queue.dart';
 import '../offline/queued_action.dart';
@@ -75,9 +76,12 @@ class InteractionController extends Notifier<InteractionState> {
   final EntityRef entity;
 
   final Map<InteractionAction, bool> _desired = <InteractionAction, bool>{};
-  final Map<InteractionAction, bool> _serverActive = <InteractionAction, bool>{};
+  final Map<InteractionAction, bool> _serverActive =
+      <InteractionAction, bool>{};
   final Map<InteractionAction, int> _serverCount = <InteractionAction, int>{};
   final Set<InteractionAction> _busy = <InteractionAction>{};
+  final Map<InteractionAction, String> _feedbackIds =
+      <InteractionAction, String>{};
 
   KlectApi get _api => ref.read(klectApiProvider);
   OfflineActionQueue get _queue => ref.read(offlineQueueProvider);
@@ -86,7 +90,7 @@ class InteractionController extends Notifier<InteractionState> {
   InteractionState build() {
     final seed =
         ref.read(interactionSeedStoreProvider).get(entity) ??
-            const InteractionState();
+        const InteractionState();
     _adoptAsServerTruth(seed);
     return seed;
   }
@@ -188,10 +192,7 @@ class InteractionController extends Notifier<InteractionState> {
       state = state.copyWith(viewCount: count, hydrated: true);
     } on KlectError catch (error) {
       if (error.isRetryable) {
-        await _queue.enqueueView(
-          entityType: entity.type,
-          entityId: entity.id,
-        );
+        await _queue.enqueueView(entityType: entity.type, entityId: entity.id);
       }
     }
   }
@@ -220,6 +221,13 @@ class InteractionController extends Notifier<InteractionState> {
   }) async {
     final desired = !state.isActive(action);
     _desired[action] = desired;
+    final feedbackAction = _feedbackActionFor(action);
+    final feedback = ref.read(interactionFeedbackProvider.notifier);
+    _feedbackIds[action] = feedback.begin(
+      action: feedbackAction,
+      targetKey: entity.key,
+      active: desired,
+    );
 
     // Optimistic: the delta lands the instant the finger lifts.
     final optimisticCount = state.countOf(action) + (desired ? 1 : -1);
@@ -245,13 +253,32 @@ class InteractionController extends Notifier<InteractionState> {
             count: _serverCount[action]!,
           )
           .copyWith(syncing: _busy.length > 1, hydrated: true);
+      unawaited(
+        feedback.resolve(
+          id: _feedbackIds[action]!,
+          action: feedbackAction,
+          result: InteractionFeedbackResult.confirmed,
+          targetKey: entity.key,
+          active: _serverActive[action],
+        ),
+      );
     } on KlectError catch (error) {
       if (error.isRetryable) {
         // Keep the user's intent on screen and replay it on reconnect.
         await _enqueue(action, _desired[action]!, note: note, quote: quote);
         state = state.copyWith(syncing: _busy.length > 1);
+        unawaited(
+          feedback.resolve(
+            id: _feedbackIds[action]!,
+            action: feedbackAction,
+            result: InteractionFeedbackResult.queued,
+            targetKey: entity.key,
+            active: _desired[action],
+          ),
+        );
       } else {
         // Roll back to the last thing the server actually told us.
+        final attempted = _desired[action]!;
         _desired[action] = _serverActive[action]!;
         state = state
             .withAction(
@@ -260,43 +287,64 @@ class InteractionController extends Notifier<InteractionState> {
               count: _serverCount[action]!,
             )
             .copyWith(syncing: _busy.length > 1, error: error);
+        unawaited(
+          feedback.resolve(
+            id: _feedbackIds[action]!,
+            action: feedbackAction,
+            result: InteractionFeedbackResult.failed,
+            targetKey: entity.key,
+            active: attempted,
+          ),
+        );
       }
     } finally {
       _busy.remove(action);
     }
   }
 
+  static InteractionFeedbackAction _feedbackActionFor(
+    InteractionAction action,
+  ) => switch (action) {
+    InteractionAction.like => InteractionFeedbackAction.like,
+    InteractionAction.save => InteractionFeedbackAction.save,
+    InteractionAction.repost => InteractionFeedbackAction.repost,
+  };
+
   Future<ToggleResult> _call(
     InteractionAction action, {
     String? note,
     String? quote,
-  }) =>
-      switch (action) {
-        InteractionAction.like => _api.toggleLike(entity.type, entity.id),
-        InteractionAction.save =>
-          _api.toggleSave(entity.type, entity.id, note: note),
-        InteractionAction.repost =>
-          _api.toggleRepost(entity.type, entity.id, quote: quote),
-      };
+  }) => switch (action) {
+    InteractionAction.like => _api.toggleLike(entity.type, entity.id),
+    InteractionAction.save => _api.toggleSave(
+      entity.type,
+      entity.id,
+      note: note,
+    ),
+    InteractionAction.repost => _api.toggleRepost(
+      entity.type,
+      entity.id,
+      quote: quote,
+    ),
+  };
 
   Future<void> _enqueue(
     InteractionAction action,
     bool desired, {
     String? note,
     String? quote,
-  }) =>
-      _queue.enqueueToggle(
-        kind: switch (action) {
-          InteractionAction.like => QueuedActionKind.like,
-          InteractionAction.save => QueuedActionKind.save,
-          InteractionAction.repost => QueuedActionKind.repost,
-        },
-        entityType: entity.type,
-        entityId: entity.id,
-        desiredActive: desired,
-        note: note,
-        quote: quote,
-      );
+  }) => _queue.enqueueToggle(
+    kind: switch (action) {
+      InteractionAction.like => QueuedActionKind.like,
+      InteractionAction.save => QueuedActionKind.save,
+      InteractionAction.repost => QueuedActionKind.repost,
+    },
+    entityType: entity.type,
+    entityId: entity.id,
+    desiredActive: desired,
+    note: note,
+    quote: quote,
+  );
 }
 
 /// The optimistic engine, keyed by `(entityType, entityId)`.
@@ -305,11 +353,11 @@ class InteractionController extends Notifier<InteractionState> {
 /// final state = ref.watch(interactionProvider(EntityRef.item(id)));
 /// ref.read(interactionProvider(EntityRef.item(id)).notifier).toggleLike();
 /// ```
-final interactionProvider = NotifierProvider.family<InteractionController,
-    InteractionState, EntityRef>(
-  InteractionController.new,
-  name: 'interaction',
-);
+final interactionProvider =
+    NotifierProvider.family<InteractionController, InteractionState, EntityRef>(
+      InteractionController.new,
+      name: 'interaction',
+    );
 
 /// Follow state for one profile, with the same optimistic contract.
 ///
@@ -326,6 +374,8 @@ class FollowController extends Notifier<FollowState> {
   bool _serverActive = false;
   int _serverCount = 0;
   bool _busy = false;
+  String? _feedbackId;
+  String? _targetLabel;
 
   @override
   FollowState build() => const FollowState();
@@ -344,9 +394,19 @@ class FollowController extends Notifier<FollowState> {
   }
 
   /// Follow / unfollow, optimistic and coalesced exactly like the toggles.
-  Future<void> toggle() async {
+  Future<void> toggle({String? targetLabel}) async {
     final desired = !state.following;
     _desired = desired;
+    if (targetLabel?.trim().isNotEmpty == true) {
+      _targetLabel = targetLabel!.trim();
+    }
+    final feedback = ref.read(interactionFeedbackProvider.notifier);
+    _feedbackId = feedback.begin(
+      action: InteractionFeedbackAction.follow,
+      targetKey: userId,
+      active: desired,
+      targetLabel: _targetLabel,
+    );
     final optimistic = state.followerCount + (desired ? 1 : -1);
     state = state.copyWith(
       following: desired,
@@ -367,18 +427,48 @@ class FollowController extends Notifier<FollowState> {
         followerCount: _serverCount,
         hydrated: true,
       );
+      unawaited(
+        feedback.resolve(
+          id: _feedbackId!,
+          action: InteractionFeedbackAction.follow,
+          result: InteractionFeedbackResult.confirmed,
+          targetKey: userId,
+          active: _serverActive,
+          targetLabel: _targetLabel,
+        ),
+      );
     } on KlectError catch (error) {
       if (error.isRetryable) {
-        await ref.read(offlineQueueProvider).enqueueFollow(
-              userId: userId,
-              desiredActive: _desired,
-            );
+        await ref
+            .read(offlineQueueProvider)
+            .enqueueFollow(userId: userId, desiredActive: _desired);
+        unawaited(
+          feedback.resolve(
+            id: _feedbackId!,
+            action: InteractionFeedbackAction.follow,
+            result: InteractionFeedbackResult.queued,
+            targetKey: userId,
+            active: _desired,
+            targetLabel: _targetLabel,
+          ),
+        );
       } else {
+        final attempted = _desired;
         _desired = _serverActive;
         state = state.copyWith(
           following: _serverActive,
           followerCount: _serverCount,
           error: error,
+        );
+        unawaited(
+          feedback.resolve(
+            id: _feedbackId!,
+            action: InteractionFeedbackAction.follow,
+            result: InteractionFeedbackResult.failed,
+            targetKey: userId,
+            active: attempted,
+            targetLabel: _targetLabel,
+          ),
         );
       }
     } finally {
@@ -416,13 +506,12 @@ class FollowState {
     bool? hydrated,
     KlectError? error,
     bool clearError = false,
-  }) =>
-      FollowState(
-        following: following ?? this.following,
-        followerCount: followerCount ?? this.followerCount,
-        hydrated: hydrated ?? this.hydrated,
-        error: clearError ? null : (error ?? this.error),
-      );
+  }) => FollowState(
+    following: following ?? this.following,
+    followerCount: followerCount ?? this.followerCount,
+    hydrated: hydrated ?? this.hydrated,
+    error: clearError ? null : (error ?? this.error),
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -440,6 +529,6 @@ class FollowState {
 /// Follow state per user id.
 final followProvider =
     NotifierProvider.family<FollowController, FollowState, String>(
-  FollowController.new,
-  name: 'follow',
-);
+      FollowController.new,
+      name: 'follow',
+    );

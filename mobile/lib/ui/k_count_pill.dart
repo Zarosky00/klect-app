@@ -82,7 +82,7 @@ class _KRollingCountState extends State<KRollingCount> {
             ),
             transitionBuilder: reduced
                 ? (child, animation) =>
-                    FadeTransition(opacity: animation, child: child)
+                      FadeTransition(opacity: animation, child: child)
                 : (child, animation) {
                     final isIncoming =
                         child.key == ValueKey<String>('$index:${text[index]}');
@@ -188,13 +188,14 @@ class _KCountPillState extends State<KCountPill>
   @override
   void didUpdateWidget(KCountPill oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.active && !oldWidget.active && !KMotion.reduced(context)) {
+    if (widget.active != oldWidget.active && !KMotion.reduced(context)) {
+      final start = widget.active ? KMotion.burstOvershoot : KMotion.pressScale;
       _pop
-        ..value = KMotion.burstOvershoot
+        ..value = start
         ..animateWith(
           SpringSimulation(
-            KMotion.spring(Springs.bouncy),
-            KMotion.burstOvershoot,
+            KMotion.spring(widget.active ? Springs.bouncy : Springs.gentle),
+            start,
             1,
             0,
           ),

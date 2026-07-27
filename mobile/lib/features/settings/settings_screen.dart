@@ -100,7 +100,7 @@ class SettingsScreen extends ConsumerWidget {
               SettingsRow(
                 icon: Icons.palette_outlined,
                 title: 'Appearance',
-                subtitle: 'Theme and motion',
+                subtitle: 'Theme, sound and touch',
                 value: switch (themeMode) {
                   ThemeMode.system => 'System',
                   ThemeMode.light => 'Light',

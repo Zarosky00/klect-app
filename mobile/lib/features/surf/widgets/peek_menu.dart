@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../design/motion.dart';
 import '../../../design/theme.dart';
@@ -31,7 +31,14 @@ abstract final class KPeekMenu {
     String? blurhash,
     double? aspectRatio,
   }) {
-    unawaited(HapticFeedback.mediumImpact());
+    unawaited(
+      ProviderScope.containerOf(context)
+          .read(interactionFeedbackProvider.notifier)
+          .local(
+            action: InteractionFeedbackAction.peekOpen,
+            targetKey: entity.key,
+          ),
+    );
     return Navigator.of(context, rootNavigator: true).push<void>(
       _PeekRoute(
         entity: entity,

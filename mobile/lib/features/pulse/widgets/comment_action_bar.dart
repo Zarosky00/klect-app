@@ -26,11 +26,7 @@ import '../../../ui/ui.dart';
 ///    `entity_share`-able into chat, so there is no send-to-a-friend row.
 class CommentActionBar extends ConsumerStatefulWidget {
   /// Creates the bar for one comment.
-  const CommentActionBar({
-    required this.comment,
-    super.key,
-    this.onReply,
-  });
+  const CommentActionBar({required this.comment, super.key, this.onReply});
 
   /// The comment, whose counts seed the optimistic engine.
   final CommentModel comment;
@@ -95,15 +91,13 @@ class _CommentActionBarState extends ConsumerState<CommentActionBar> {
             icon: Icons.link_rounded,
             label: 'Copy link',
             detail: 'The same link the web app uses.',
-            onTap: () =>
-                Navigator.of(sheetContext).pop(_ShareChoice.copy),
+            onTap: () => Navigator.of(sheetContext).pop(_ShareChoice.copy),
           ),
           _SheetOption(
             icon: Icons.ios_share_rounded,
             label: 'Share via system',
             detail: 'Hand it to any app on this phone.',
-            onTap: () =>
-                Navigator.of(sheetContext).pop(_ShareChoice.system),
+            onTap: () => Navigator.of(sheetContext).pop(_ShareChoice.system),
           ),
         ],
       ),
@@ -135,15 +129,6 @@ class _CommentActionBarState extends ConsumerState<CommentActionBar> {
     final colors = context.kc;
     final state = ref.watch(interactionProvider(_entity));
 
-    ref.listen<InteractionState>(interactionProvider(_entity),
-        (previous, next) {
-      final error = next.error;
-      if (error != null && error != previous?.error) {
-        KToast.error(context, error.message);
-        _controller.clearError();
-      }
-    });
-
     return Row(
       children: <Widget>[
         KCountPill(
@@ -155,7 +140,8 @@ class _CommentActionBarState extends ConsumerState<CommentActionBar> {
           showZero: false,
           iconSize: Space.s4,
           gap: Space.s1,
-          semanticLabel: '${state.liked ? 'Unlike' : 'Like'} comment, '
+          semanticLabel:
+              '${state.liked ? 'Unlike' : 'Like'} comment, '
               '${state.likeCount}',
           onTap: _controller.toggleLike,
         ),
@@ -169,7 +155,8 @@ class _CommentActionBarState extends ConsumerState<CommentActionBar> {
           showZero: false,
           iconSize: Space.s4,
           gap: Space.s1,
-          semanticLabel: '${state.saved ? 'Unsave' : 'Save'} comment, '
+          semanticLabel:
+              '${state.saved ? 'Unsave' : 'Save'} comment, '
               '${state.saveCount}',
           onTap: () => _controller.toggleSave(),
         ),

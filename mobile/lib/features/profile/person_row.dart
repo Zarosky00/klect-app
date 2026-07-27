@@ -55,8 +55,8 @@ class PersonRow extends ConsumerWidget {
     final isSelf = ref.watch(currentUserIdProvider) == profile.id;
 
     return KPressable(
-      onTap: onTap ??
-          () => context.push(KlectLinks.profilePath(profile.username)),
+      onTap:
+          onTap ?? () => context.push(KlectLinks.profilePath(profile.username)),
       onLongPress: () => UserActions.showOverflow(context, profile: profile),
       enforceMinTapTarget: false,
       semanticLabel: '${profile.name}, ${profile.handle}',
@@ -83,16 +83,18 @@ class PersonRow extends ConsumerWidget {
                   ),
                   Text(
                     subtitle ?? profile.handle,
-                    style: context.kt.caption
-                        .copyWith(color: colors.textTertiary),
+                    style: context.kt.caption.copyWith(
+                      color: colors.textTertiary,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (subtitle == null && (profile.bio?.isNotEmpty ?? false))
                     Text(
                       profile.bio!,
-                      style: context.kt.caption
-                          .copyWith(color: colors.textSecondary),
+                      style: context.kt.caption.copyWith(
+                        color: colors.textSecondary,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -105,6 +107,7 @@ class PersonRow extends ConsumerWidget {
               const SizedBox(width: Space.s3),
               FollowButton(
                 userId: profile.id,
+                displayName: profile.name,
                 followerCount: profile.followerCount,
                 size: KButtonSize.small,
               ),

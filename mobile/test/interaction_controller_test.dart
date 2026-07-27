@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:klect/core/api/api_error.dart';
 import 'package:klect/core/api/klect_api.dart';
+import 'package:klect/core/feedback/interaction_feedback.dart';
 import 'package:klect/core/interactions/interactions.dart';
 import 'package:klect/core/models/models.dart';
 import 'package:klect/core/offline/action_queue.dart';
@@ -9,6 +10,7 @@ import 'package:klect/core/offline/queued_action.dart';
 import 'package:klect/core/storage/key_value_store.dart';
 
 import 'support/fake_api.dart';
+import 'support/recording_feedback_driver.dart';
 
 void main() {
   const entity = EntityRef.item('cccccccc-0000-0000-0000-000000000001');
@@ -17,6 +19,9 @@ void main() {
     final container = ProviderContainer.test(
       overrides: [
         klectApiProvider.overrideWithValue(api),
+        interactionFeedbackDriverProvider.overrideWithValue(
+          RecordingFeedbackDriver(),
+        ),
         keyValueStoreProvider.overrideWithValue(MemoryKeyValueStore()),
       ],
     );
@@ -60,6 +65,10 @@ void main() {
       expect(api.likeCalls, 1);
       expect(api.serverLiked, isTrue);
       expect(api.serverLikeCount, 6);
+      final feedback = container.read(interactionFeedbackProvider);
+      expect(feedback?.action, InteractionFeedbackAction.like);
+      expect(feedback?.result, InteractionFeedbackResult.confirmed);
+      expect(feedback?.active, isTrue);
     });
 
     test('10 rapid taps converge on the right state and count', () async {
@@ -141,53 +150,69 @@ void main() {
       expect(api.repostCalls, 1);
     });
 
-    test('a permanent failure rolls the delta back and surfaces the error',
-        () async {
-      final api = FakeKlectApi(likeCount: 5)
-        ..failWith = const KlectError(
-          KlectErrorKind.forbidden,
-          'You can no longer interact with this.',
-          code: '42501',
+    test(
+      'a permanent failure rolls the delta back and surfaces the error',
+      () async {
+        final api = FakeKlectApi(likeCount: 5)
+          ..failWith = const KlectError(
+            KlectErrorKind.forbidden,
+            'You can no longer interact with this.',
+            code: '42501',
+          );
+        final container = harness(
+          api,
+          const InteractionState(likeCount: 5, hydrated: true),
         );
-      final container = harness(
-        api,
-        const InteractionState(likeCount: 5, hydrated: true),
-      );
-      final controller = container.read(interactionProvider(entity).notifier);
+        final controller = container.read(interactionProvider(entity).notifier);
 
-      await controller.toggleLike();
+        await controller.toggleLike();
 
-      final state = container.read(interactionProvider(entity));
-      expect(state.liked, isFalse, reason: 'rolled back');
-      expect(state.likeCount, 5, reason: 'rolled back');
-      expect(state.error?.kind, KlectErrorKind.forbidden);
-    });
-
-    test('a transport failure keeps the intent and queues it for replay',
-        () async {
-      final api = FakeKlectApi(likeCount: 5)
-        ..failWith = const KlectError(
-          KlectErrorKind.network,
-          'You appear to be offline.',
+        final state = container.read(interactionProvider(entity));
+        expect(state.liked, isFalse, reason: 'rolled back');
+        expect(state.likeCount, 5, reason: 'rolled back');
+        expect(state.error?.kind, KlectErrorKind.forbidden);
+        expect(
+          container.read(interactionFeedbackProvider)?.result,
+          InteractionFeedbackResult.failed,
         );
-      final container = harness(
-        api,
-        const InteractionState(likeCount: 5, hydrated: true),
-      );
-      final controller = container.read(interactionProvider(entity).notifier);
+      },
+    );
 
-      await controller.toggleLike();
+    test(
+      'a transport failure keeps the intent and queues it for replay',
+      () async {
+        final api = FakeKlectApi(likeCount: 5)
+          ..failWith = const KlectError(
+            KlectErrorKind.network,
+            'You appear to be offline.',
+          );
+        final container = harness(
+          api,
+          const InteractionState(likeCount: 5, hydrated: true),
+        );
+        final controller = container.read(interactionProvider(entity).notifier);
 
-      final state = container.read(interactionProvider(entity));
-      expect(state.liked, isTrue, reason: 'the intent stays on screen');
-      expect(state.likeCount, 6);
-      expect(state.error, isNull, reason: 'offline is not an error state here');
+        await controller.toggleLike();
 
-      final queue = container.read(offlineQueueProvider);
-      expect(queue.length, 1);
-      expect(queue.pending.single.kind, QueuedActionKind.like);
-      expect(queue.pending.single.desiredActive, isTrue);
-    });
+        final state = container.read(interactionProvider(entity));
+        expect(state.liked, isTrue, reason: 'the intent stays on screen');
+        expect(state.likeCount, 6);
+        expect(
+          state.error,
+          isNull,
+          reason: 'offline is not an error state here',
+        );
+
+        final queue = container.read(offlineQueueProvider);
+        expect(queue.length, 1);
+        expect(queue.pending.single.kind, QueuedActionKind.like);
+        expect(queue.pending.single.desiredActive, isTrue);
+        expect(
+          container.read(interactionFeedbackProvider)?.result,
+          InteractionFeedbackResult.queued,
+        );
+      },
+    );
 
     test('realtime counters merge without clobbering the viewer flags', () {
       final api = FakeKlectApi(liked: true, likeCount: 5);
@@ -213,6 +238,50 @@ void main() {
     });
   });
 
+  group('FollowController feedback', () {
+    test(
+      'confirmation carries the display name for the premium toast',
+      () async {
+        final container = harness(FakeKlectApi(), const InteractionState());
+        const userId = 'collector-1';
+        final controller = container.read(followProvider(userId).notifier);
+        controller.hydrate(following: false, followerCount: 4);
+
+        await controller.toggle(targetLabel: 'Akash');
+
+        final feedback = container.read(interactionFeedbackProvider);
+        expect(feedback?.action, InteractionFeedbackAction.follow);
+        expect(feedback?.result, InteractionFeedbackResult.confirmed);
+        expect(feedback?.active, isTrue);
+        expect(feedback?.targetLabel, 'Akash');
+      },
+    );
+
+    test(
+      'offline follows resolve as queued without a false confirmation',
+      () async {
+        final api = FakeKlectApi()
+          ..failWith = const KlectError(
+            KlectErrorKind.network,
+            'You appear to be offline.',
+          );
+        final container = harness(api, const InteractionState());
+        final controller = container.read(
+          followProvider('collector-2').notifier,
+        );
+        controller.hydrate(following: false, followerCount: 1);
+
+        await controller.toggle(targetLabel: 'Mina');
+
+        expect(
+          container.read(interactionFeedbackProvider)?.result,
+          InteractionFeedbackResult.queued,
+        );
+        expect(container.read(followProvider('collector-2')).following, isTrue);
+      },
+    );
+  });
+
   group('OfflineActionQueue', () {
     test('collapses repeated intents for the same entity to one row', () async {
       final api = FakeKlectApi(likeCount: 0);
@@ -236,10 +305,7 @@ void main() {
     test('replay converges instead of blindly re-toggling', () async {
       // Server already reflects the desired state: replay must be a no-op.
       final api = FakeKlectApi(liked: true, likeCount: 1);
-      final queue = OfflineActionQueue(
-        api: api,
-        store: MemoryKeyValueStore(),
-      );
+      final queue = OfflineActionQueue(api: api, store: MemoryKeyValueStore());
       addTearDown(queue.dispose);
 
       await queue.enqueueToggle(
@@ -257,10 +323,7 @@ void main() {
 
     test('replay applies the toggle when the server disagrees', () async {
       final api = FakeKlectApi(likeCount: 0);
-      final queue = OfflineActionQueue(
-        api: api,
-        store: MemoryKeyValueStore(),
-      );
+      final queue = OfflineActionQueue(api: api, store: MemoryKeyValueStore());
       addTearDown(queue.dispose);
 
       await queue.enqueueToggle(
@@ -279,10 +342,7 @@ void main() {
 
     test('survives a cold start', () async {
       final store = MemoryKeyValueStore();
-      final first = OfflineActionQueue(
-        api: FakeKlectApi(),
-        store: store,
-      );
+      final first = OfflineActionQueue(api: FakeKlectApi(), store: store);
       await first.enqueueToggle(
         kind: QueuedActionKind.save,
         entityType: EntityType.collection,

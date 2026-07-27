@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
+import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../design/motion.dart';
 import '../../../design/theme.dart';
@@ -50,7 +50,14 @@ abstract final class QuickActionsSheet {
     bool isOwner = false,
     List<QuickOwnerAction> ownerActions = const <QuickOwnerAction>[],
   }) async {
-    unawaited(HapticFeedback.mediumImpact());
+    unawaited(
+      ProviderScope.containerOf(context)
+          .read(interactionFeedbackProvider.notifier)
+          .local(
+            action: InteractionFeedbackAction.peekOpen,
+            targetKey: entity.key,
+          ),
+    );
     final chosen = await KSheet.show<QuickOwnerAction>(
       context: context,
       title: title,

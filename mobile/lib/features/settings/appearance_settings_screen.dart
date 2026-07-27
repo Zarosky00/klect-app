@@ -15,7 +15,8 @@ class AppearanceSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
-    final mode = ref.watch(themeModeProvider);
+    final settings = ref.watch(appSettingsProvider);
+    final mode = settings.themeMode;
     final controller = ref.read(appSettingsProvider.notifier);
 
     return KScaffold(
@@ -54,6 +55,26 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                 icon: Icons.light_mode_rounded,
                 selected: mode == ThemeMode.light,
                 onTap: () => controller.setThemeMode(ThemeMode.light),
+              ),
+            ],
+          ),
+          SettingsSection(
+            header: 'Sound & touch',
+            note: 'Quiet confirmations for meaningful actions only.',
+            children: <Widget>[
+              SettingsToggleRow(
+                title: 'Interaction sounds',
+                subtitle: 'Subtle cues that respect your device’s silent mode.',
+                icon: Icons.graphic_eq_rounded,
+                value: settings.interactionSoundsEnabled,
+                onChanged: controller.setInteractionSoundsEnabled,
+              ),
+              SettingsToggleRow(
+                title: 'Haptic feedback',
+                subtitle: 'Mild touch feedback for social and image actions.',
+                icon: Icons.vibration_rounded,
+                value: settings.hapticsEnabled,
+                onChanged: controller.setHapticsEnabled,
               ),
             ],
           ),

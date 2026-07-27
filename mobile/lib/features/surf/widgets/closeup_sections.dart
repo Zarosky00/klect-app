@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +8,7 @@ import '../../../core/links.dart';
 import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
+import '../../profile/follow_button.dart';
 import 'entity_gesture_card.dart';
 
 /// `Anime · JJK` — the trail above whatever the closeup is showing.
@@ -104,7 +103,9 @@ class _CloseupOwnerRowState extends ConsumerState<CloseupOwnerRow> {
   void _hydrate() {
     final owner = widget.closeup.owner;
     if (owner.id.isEmpty) return;
-    ref.read(followProvider(owner.id).notifier).hydrate(
+    ref
+        .read(followProvider(owner.id).notifier)
+        .hydrate(
           following: widget.closeup.viewer.follows,
           followerCount: owner.followerCount,
         );
@@ -116,10 +117,9 @@ class _CloseupOwnerRowState extends ConsumerState<CloseupOwnerRow> {
     final text = context.kt;
     final owner = widget.closeup.owner;
     final follow = ref.watch(followProvider(owner.id));
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
-          owner.avatarPath,
-          bucket: StorageBucket.avatars,
-        );
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(owner.avatarPath, bucket: StorageBucket.avatars);
 
     void openProfile() {
       if (owner.username.isEmpty) return;
@@ -164,14 +164,12 @@ class _CloseupOwnerRowState extends ConsumerState<CloseupOwnerRow> {
         ),
         if (!widget.closeup.viewer.isOwner) ...<Widget>[
           const SizedBox(width: Space.s3),
-          KButton(
-            label: follow.following ? 'Following' : 'Follow',
+          FollowButton(
+            userId: owner.id,
+            displayName: owner.name,
+            followerCount: owner.followerCount,
+            initiallyFollowing: widget.closeup.viewer.follows,
             size: KButtonSize.small,
-            variant: follow.following
-                ? KButtonVariant.secondary
-                : KButtonVariant.primary,
-            onPressed: () =>
-                unawaited(ref.read(followProvider(owner.id).notifier).toggle()),
           ),
         ],
       ],
@@ -204,7 +202,8 @@ class CloseupMetadata extends StatelessWidget {
       if (acquired != null)
         (
           label: 'Acquired',
-          value: '${acquired.year}-${_two(acquired.month)}-'
+          value:
+              '${acquired.year}-${_two(acquired.month)}-'
               '${_two(acquired.day)}',
         ),
       if (item.acquisitionPlace != null)
@@ -311,12 +310,13 @@ class CloseupItemStrip extends ConsumerWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: Space.s5),
         itemCount: items.length,
-        separatorBuilder: (context, index) =>
-            const SizedBox(width: Space.s2),
+        separatorBuilder: (context, index) => const SizedBox(width: Space.s2),
         itemBuilder: (context, index) {
           final item = items[index];
-          final aspect =
-              (item.aspect ?? Aspect.cover).clamp(Aspect.gridMin, Aspect.gridMax);
+          final aspect = (item.aspect ?? Aspect.cover).clamp(
+            Aspect.gridMin,
+            Aspect.gridMax,
+          );
           final url = api.publicUrl(item.coverPath);
           return SizedBox(
             width: height * aspect,
@@ -423,14 +423,14 @@ class CloseupSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              title.toUpperCase(),
-              style: context.kt.micro.copyWith(color: context.kc.textTertiary),
-            ),
-          ),
-          ?trailing,
-        ],
-      );
+    children: <Widget>[
+      Expanded(
+        child: Text(
+          title.toUpperCase(),
+          style: context.kt.micro.copyWith(color: context.kc.textTertiary),
+        ),
+      ),
+      ?trailing,
+    ],
+  );
 }

@@ -88,8 +88,10 @@ class _PostThreadScreenState extends ConsumerState<PostThreadScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(postThreadProvider(widget.postId));
 
-    ref.listen<PostThreadState>(postThreadProvider(widget.postId),
-        (previous, next) {
+    ref.listen<PostThreadState>(postThreadProvider(widget.postId), (
+      previous,
+      next,
+    ) {
       final draft = next.failedDraft;
       if (draft == null || draft == previous?.failedDraft) return;
       // A failed comment must never lose the user's words.
@@ -125,8 +127,7 @@ class _PostThreadScreenState extends ConsumerState<PostThreadScreen> {
                 ..._commentSlivers(state),
                 SliverToBoxAdapter(
                   child: SizedBox(
-                    height:
-                        MediaQuery.viewInsetsOf(context).bottom + Space.s8,
+                    height: MediaQuery.viewInsetsOf(context).bottom + Space.s8,
                   ),
                 ),
               ],
@@ -173,10 +174,7 @@ class _PostThreadScreenState extends ConsumerState<PostThreadScreen> {
           ),
           child: Row(
             children: <Widget>[
-              Text(
-                'Comments',
-                style: context.kt.title3,
-              ),
+              Text('Comments', style: context.kt.title3),
               const Spacer(),
               for (final sort in CommentSort.values) ...<Widget>[
                 KChip(
@@ -220,8 +218,7 @@ class _PostThreadScreenState extends ConsumerState<PostThreadScreen> {
               comment: comment,
               isMine: meId != null && comment.authorId == meId,
               onReply: () => _startReply(comment),
-              onDelete: () =>
-                  unawaited(_controller.removeComment(comment.id)),
+              onDelete: () => unawaited(_controller.removeComment(comment.id)),
             );
           },
         ),
@@ -235,8 +232,7 @@ class _PostThreadScreenState extends ConsumerState<PostThreadScreen> {
               Space.s0,
             ),
             child: KButton(
-              label:
-                  state.loadingMore ? 'Loading…' : 'Show more comments',
+              label: state.loadingMore ? 'Loading…' : 'Show more comments',
               variant: KButtonVariant.ghost,
               size: KButtonSize.small,
               busy: state.loadingMore,
@@ -332,8 +328,18 @@ class _PostBlock extends ConsumerWidget {
   }
 
   static const List<String> _months = <String>[
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   static String _fullTimestamp(DateTime at) {
@@ -402,7 +408,7 @@ class _AuthorHeader extends ConsumerWidget {
               onTap: author == null || author!.username.isEmpty
                   ? null
                   : () =>
-                      context.push(KlectLinks.profilePath(author!.username)),
+                        context.push(KlectLinks.profilePath(author!.username)),
             ),
             const SizedBox(width: Space.s3),
             Expanded(
@@ -421,8 +427,7 @@ class _AuthorHeader extends ConsumerWidget {
                       author!.handle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style:
-                          text.caption.copyWith(color: colors.textTertiary),
+                      style: text.caption.copyWith(color: colors.textTertiary),
                     ),
                 ],
               ),
@@ -431,6 +436,7 @@ class _AuthorHeader extends ConsumerWidget {
               const SizedBox(width: Space.s2),
               FollowButton(
                 userId: author!.id,
+                displayName: author!.name,
                 followerCount: author!.followerCount,
                 size: KButtonSize.small,
               ),
@@ -526,10 +532,9 @@ class _ThreadCommentRow extends ConsumerWidget {
     final colors = context.kc;
     final text = context.kt;
     final author = comment.author;
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
-          author?.avatarPath,
-          bucket: StorageBucket.avatars,
-        );
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
     final indent =
         (comment.depth > _maxIndent ? _maxIndent : comment.depth) * Space.s6;
 
@@ -560,8 +565,7 @@ class _ThreadCommentRow extends ConsumerWidget {
               isVerified: author?.isVerified ?? false,
               onTap: author == null || author.username.isEmpty
                   ? null
-                  : () =>
-                      context.push(KlectLinks.profilePath(author.username)),
+                  : () => context.push(KlectLinks.profilePath(author.username)),
             ),
             const SizedBox(width: Space.s3),
             Expanded(
@@ -587,8 +591,7 @@ class _ThreadCommentRow extends ConsumerWidget {
                                 comment.createdAt ?? DateTime.now(),
                                 locale: 'en_short',
                               ),
-                        style:
-                            text.micro.copyWith(color: colors.textTertiary),
+                        style: text.micro.copyWith(color: colors.textTertiary),
                       ),
                       const Spacer(),
                       if (isMine && !comment.isPending)
@@ -648,10 +651,7 @@ class _Composer extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface1,
         border: Border(
-          top: BorderSide(
-            color: colors.borderSubtle,
-            width: Strokes.hairline,
-          ),
+          top: BorderSide(color: colors.borderSubtle, width: Strokes.hairline),
         ),
       ),
       // The Scaffold's resizeToAvoidBottomInset lifts the whole bottom bar
@@ -689,9 +689,7 @@ class _Composer extends StatelessWidget {
                   child: KTextField(
                     controller: controller,
                     focusNode: focusNode,
-                    hint: reply == null
-                        ? 'Post your reply'
-                        : 'Write a reply',
+                    hint: reply == null ? 'Post your reply' : 'Write a reply',
                     maxLines: 4,
                     minLines: 1,
                     maxLength: 1000,

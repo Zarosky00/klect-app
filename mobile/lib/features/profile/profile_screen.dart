@@ -421,6 +421,7 @@ class _ProfileHeader extends ConsumerWidget {
                 const SizedBox(width: Space.s2),
                 FollowButton(
                   userId: profile.id,
+                  displayName: profile.name,
                   followerCount: profile.followerCount,
                   size: KButtonSize.small,
                 ),
