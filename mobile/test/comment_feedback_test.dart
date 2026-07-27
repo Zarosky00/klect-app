@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:klect/core/api/klect_api.dart';
 import 'package:klect/core/feedback/interaction_feedback.dart';
 import 'package:klect/core/models/models.dart';
+import 'package:klect/core/settings/app_settings.dart';
 import 'package:klect/core/storage/key_value_store.dart';
 import 'package:klect/features/pulse/widgets/comment_action_bar.dart';
 
@@ -20,7 +21,11 @@ void main() {
       overrides: [
         klectApiProvider.overrideWithValue(FakeKlectApi()),
         interactionFeedbackDriverProvider.overrideWithValue(driver),
-        keyValueStoreProvider.overrideWithValue(MemoryKeyValueStore()),
+        keyValueStoreProvider.overrideWithValue(
+          MemoryKeyValueStore(<String, String>{
+            AppSettingsController.hapticsKey: 'true',
+          }),
+        ),
       ],
     );
     var replies = 0;

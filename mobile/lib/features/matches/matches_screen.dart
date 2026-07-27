@@ -216,6 +216,7 @@ class MatchCard extends ConsumerWidget {
                 child: FollowButton(
                   userId: person.id,
                   displayName: person.name,
+                  avatarPath: person.avatarPath,
                   followerCount: person.followerCount,
                   expand: true,
                 ),

@@ -240,20 +240,24 @@ void main() {
 
   group('FollowController feedback', () {
     test(
-      'confirmation carries the display name for the premium toast',
+      'confirmation carries the display name and avatar for the follow panel',
       () async {
         final container = harness(FakeKlectApi(), const InteractionState());
         const userId = 'collector-1';
         final controller = container.read(followProvider(userId).notifier);
         controller.hydrate(following: false, followerCount: 4);
 
-        await controller.toggle(targetLabel: 'Akash');
+        await controller.toggle(
+          targetLabel: 'Akash',
+          targetAvatarPath: 'collector-1/avatar.jpg',
+        );
 
         final feedback = container.read(interactionFeedbackProvider);
         expect(feedback?.action, InteractionFeedbackAction.follow);
         expect(feedback?.result, InteractionFeedbackResult.confirmed);
         expect(feedback?.active, isTrue);
         expect(feedback?.targetLabel, 'Akash');
+        expect(feedback?.targetAvatarPath, 'collector-1/avatar.jpg');
       },
     );
 

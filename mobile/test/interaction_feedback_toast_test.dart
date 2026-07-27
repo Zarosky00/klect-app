@@ -19,9 +19,13 @@ void main() {
         ],
       );
 
-  testWidgets('follow confirmation is a concise top-right status pill', (
+  testWidgets('follow confirmation is a wide avatar-backed top panel', (
     tester,
   ) async {
+    tester.view
+      ..physicalSize = const Size(360, 640)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final container = harness(RecordingFeedbackDriver());
     await pumpKlect(
       tester,
@@ -42,27 +46,26 @@ void main() {
           ),
         );
     await tester.pump();
-    await tester.pump(KDurations.base);
+    await tester.pump(KDurations.medium);
 
-    expect(find.text('Following Akash'), findsOneWidget);
-    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
-    expect(find.textContaining('new shelves'), findsNothing);
+    expect(
+      find.text(
+        'Following! Their new shelves and posts will appear in your Pulse.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('A'), findsOneWidget);
+    expect(find.byIcon(Icons.check_rounded), findsNothing);
 
     final rect = tester.getRect(
-      find.byKey(const ValueKey<String>('interaction-feedback-pill')),
+      find.byKey(const ValueKey<String>('interaction-follow-panel')),
     );
-    expect(
-      rect.right,
-      closeTo(
-        tester.view.physicalSize.width / tester.view.devicePixelRatio -
-            Space.s3,
-        0.1,
-      ),
-    );
-    expect(rect.top, greaterThanOrEqualTo(Layout.topBarHeight));
+    expect(rect.left, closeTo(Space.s4, 0.1));
+    expect(rect.right, closeTo(360 - Space.s4, 0.1));
+    expect(rect.top, closeTo(Space.s3, 0.1));
   });
 
-  testWidgets('unfollow, queued and failed copy stay contextual and short', (
+  testWidgets('unfollow, queued and failed copy stay contextual', (
     tester,
   ) async {
     final container = harness(RecordingFeedbackDriver());
@@ -84,8 +87,12 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('Unfollowed Akash'), findsOneWidget);
-    expect(find.byIcon(Icons.remove_rounded), findsOneWidget);
+    expect(
+      find.text(
+        'Unfollowed. Their new activity will no longer appear in your Pulse.',
+      ),
+      findsOneWidget,
+    );
 
     await controller.dispatch(
       const InteractionFeedbackEvent(
@@ -98,8 +105,12 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('Follow queued \u00b7 Akash'), findsOneWidget);
-    expect(find.byIcon(Icons.schedule_rounded), findsOneWidget);
+    expect(
+      find.text(
+        'Follow queued. We\u2019ll add their activity when you\u2019re back online.',
+      ),
+      findsOneWidget,
+    );
 
     await controller.dispatch(
       const InteractionFeedbackEvent(
@@ -112,8 +123,14 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.text('Couldn\u2019t follow Akash'), findsOneWidget);
-    expect(find.byIcon(Icons.error_outline_rounded), findsOneWidget);
+    expect(
+      find.text('Couldn\u2019t follow Akash. Nothing changed\u2014try again.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('interaction-follow-panel')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('confirmed likes do not create noisy success notices', (
@@ -145,7 +162,7 @@ void main() {
     );
   });
 
-  testWidgets('tapping the pill dismisses it with one native tap effect', (
+  testWidgets('tapping the panel dismisses it with one native tap effect', (
     tester,
   ) async {
     final driver = RecordingFeedbackDriver();
@@ -171,11 +188,48 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('interaction-feedback-pill')),
+      find.byKey(const ValueKey<String>('interaction-follow-panel')),
     );
     await tester.pumpAndSettle();
 
     expect(driver.taps, hasLength(1));
-    expect(find.text('Following Akash'), findsNothing);
+    expect(
+      find.text(
+        'Following! Their new shelves and posts will appear in your Pulse.',
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('reduced motion keeps only the follow panel fade', (
+    tester,
+  ) async {
+    final container = harness(RecordingFeedbackDriver());
+    await pumpKlect(
+      tester,
+      const KInteractionFeedbackHost(child: SizedBox.expand()),
+      container: container,
+      disableAnimations: true,
+    );
+
+    await container
+        .read(interactionFeedbackProvider.notifier)
+        .dispatch(
+          const InteractionFeedbackEvent(
+            id: 'follow-reduced',
+            action: InteractionFeedbackAction.follow,
+            result: InteractionFeedbackResult.confirmed,
+            targetKey: 'akash-id',
+            active: true,
+            targetLabel: 'Akash',
+          ),
+        );
+    await tester.pump();
+
+    final panel = find.byKey(
+      const ValueKey<String>('interaction-follow-panel'),
+    );
+    expect(panel, findsOneWidget);
+    expect(tester.getRect(panel).top, closeTo(Space.s3, 0.1));
   });
 }

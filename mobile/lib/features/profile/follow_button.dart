@@ -23,6 +23,7 @@ class FollowButton extends ConsumerStatefulWidget {
     required this.userId,
     required this.displayName,
     super.key,
+    this.avatarPath,
     this.followerCount = 0,
     this.initiallyFollowing,
     this.size = KButtonSize.medium,
@@ -34,6 +35,9 @@ class FollowButton extends ConsumerStatefulWidget {
 
   /// Human-readable target used by contextual outcome toasts.
   final String displayName;
+
+  /// Avatar storage path used by the global follow outcome panel.
+  final String? avatarPath;
 
   /// The target's follower count as the caller last saw it — used to seed the
   /// optimistic delta so the first tap does not jump from zero.
@@ -146,7 +150,10 @@ class _FollowButtonState extends ConsumerState<FollowButton>
       onPressed: signedIn
           ? () => ref
                 .read(followProvider(widget.userId).notifier)
-                .toggle(targetLabel: widget.displayName)
+                .toggle(
+                  targetLabel: widget.displayName,
+                  targetAvatarPath: widget.avatarPath,
+                )
           : null,
     );
 

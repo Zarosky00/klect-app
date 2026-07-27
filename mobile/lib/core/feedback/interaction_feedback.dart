@@ -51,6 +51,7 @@ class InteractionFeedbackEvent {
     required this.targetKey,
     this.active,
     this.targetLabel,
+    this.targetAvatarPath,
   });
 
   /// Unique id shared by the intent and its final resolution.
@@ -71,6 +72,9 @@ class InteractionFeedbackEvent {
   /// Human-readable target supplied by the UI, used by follow notices.
   final String? targetLabel;
 
+  /// Avatar storage path supplied by follow controls for contextual notices.
+  final String? targetAvatarPath;
+
   /// Creates another phase of this interaction.
   InteractionFeedbackEvent resolve(InteractionFeedbackResult nextResult) =>
       InteractionFeedbackEvent(
@@ -80,6 +84,7 @@ class InteractionFeedbackEvent {
         targetKey: targetKey,
         active: active,
         targetLabel: targetLabel,
+        targetAvatarPath: targetAvatarPath,
       );
 }
 
@@ -171,6 +176,7 @@ class InteractionFeedbackController
     required String targetKey,
     bool? active,
     String? targetLabel,
+    String? targetAvatarPath,
   }) {
     final id =
         '${action.name}:$targetKey:${DateTime.now().microsecondsSinceEpoch}:'
@@ -184,6 +190,7 @@ class InteractionFeedbackController
           targetKey: targetKey,
           active: active,
           targetLabel: targetLabel,
+          targetAvatarPath: targetAvatarPath,
         ),
       ),
     );
@@ -198,6 +205,7 @@ class InteractionFeedbackController
     required String targetKey,
     bool? active,
     String? targetLabel,
+    String? targetAvatarPath,
   }) {
     return dispatch(
       InteractionFeedbackEvent(
@@ -207,6 +215,7 @@ class InteractionFeedbackController
         targetKey: targetKey,
         active: active,
         targetLabel: targetLabel,
+        targetAvatarPath: targetAvatarPath,
       ),
     );
   }

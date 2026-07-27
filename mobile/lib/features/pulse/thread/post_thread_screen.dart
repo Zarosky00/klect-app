@@ -269,6 +269,21 @@ class _PostBlock extends ConsumerWidget {
     final body = post.text;
     final target = post.target;
     final attachment = post.attachment;
+    final actionEntity = post.entity;
+    final firstMedia = post.media.isEmpty ? null : post.media.first;
+    final quotePreview = actionEntity.type == EntityType.post
+        ? PulseTarget(
+            id: actionEntity.id,
+            type: EntityType.post,
+            body: body,
+            coverPath: firstMedia?.storagePath,
+            coverBlurhash: firstMedia?.blurhash,
+            coverWidth: firstMedia?.width,
+            coverHeight: firstMedia?.height,
+            createdAt: post.sortAt,
+            author: author,
+          )
+        : (target?.id == actionEntity.id ? target : null);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(Space.s4, Space.s3, Space.s4, 0),
@@ -314,10 +329,14 @@ class _PostBlock extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: Space.s1),
             child: KActionBar(
-              entity: post.entity,
+              entity: actionEntity,
               seed: post.seed,
               live: true,
               shareTitle: body ?? author?.name,
+              quotePreview: quotePreview,
+              quoteMedia: actionEntity.type == EntityType.post
+                  ? post.media
+                  : const <ItemMedia>[],
               onComment: onComment,
             ),
           ),
@@ -437,6 +456,7 @@ class _AuthorHeader extends ConsumerWidget {
               FollowButton(
                 userId: author!.id,
                 displayName: author!.name,
+                avatarPath: author!.avatarPath,
                 followerCount: author!.followerCount,
                 size: KButtonSize.small,
               ),

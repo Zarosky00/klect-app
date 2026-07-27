@@ -10,7 +10,7 @@ class AppSettings {
   const AppSettings({
     this.themeMode = ThemeMode.system,
     this.interactionSoundsEnabled = true,
-    this.hapticsEnabled = true,
+    this.hapticsEnabled = false,
   });
 
   /// System-following by default, with a manual override.
@@ -66,8 +66,12 @@ class AppSettingsController extends Notifier<AppSettings> {
       themeMode: _parseThemeMode(_store.getString(themeModeKey)),
       interactionSoundsEnabled: _parseEnabled(
         _store.getString(interactionSoundsKey),
+        defaultValue: true,
       ),
-      hapticsEnabled: _parseEnabled(_store.getString(hapticsKey)),
+      hapticsEnabled: _parseEnabled(
+        _store.getString(hapticsKey),
+        defaultValue: false,
+      ),
     );
   }
 
@@ -95,7 +99,12 @@ class AppSettingsController extends Notifier<AppSettings> {
     _ => ThemeMode.system,
   };
 
-  static bool _parseEnabled(String? value) => value != 'false';
+  static bool _parseEnabled(String? value, {required bool defaultValue}) =>
+      switch (value) {
+        'true' => true,
+        'false' => false,
+        _ => defaultValue,
+      };
 }
 
 /// App-wide device preferences.

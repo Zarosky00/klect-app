@@ -422,6 +422,7 @@ class _ProfileHeader extends ConsumerWidget {
                 FollowButton(
                   userId: profile.id,
                   displayName: profile.name,
+                  avatarPath: profile.avatarPath,
                   followerCount: profile.followerCount,
                   size: KButtonSize.small,
                 ),

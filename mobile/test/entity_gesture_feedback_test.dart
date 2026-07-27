@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:klect/core/feedback/interaction_feedback.dart';
 import 'package:klect/core/interactions/interactions.dart';
+import 'package:klect/core/settings/app_settings.dart';
 import 'package:klect/core/storage/key_value_store.dart';
 import 'package:klect/design/motion.dart';
 import 'package:klect/features/surf/widgets/entity_gesture_card.dart';
@@ -20,7 +21,11 @@ void main() {
     final container = ProviderContainer.test(
       overrides: [
         interactionFeedbackDriverProvider.overrideWithValue(driver),
-        keyValueStoreProvider.overrideWithValue(MemoryKeyValueStore()),
+        keyValueStoreProvider.overrideWithValue(
+          MemoryKeyValueStore(<String, String>{
+            AppSettingsController.hapticsKey: 'true',
+          }),
+        ),
       ],
     );
     var opens = 0;
@@ -52,7 +57,11 @@ void main() {
     final container = ProviderContainer.test(
       overrides: [
         interactionFeedbackDriverProvider.overrideWithValue(driver),
-        keyValueStoreProvider.overrideWithValue(MemoryKeyValueStore()),
+        keyValueStoreProvider.overrideWithValue(
+          MemoryKeyValueStore(<String, String>{
+            AppSettingsController.hapticsKey: 'true',
+          }),
+        ),
       ],
     );
     var opens = 0;
@@ -87,7 +96,11 @@ void main() {
     final container = ProviderContainer.test(
       overrides: [
         interactionFeedbackDriverProvider.overrideWithValue(driver),
-        keyValueStoreProvider.overrideWithValue(MemoryKeyValueStore()),
+        keyValueStoreProvider.overrideWithValue(
+          MemoryKeyValueStore(<String, String>{
+            AppSettingsController.hapticsKey: 'true',
+          }),
+        ),
       ],
     );
     await pumpKlect(
