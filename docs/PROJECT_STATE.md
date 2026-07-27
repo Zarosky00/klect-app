@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-27 · Session: Pinterest follow panel + X-style quote composer · shipped as v1.4.2
+> Last updated: 2026-07-27 · Session: Social and communication upgrade · shipped as v1.6.0
 
 ---
 
@@ -9,13 +9,13 @@
 
 | # | Area | State | Notes |
 |---|---|---|---|
-| 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 34 tables, 87 RLS policies, 45 triggers, 14 realtime tables, 4 storage buckets. Smoke-tested under real JWT impersonation. |
+| 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 37 tables, 91 RLS policies, 53 triggers, 14 realtime tables, 4 storage buckets. The four v1.6 additive migrations are applied; advisors report 0 ERROR and 0 performance WARN. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
-| 3 | Backend API contract | ✅ **DONE** | See `BACKEND_API.md`. All RPCs live and tested. |
-| 4 | Flutter mobile app (`mobile/`) | ✅ **DONE (features)** | All feature screens implemented, zero placeholders. v1.4.2 adds the wide avatar-led follow outcome panel and a full-screen, keyboard-safe X-style quote composer with immutable original previews plus up to four editable commentary photos. Native tap feedback remains centralized; sound defaults on and haptics now default off while explicit preferences persist. `dart analyze` 0 issues, 113 tests pass. |
-| 5 | Next.js web + admin (`web/`) | ✅ **DONE (features)** | All 32 page routes + 3 auth route handlers + sitemap/robots implemented incl. intercepting closeup modal and full `/admin` — zero placeholders. v1.3.1 adds responsive profile/composer polish and `/settings/app`. Group *management* UI is mobile-only for now (web renders groups fine). |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | 2026-07-27 gates green: mobile analyze + 113 tests + clean v1.4.2 APK; web 9 tests + tsc + lint + production build. Manual CHECKLIST.md sections A–H (63 seen-it-work items) plus real-device follow-panel, quote-composer, keyboard, native-click, and optional-haptic feel still need to be walked through. |
-| 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **DONE & VERIFIED** | Migration **0017 applied to live DB** + all 5 group RPCs smoke-tested under JWT impersonation (incl. owner auto-transfer). Advisors: 0 ERROR. `database.types.ts` regenerated. |
+| 3 | Backend API contract | ✅ **DONE** | Canonical Pulse targets, comment trees, idempotent reply-safe messaging, group-policy/invite, appearance-preference, push-token and transactional call RPCs are live. Calls remain feature-gated off. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6 CORE SHIPPED** | Pulse/repost/quote/profile rendering, Reddit-style closeup comments, keyboard-safe chat, reply previews, inbox filters, group identity/avatar crop and account-synced appearance presets shipped in `v1.6.0+10`. Analyze is clean; 116 local tests pass. |
+| 5 | Next.js web + admin (`web/`) | ✅ **v1.6 DEPLOYED** | Canonical repost/quote rendering and 320–430 px overflow fixes are live on Vercel deployment `dpl_AUW4gtCweYmEuLD2B99bevYbdYt8`. Group management remains Android-first. |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual A–H pending** | Local mobile analyze + 116/116 tests + release APK pass; GitHub mobile/web CI and tagged release workflow pass. Web typecheck, 9 tests and production build pass. Real-phone keyboard, offline, accessibility and two-account smoke testing remain. |
+| 7 | Chat upgrade (`CHAT_PLAN.md`) | 🟡 **CORE SHIPPED / ADVANCED CONTROLS PENDING** | Keyboard-safe replies, failed-message retry, grouped runs, inbox filters, explicit group identity and cropped group DP shipped. Backend policies/invites are live; full invite/policy/shared-media/reporting UI and truly server-paginated inbox filters remain. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
 
@@ -82,6 +82,24 @@
   No Supabase schema, Vercel, or web changes were required. Physical Gboard, small/large text,
   dark/light theme, offline queueing, avatar-failure, and first-launch haptic checks remain pending
   because no Android device was attached to the build machine.
+
+**v1.6.0 verification (2026-07-27):**
+- Mobile: `flutter analyze --no-pub` **0 issues**; full Windows suite **116/116 passed**;
+  Linux CI suite **115/115 passed** with the Windows raster golden intentionally excluded.
+  Both local and GitHub clean release APK builds passed.
+- PR **#4** merged to `main` at commit
+  `d6eac613090589527cc2255a80c1efc85f5e17a4`. GitHub release `v1.6.0` is published
+  with `klect.apk` (102,430,563 bytes, `application/vnd.android.package-archive`).
+  A fresh public download verified `com.klect.klect`, version `1.6.0` / code `10`,
+  min SDK 24, target SDK 36, no custom audio artifacts, and SHA-256
+  `cc0342534817ba808e21f77373959278c28b1308a2d3d925a475e2d989afd1ae`.
+- Web: TypeScript, 9 Vitest tests and the production Next.js build passed in CI.
+  Vercel deployment `dpl_AUW4gtCweYmEuLD2B99bevYbdYt8` is READY and
+  `https://klect-web.vercel.app` returns HTTP 200.
+- Supabase: `social_integrity_and_comment_threads`, `messaging_groups_preferences`,
+  `reliable_call_state` and `user_preferences_rls_initplan` are applied. `push-fanout`
+  v2 and JWT-protected `turn-credentials` v1 are ACTIVE. `reliable_calls` is verified
+  **false** until Firebase, TURN secrets, native call integration and two-device testing pass.
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 
@@ -151,16 +169,17 @@ Run `get_advisors` after any migration. Current state:
 
 | advisor | ERROR | WARN | INFO |
 |---|---|---|---|
-| security | **0** | 51 | 0 |
-| performance | **0** | 0 (was 10, fixed in `0013`) | 68 |
+| security | **0** | 83 | 1 |
+| performance | **0** | 0 | 46 |
 
 **Fixed:** extensions moved out of `public`; every function `search_path` pinned; `EXECUTE` revoked
 wholesale then re-granted to a named surface; 28 unindexed foreign keys covered (`0013`); the two
-`FOR ALL` policies split so `SELECT` is served by exactly one policy (`0013`).
+`FOR ALL` policies split so `SELECT` is served by exactly one policy (`0013`); v1.6 preference
+policies use `(select auth.uid())`, removing all new `auth_rls_initplan` performance warnings.
 
 **Accepted WARNs, with reasons:**
 
-- *`{anon,authenticated}_security_definer_function_executable` (50).* These are (a) the intended
+- *`{anon,authenticated}_security_definer_function_executable` (82).* These are (a) the intended
   public RPC surface — `surf_feed`, `toggle_like`, `admin_*` etc., which is the whole point — and
   (b) the RLS predicate helpers (`can_view_entity`, `visible_to_me`, `entity_owner`, `is_staff`, …).
   Policy expressions are evaluated with the **caller's** privileges, so those helpers *must* remain
@@ -175,19 +194,27 @@ wholesale then re-granted to a named surface; 28 unindexed foreign keys covered 
   not SQL. Enable it at
   Authentication → Providers → Email → "Prevent use of leaked passwords" in the Supabase dashboard.
 
-**INFO `unused_index` (40)** is expected: the database has no production traffic yet, so nothing has
-touched the search/trigram/feed indexes. Re-check once real usage exists before dropping anything.
+**INFO:** `feature_flags` deliberately has no client RLS policy because direct table access is
+revoked and the authenticated app reads only the safe `call_feature_enabled()` RPC. The 45
+`unused_index` notices are expected before meaningful production traffic, including the new
+call-participant and enabled-push-token indexes. One pre-existing unindexed-FK notice remains;
+re-check query traffic before adding or dropping an index.
 
 ## Known limitations & open decisions
 
 1. **Figma MCP is not authorized** in this session (non-interactive OAuth). The design system is delivered
    as code (`packages/tokens`) plus `DESIGN_SYSTEM.md`. If you get Figma access, push tokens with
    `figma-generate-library`; do not re-invent values.
-2. **iOS/Android release builds** need a Mac (iOS) and a JDK+Android SDK (Android). The Flutter source is
-   written to be platform-correct; CI or a dev machine with those SDKs can build it unchanged.
-3. **Calls** use WebRTC with Supabase Realtime as the signalling channel (`call_signals` table +
-   `calls` row state). A TURN server is required for reliable connectivity across NATs — none is
-   configured yet. Add credentials in the client config when you have one.
+2. **iOS release builds** require macOS/Xcode. Android release builds work locally and in GitHub CI.
+3. **Calls:** transactional Postgres state, recipient-validated signalling, token lifecycle tables,
+   diagnostics and protected TURN credential issuance are deployed, but `reliable_calls` remains
+   server-disabled. Firebase delivery, Cloudflare TURN secrets, Android Core-Telecom/CallStyle and
+   two-real-phone relay/background/locked testing are still required for `v1.7.0`.
+4. **v1.6 stretch UI:** full invite-link/join-approval/group-policy/shared-media/reporting controls,
+   truly server-paginated inbox filters, accent palettes and per-chat wallpaper remain to be built.
+5. **Pulse visual QA:** the selected Collected Stories reference is preserved, but this machine has
+   no attached Android device or emulator for a same-state screenshot comparison. Code/golden and
+   responsive build checks passed; real-device visual comparison remains mandatory.
 
 ---
 
@@ -348,21 +375,39 @@ touched the search/trigram/feed indexes. Re-check once real usage exists before 
   Added follow-panel golden/widget coverage, keyboard-inset and quote-preview regressions, and
   preference tests. Released the verified Android build as `v1.4.2` through PR #2.
 
+### 2026-07-27 — social and communication upgrade (v1.6.0)
+- Added the shared rich Pulse target contract across Postgres, Flutter and Next.js. Reposts and
+  quotes now retain author/body/time, ordered 1–4 media, entity attachments and explicit
+  unavailable tombstones instead of empty cards. Following includes the viewer's own reposts,
+  composite cursors are stable, selection is remembered and Profile exposes Posts/Replies/Media.
+- Added the shared paged comment-tree RPC and Reddit-style mobile closeup presentation: rails,
+  reply context, two-level indentation, deeper-thread continuation, tombstones, compact actions
+  and a pinned keyboard-safe draft composer.
+- Reworked Android chat composition and replies, idempotent server sends, inbox filtering, clearer
+  group identity, square crop/rotate group avatars and account-synced appearance preferences.
+  Advanced group policy/invite UI remains explicitly tracked instead of being claimed complete.
+- Applied four additive production migrations; deployed `push-fanout` v2 and
+  `turn-credentials` v1. Transactional call state and diagnostics are present, but calls remain
+  disabled until the external Firebase/TURN/native prerequisites pass.
+- Added reproducible mobile/web CI and tagged Android release automation. PR #4 merged; GitHub
+  release `v1.6.0` and Vercel production deployment
+  `dpl_AUW4gtCweYmEuLD2B99bevYbdYt8` are live and verified.
+
 ---
 
 ## Next actions
 
-1. Install v1.4.2 on a real Android phone and verify the wide avatar follow panel, every
-   follow/unfollow/queued/error state, quote preview loading, four-photo edit/reorder/remove flow,
-   and composer layout with Gboard open at small/large text sizes in dark/light themes. Confirm
-   haptics start disabled for a fresh install, explicit sound/haptic preferences persist, offline
-   queueing behaves correctly, avatar failures fall back to initials, and Settings → Check for
-   updates reports v1.4.2 is current.
-2. Walk through manual sections A–H of `CHECKLIST.md` (63 items — gestures, optimistic social
-   mechanics, realtime chat/calls incl. the new groups, moderation flows, RLS from a second
-   account, craft). Section I is automated by `verify.sh` and is green.
-3. Web parity for chat management (edit/pin/mute/archive/group admin on web) — deliberate gap.
-4. Triage the current production `npm audit --omit=dev` result (3 high, 0 critical; `next`,
+1. Install `v1.6.0` on two real Android phones. Verify repost/quote media, Profile Posts/Replies/
+   Media, closeup comment trees, Gboard-safe chat/replies, People/Groups/Requests filters, group
+   avatar crop, first-launch haptics off, appearance sync, offline reconciliation and accessibility.
+2. Finish the tracked v1.6 stretch UI: server-paginated inbox filters; invite rotate/revoke,
+   join approval, enforced policy controls, member search/shared media/reporting/ownership/delete;
+   approved accent palettes and per-chat wallpaper.
+3. Configure Firebase device push and Cloudflare TURN secrets, implement Android
+   Core-Telecom/CallStyle, then run the required two-device Wi-Fi/carrier/background/terminated/
+   locked/permission-denied/forced-relay matrix before enabling `reliable_calls` or tagging v1.7.
+4. Walk through manual sections A–H of `CHECKLIST.md` (63 items — gestures, optimistic social
+   mechanics, messaging/groups, moderation, two-account RLS and craft). Automated gates are green.
+5. Triage the current production `npm audit --omit=dev` result (3 high, 0 critical; `next`,
    transitive `postcss` and `sharp`). The registry's proposed fix is an invalid Next.js downgrade,
    so do not apply `npm audit fix --force`; upgrade through a tested supported Next release.
-5. TURN server for reliable WebRTC calls across NATs (still unconfigured).
