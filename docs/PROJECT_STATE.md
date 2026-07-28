@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-28 · Session: v1.6.2 Pulse and follow-feedback repair
+> Last updated: 2026-07-28 · Session: v1.6.3 Pulse engagement and unified profile activity
 
 ---
 
@@ -9,12 +9,12 @@
 
 | # | Area | State | Notes |
 |---|---|---|---|
-| 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 37 tables, 91 RLS policies, 53 triggers, 14 realtime tables, 4 storage buckets. The four v1.6 migrations plus two v1.6.1 group-control migrations are applied; advisors report 0 ERROR and 0 performance WARN. |
+| 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 37 tables, 91 RLS policies, 14 realtime tables, 4 storage buckets and 28 applied migrations. `social_activity_profile` adds explicit quote intent/counters and canonical paged Pulse, engagement, profile-discussion and private-reaction contracts. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
-| 3 | Backend API contract | ✅ **DONE** | Canonical Pulse targets, comment trees, idempotent reply-safe messaging, group-policy/invite, appearance-preference, push-token and transactional call RPCs are live. Calls remain feature-gated off. |
-| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.2 SHIPPED** | Rich Pulse/Profile repost and quote cards, the compact X-style Pulse shell, and the follow-panel underline fix ship in `v1.6.2+12`. Group controls remain from v1.6.1. Analyze is clean; 120 tests pass. |
-| 5 | Next.js web + admin (`web/`) | ✅ **v1.6 DEPLOYED** | Canonical repost/quote rendering and 320–430 px overflow fixes are live on Vercel deployment `dpl_AUW4gtCweYmEuLD2B99bevYbdYt8`. Group management remains Android-first. |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual matrix pending** | Mobile analyze, 120/120 tests, local/GitHub release builds, web typecheck/9 tests/build and Supabase transaction smoke pass. Android 15 USB install/start/Pulse/Profile smoke passed; keyboard, offline and two-account matrices remain. Calls cannot enter that matrix until Firebase/TURN/native prerequisites are configured. |
+| 3 | Backend API contract | ✅ **DONE** | `pulse_feed_v2`, `social_engagement_v1`, `profile_pulse_activity_v1`, `profile_discussion_activity_v1`, `my_profile_reactions_v1` and owner-only `delete_post` are live alongside the existing canonical Pulse/comment/messaging/group/call contracts. Calls remain feature-gated off. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.3 SHIPPED** | Complete plain-repost/quote originals, account-level Likes/Reposts/Quotes sheets, Surf/Pulse/Activity profile modes, unified replies and private reaction splits ship in `v1.6.3+13`. Analyze is clean; 126 tests pass. |
+| 5 | Next.js web + admin (`web/`) | ✅ **v1.6.3 DEPLOYED** | Matching Pulse cards, engagement dialog, URL-restored profile modes and owner controls are live on Vercel deployment `dpl_FpFUXGmyTQ9k2c3MUAv5AJVrMsUR`. Group management remains Android-first. |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / v1.6.3 phone QA pending** | Supabase rollback/live smoke and pagination checks, Flutter analyze + 126/126 tests, two GitHub clean build runs, stable release build, web typecheck/15 tests/lint/build and production smoke all pass. The USB phone disconnected before the v1.6.3 in-place install; two-account/offline/accessibility matrices remain. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | 🟡 **ADVANCED GROUP CONTROLS SHIPPED** | Keyboard-safe replies, retry, inbox filters, group identity/avatar crop, invite rotate/revoke/join, join approval, enforced edit/add/send policies, member search, notifications, shared media and owner deletion are live. Group reporting and truly server-paginated inbox filters remain. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
@@ -133,6 +133,30 @@
   SHA-256 `460d934bcca98539907f82259f803080be55b153e7df0edec5878d4bf11b334f`, and was installed
   in place over USB on the attached RMX3771 without clearing app data.
 
+**v1.6.3 verification (2026-07-28):**
+- PR **#10** merged at `f54fe38b326102ccefc91b9f62f4a6e944645374`. Both push and
+  pull-request CI runs passed: Flutter analyze, **126/126** local tests, Linux tests, two clean
+  release APK builds, web typecheck, **15/15** Vitest tests and production Next.js builds.
+- Supabase migration `20260728090703_social_activity_profile` is live. Pre-apply rollback tests
+  covered complete repost/quote envelopes, explicit entity quotes, quote-counter reconciliation,
+  idempotent owner deletion, RPC grants and multi-page composite cursors. Post-apply authenticated
+  smoke checks returned both feeds, engagement summaries, profile posts, unified discussions and
+  owner-only reactions. For You and discussion pages measured about 175 ms and 38 ms respectively
+  on warm production data. Advisor deltas are limited to the intended guarded `SECURITY DEFINER`
+  RPC notices and newly created, not-yet-used indexes; no ERROR was introduced.
+- Vercel production deployment `dpl_FpFUXGmyTQ9k2c3MUAv5AJVrMsUR` is READY and aliased to
+  `https://klect-web.vercel.app`. The public home and a real profile return HTTP 200; anonymous
+  `/pulse` correctly redirects to sign-in.
+- GitHub release `v1.6.3` publishes `klect.apk` (102,926,635 bytes,
+  `application/vnd.android.package-archive`). A fresh public download verifies as
+  `com.klect.klect`, version `1.6.3` / code `13`, min SDK 24, target SDK 36, permanent certificate
+  SHA-256 `460d934bcca98539907f82259f803080be55b153e7df0edec5878d4bf11b334f`,
+  no bundled custom audio, and SHA-256
+  `ffd05b9f0c928223e12683ee4e34f95d94cbfa8ccdc40a38ae29d78d95f4d7e6`.
+  The latest-release API and stable asset URL report the same version, MIME type, size and digest.
+  The connected phone dropped off ADB immediately before installation, so v1.6.3 physical-device
+  installation and the manual two-account matrix remain explicitly pending.
+
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 
 ---
@@ -145,10 +169,10 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 - publishable key `sb_publishable_nwJjxG8yJ01lTjrv6pXQww_mQ9MNq5t`
 - The service-role key is **not** in this repo and must never be. Server-only work uses edge functions.
 
-**Migrations applied** (27, in order) — see [`../supabase/README.md`](../supabase/README.md) for the
-table of what each one does. `0001`–`0021` build, harden and extend the original product; the six
-timestamped v1.6/v1.6.1 migrations add canonical social threads, group preferences/controls,
-reliable call state and preference-policy optimization.
+**Migrations applied** (28, in order) — see [`../supabase/README.md`](../supabase/README.md) for the
+table of what each one does. `0001`–`0021` build, harden and extend the original product; the seven
+timestamped v1.6–v1.6.3 migrations add canonical social threads/activity, group
+preferences/controls, reliable call state and preference-policy optimization.
 
 **Demo data already in the database** — the surf feed returns a full, realistic grid:
 
@@ -459,14 +483,31 @@ re-check query traffic before adding or dropping an index.
 - Merged PR #8, passed both GitHub CI runs, built and USB-installed stable-signed `v1.6.2+12`, and
   tagged `v1.6.2` for the public updater release.
 
+### 2026-07-28 — v1.6.3 Pulse engagement and unified profile activity
+- Replaced incomplete Pulse/profile queries with shared paged v2 contracts. Plain reposts now carry
+  the immutable original author, body, complete media and nested Surf target; quotes remain separate
+  authored posts with their original embedded. Quote counts are trigger-maintained independently
+  from plain repost counts.
+- Split Like/Repost icon mutation from count navigation. Mobile sheets and a responsive web dialog
+  now expose viewer-safe Likes and Reposts account rows plus real quote cards, with independent
+  totals, stable opaque cursors, duplicate prevention and mutation-driven reconciliation.
+- Reorganized profiles into public Surf/Pulse identities and owner-only Activity. Pulse contains
+  Posts/Replies/Media with source filters; Replies use the actual comments system with parent and
+  destination context; private Likes/Saves split into Surf/Pulse; owner delete/undo/open/copy
+  controls use guarded server mutations.
+- Applied and smoke-tested migration `social_activity_profile`, regenerated web database types from
+  production, merged PR #10, deployed Vercel production, and published permanent-key
+  `v1.6.3+13`. All automated gates are green. Physical installation remains pending only because
+  the previously attached Android phone disconnected before `adb install -r`.
+
 ---
 
 ## Next actions
 
-1. Continue the v1.6.2 manual matrix on the attached Android phone: follow/unfollow panel with a
-   second account, comment trees, Gboard-safe chat/replies, inbox filters, every group control,
-   first-launch haptics off, offline reconciliation and accessibility. Add a second phone/account
-   for messaging, join approval and RLS isolation.
+1. Reconnect the Android phone, install stable `v1.6.3` in place, then run the two-account Pulse
+   matrix: four-photo original → plain repost → quote → Likes/Reposts/Quotes account lists; profile
+   Surf/Pulse/Activity filters; Surf/Pulse replies and deep links; private/blocked/unavailable
+   targets; owner delete/undo; offline replay; large text and reduced motion.
 2. Finish the remaining stretch UI: server-paginated inbox filters, group reporting and per-chat
    wallpaper. Keep web group-management parity as a separate scoped release.
 3. Configure Firebase device push and Cloudflare TURN secrets, implement Android
