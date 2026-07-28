@@ -2,6 +2,86 @@ import 'enums.dart';
 import 'json.dart';
 import 'profile.dart';
 
+/// Who may perform one group action.
+enum GroupPermissionScope {
+  /// Only the group owner.
+  owner,
+
+  /// The owner and admins.
+  admins,
+
+  /// Every accepted member.
+  everyone;
+
+  /// Parses the Postgres policy value without trusting unknown strings.
+  static GroupPermissionScope parse(Object? value) => switch (value) {
+    'owner' => GroupPermissionScope.owner,
+    'everyone' => GroupPermissionScope.everyone,
+    _ => GroupPermissionScope.admins,
+  };
+
+  /// Postgres wire value.
+  String get wire => name;
+
+  /// Short user-facing label.
+  String get label => switch (this) {
+    GroupPermissionScope.owner => 'Owner only',
+    GroupPermissionScope.admins => 'Owners and admins',
+    GroupPermissionScope.everyone => 'Everyone',
+  };
+
+  /// Whether a member with [role] is permitted.
+  bool allows(String? role) => switch (this) {
+    GroupPermissionScope.owner => role == 'owner',
+    GroupPermissionScope.admins => role == 'owner' || role == 'admin',
+    GroupPermissionScope.everyone => role != null,
+  };
+}
+
+/// Server-enforced permissions for a group conversation.
+class GroupPolicy {
+  /// Creates a policy snapshot.
+  const GroupPolicy({
+    this.editInfo = GroupPermissionScope.admins,
+    this.addMembers = GroupPermissionScope.admins,
+    this.sendMessages = GroupPermissionScope.everyone,
+  });
+
+  /// Parses `conversations.group_policy`.
+  factory GroupPolicy.fromJson(Map<String, dynamic> json) => GroupPolicy(
+    editInfo: GroupPermissionScope.parse(json['edit_info']),
+    addMembers: GroupPermissionScope.parse(json['add_members']),
+    sendMessages: GroupPermissionScope.parse(json['send_messages']),
+  );
+
+  /// Who may edit the title, description, and photo.
+  final GroupPermissionScope editInfo;
+
+  /// Who may add people, manage join requests, and rotate invite links.
+  final GroupPermissionScope addMembers;
+
+  /// Who may send messages.
+  final GroupPermissionScope sendMessages;
+
+  /// Serialises the exact RPC contract.
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'edit_info': editInfo.wire,
+    'add_members': addMembers.wire,
+    'send_messages': sendMessages.wire,
+  };
+
+  /// Copy with one or more permission changes.
+  GroupPolicy copyWith({
+    GroupPermissionScope? editInfo,
+    GroupPermissionScope? addMembers,
+    GroupPermissionScope? sendMessages,
+  }) => GroupPolicy(
+    editInfo: editInfo ?? this.editInfo,
+    addMembers: addMembers ?? this.addMembers,
+    sendMessages: sendMessages ?? this.sendMessages,
+  );
+}
+
 /// A row of `public.conversations`.
 ///
 /// `start_dm` guarantees exactly one [ConversationKind.dm] row per pair, ever.
@@ -21,6 +101,10 @@ class Conversation {
     this.members = const <ConversationMember>[],
     this.unreadCount = 0,
     this.otherMember,
+    this.groupPolicy = const GroupPolicy(),
+    this.joinApprovalRequired = false,
+    this.inviteTokenPrefix,
+    this.inviteRotatedAt,
   });
 
   /// Parses a `conversations` row.
@@ -46,6 +130,10 @@ class Conversation {
       members: members,
       unreadCount: asInt(json['unread_count']),
       otherMember: other.isEmpty ? null : Profile.fromJson(other),
+      groupPolicy: GroupPolicy.fromJson(asMap(json['group_policy'])),
+      joinApprovalRequired: asBool(json['join_approval_required']),
+      inviteTokenPrefix: asStringOrNull(json['invite_token_prefix']),
+      inviteRotatedAt: asDateOrNull(json['invite_rotated_at']),
     );
   }
 
@@ -88,6 +176,18 @@ class Conversation {
   /// For DMs: the other participant's profile, when joined.
   final Profile? otherMember;
 
+  /// Server-enforced group permissions. Defaults are ignored for DMs.
+  final GroupPolicy groupPolicy;
+
+  /// Whether invite-link joins wait for an admin decision.
+  final bool joinApprovalRequired;
+
+  /// Non-secret prefix proving that an active invite exists.
+  final String? inviteTokenPrefix;
+
+  /// When the current invite was rotated or revoked.
+  final DateTime? inviteRotatedAt;
+
   /// Inbox row title.
   String get displayTitle =>
       title ??
@@ -99,17 +199,27 @@ class Conversation {
 
   /// Copy with overrides — used to zero the badge optimistically.
   Conversation copyWith({
+    String? title,
+    String? description,
+    String? avatarPath,
     int? unreadCount,
     String? lastMessagePreview,
     DateTime? lastMessageAt,
     Profile? otherMember,
     List<ConversationMember>? members,
+    GroupPolicy? groupPolicy,
+    bool? joinApprovalRequired,
+    String? inviteTokenPrefix,
+    DateTime? inviteRotatedAt,
+    bool clearDescription = false,
+    bool clearAvatar = false,
+    bool clearInvite = false,
   }) => Conversation(
     id: id,
     kind: kind,
-    title: title,
-    description: description,
-    avatarPath: avatarPath,
+    title: title ?? this.title,
+    description: clearDescription ? null : (description ?? this.description),
+    avatarPath: clearAvatar ? null : (avatarPath ?? this.avatarPath),
     createdBy: createdBy,
     lastMessageAt: lastMessageAt ?? this.lastMessageAt,
     lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
@@ -118,6 +228,12 @@ class Conversation {
     members: members ?? this.members,
     unreadCount: unreadCount ?? this.unreadCount,
     otherMember: otherMember ?? this.otherMember,
+    groupPolicy: groupPolicy ?? this.groupPolicy,
+    joinApprovalRequired: joinApprovalRequired ?? this.joinApprovalRequired,
+    inviteTokenPrefix: clearInvite
+        ? null
+        : (inviteTokenPrefix ?? this.inviteTokenPrefix),
+    inviteRotatedAt: inviteRotatedAt ?? this.inviteRotatedAt,
   );
 }
 
