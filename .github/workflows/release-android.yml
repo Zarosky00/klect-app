@@ -25,10 +25,23 @@ jobs:
           flutter-version: 3.44.8
           channel: stable
           cache: true
+      - name: Configure stable Android signing
+        shell: bash
+        env:
+          KLECT_KEYSTORE_BASE64: ${{ secrets.KLECT_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KLECT_KEYSTORE_BASE64"
+          printf '%s' "$KLECT_KEYSTORE_BASE64" | base64 --decode > android/klect-release.jks
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test --exclude-tags golden
-      - run: flutter build apk --release
+      - name: Build signed release APK
+        env:
+          KLECT_KEYSTORE_PATH: ${{ github.workspace }}/mobile/android/klect-release.jks
+          KLECT_KEYSTORE_PASSWORD: ${{ secrets.KLECT_KEYSTORE_PASSWORD }}
+          KLECT_KEY_ALIAS: ${{ secrets.KLECT_KEY_ALIAS }}
+          KLECT_KEY_PASSWORD: ${{ secrets.KLECT_KEY_PASSWORD }}
+        run: flutter build apk --release
       - name: Prepare stable asset name
         shell: bash
         run: cp build/app/outputs/flutter-apk/app-release.apk klect.apk
