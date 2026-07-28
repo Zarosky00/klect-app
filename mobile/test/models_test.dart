@@ -359,6 +359,50 @@ void main() {
     });
   });
 
+  group('GroupPolicy', () {
+    test('parses conversation controls and preserves safe defaults', () {
+      final conversation = Conversation.fromJson(<String, dynamic>{
+        'id': 'group-1',
+        'kind': 'group',
+        'title': 'Collectors',
+        'group_policy': <String, dynamic>{
+          'edit_info': 'owner',
+          'add_members': 'everyone',
+          'send_messages': 'admins',
+        },
+        'join_approval_required': true,
+        'invite_token_prefix': 'deadbeef',
+      });
+
+      expect(conversation.groupPolicy.editInfo, GroupPermissionScope.owner);
+      expect(
+        conversation.groupPolicy.addMembers,
+        GroupPermissionScope.everyone,
+      );
+      expect(
+        conversation.groupPolicy.sendMessages,
+        GroupPermissionScope.admins,
+      );
+      expect(conversation.joinApprovalRequired, isTrue);
+      expect(conversation.inviteTokenPrefix, 'deadbeef');
+      expect(conversation.groupPolicy.editInfo.allows('admin'), isFalse);
+      expect(conversation.groupPolicy.addMembers.allows('member'), isTrue);
+    });
+
+    test('serialises the exact RPC wire shape', () {
+      const policy = GroupPolicy(
+        editInfo: GroupPermissionScope.everyone,
+        addMembers: GroupPermissionScope.owner,
+        sendMessages: GroupPermissionScope.admins,
+      );
+      expect(policy.toJson(), <String, dynamic>{
+        'edit_info': 'everyone',
+        'add_members': 'owner',
+        'send_messages': 'admins',
+      });
+    });
+  });
+
   group('Profile', () {
     test('reads the onboarding gate', () {
       final fresh = Profile.fromJson(<String, dynamic>{

@@ -343,6 +343,112 @@ class ChatApi {
     });
   }
 
+  /// Replaces the server-enforced permissions for a group. Owner only.
+  Future<GroupPolicy> setGroupPolicy(
+    String conversationId,
+    GroupPolicy policy,
+  ) async {
+    final result = asMap(
+      await _rpc('set_group_policy', <String, dynamic>{
+        'p_conversation': conversationId,
+        'p_policy': policy.toJson(),
+      }),
+    );
+    return GroupPolicy.fromJson(result);
+  }
+
+  /// Enables or disables approval for invite-link joins. Owner only.
+  Future<bool> setGroupJoinApproval(
+    String conversationId, {
+    required bool required,
+  }) async => asBool(
+    await _rpc('set_group_join_approval', <String, dynamic>{
+      'p_conversation': conversationId,
+      'p_required': required,
+    }),
+  );
+
+  /// Rotates the private invite token and returns the only complete copy.
+  Future<String> rotateGroupInvite(String conversationId) async => asString(
+    await _rpc('rotate_group_invite', <String, dynamic>{
+      'p_conversation': conversationId,
+    }),
+  );
+
+  /// Revokes the active invite token.
+  Future<void> revokeGroupInvite(String conversationId) async {
+    await _rpc('revoke_group_invite', <String, dynamic>{
+      'p_conversation': conversationId,
+    });
+  }
+
+  /// Uses a private invite token, returning the group id and membership state.
+  Future<({String conversationId, String state})> joinGroupInvite(
+    String token,
+  ) async {
+    final result = asMap(
+      await _rpc('join_group_invite', <String, dynamic>{
+        'p_token': token.trim(),
+      }),
+    );
+    return (
+      conversationId: asString(result['conversation_id']),
+      state: asString(result['state'], 'pending'),
+    );
+  }
+
+  /// Accepts or declines one pending invite-link join request.
+  Future<void> reviewGroupJoinRequest(
+    String conversationId,
+    String memberId, {
+    required bool accept,
+  }) async {
+    await _rpc('review_group_join_request', <String, dynamic>{
+      'p_conversation': conversationId,
+      'p_member': memberId,
+      'p_accept': accept,
+    });
+  }
+
+  /// Permanently removes a group and its relational rows. Owner only.
+  Future<void> deleteGroup(String conversationId) async {
+    await _rpc('delete_group', <String, dynamic>{
+      'p_conversation': conversationId,
+    });
+  }
+
+  /// Sets the viewer's notification level for this conversation.
+  Future<void> setNotificationLevel(String conversationId, String level) {
+    if (!const <String>{'all', 'mentions', 'none'}.contains(level)) {
+      throw ArgumentError.value(level, 'level');
+    }
+    return _patchMembership(conversationId, <String, dynamic>{
+      'notification_level': level,
+    });
+  }
+
+  /// Recent photos shared in a conversation, newest message first.
+  Future<List<ChatAttachment>> fetchSharedMedia(
+    String conversationId, {
+    int limit = 120,
+  }) async {
+    final rows = await _guard(
+      () => _client
+          .from('messages')
+          .select('attachments')
+          .eq('conversation_id', conversationId)
+          .isFilter('deleted_at', null)
+          .order('created_at', ascending: false)
+          .limit(limit),
+    );
+    return <ChatAttachment>[
+      for (final row in rows)
+        for (final attachment in asMapList(row['attachments']))
+          if (asString(attachment['storage_path']).isNotEmpty)
+            ChatAttachment.fromJson(attachment),
+    ];
+  }
+
   // ─────────────────────────────────────────────────────────────── thread ──
 
   /// A page of messages, newest first. Pass the oldest [before] you hold to

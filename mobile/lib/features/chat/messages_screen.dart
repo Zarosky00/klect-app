@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../router.dart';
 import '../../ui/ui.dart';
+import 'chat_api.dart';
 import 'chat_models.dart';
+import 'group_errors.dart';
 import 'inbox_controller.dart';
 import 'widgets/conversation_tile.dart';
 
@@ -56,6 +59,25 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     await _inbox.leave(entry.id);
   }
 
+  Future<void> _joinGroup() async {
+    final token = await _JoinGroupSheet.show(context);
+    if (token == null || !mounted) return;
+    try {
+      final result = await ref.read(chatApiProvider).joinGroupInvite(token);
+      await _inbox.refresh();
+      if (!mounted) return;
+      if (result.state == 'accepted') {
+        KToast.success(context, 'You joined the group.');
+        unawaited(context.push('${Routes.messages}/${result.conversationId}'));
+      } else {
+        KToast.success(context, 'Join request sent.');
+        setState(() => _filter = _InboxFilter.requests);
+      }
+    } on KlectError catch (error) {
+      if (mounted) KToast.error(context, groupErrorCopy(error));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(chatInboxProvider);
@@ -91,6 +113,11 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
             icon: Icons.group_add_outlined,
             semanticLabel: 'New group',
             onPressed: () => context.push('${Routes.messages}/new-group'),
+          ),
+          KIconButton(
+            icon: Icons.add_link_rounded,
+            semanticLabel: 'Join with invite code',
+            onPressed: () => unawaited(_joinGroup()),
           ),
           KIconButton(
             icon: Icons.person_search_rounded,
@@ -145,6 +172,65 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         (conversation.lastMessagePreview?.toLowerCase().contains(query) ??
             false);
   }
+}
+
+class _JoinGroupSheet extends StatefulWidget {
+  const _JoinGroupSheet();
+
+  static Future<String?> show(BuildContext context) => KSheet.show<String>(
+    context: context,
+    title: 'Join a group',
+    builder: (_) => const _JoinGroupSheet(),
+  );
+
+  @override
+  State<_JoinGroupSheet> createState() => _JoinGroupSheetState();
+}
+
+class _JoinGroupSheetState extends State<_JoinGroupSheet> {
+  final TextEditingController _code = TextEditingController();
+  bool _missing = false;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final code = _code.text.trim();
+    if (code.isEmpty) {
+      setState(() => _missing = true);
+      return;
+    }
+    Navigator.of(context).pop(code);
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      Text(
+        'Paste the private code an admin shared with you.',
+        style: context.kt.body.copyWith(color: context.kc.textSecondary),
+      ),
+      const SizedBox(height: Space.s4),
+      KTextField(
+        controller: _code,
+        label: 'Invite code',
+        hint: 'Paste code',
+        autofocus: true,
+        errorText: _missing ? 'Paste an invite code first.' : null,
+        onChanged: (_) {
+          if (_missing) setState(() => _missing = false);
+        },
+        onSubmitted: (_) => _submit(),
+      ),
+      const SizedBox(height: Space.s4),
+      KButton(label: 'Continue', expand: true, onPressed: _submit),
+    ],
+  );
 }
 
 enum _InboxFilter { all, unread, people, groups, requests }
