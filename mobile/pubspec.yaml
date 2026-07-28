@@ -5,7 +5,7 @@ publish_to: 'none'
 # ⚠ The x.y.z part MUST move in lockstep with `kAppVersion` in
 # lib/core/app_version.dart AND the GitHub release tag (vX.Y.Z) on
 # Zarosky00/klect-app — the in-app update checker compares the two.
-version: 1.6.1+11
+version: 1.6.2+12
 
 environment:
   sdk: ^3.12.2

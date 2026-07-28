@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/api/klect_api.dart';
 import '../../core/models/models.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../router.dart';
 import '../../ui/ui.dart';
+import '../auth/auth_controller.dart';
 import '../chat/widgets/messages_action.dart';
 import 'data/pulse_feed_controller.dart';
 import 'data/pulse_filters.dart';
@@ -35,8 +37,8 @@ class PulseScreen extends ConsumerStatefulWidget {
 class _PulseScreenState extends ConsumerState<PulseScreen> {
   final Map<PulseMode, ScrollController> _scrolls =
       <PulseMode, ScrollController>{
-    for (final mode in PulseMode.values) mode: ScrollController(),
-  };
+        for (final mode in PulseMode.values) mode: ScrollController(),
+      };
 
   /// Whether the filter drawer is unfolded under the tabs.
   bool _filtersOpen = false;
@@ -98,6 +100,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     final tasteIds = filters.sharedTaste
         ? ref.watch(matchedCollectorIdsProvider).value
         : null;
+    final colors = context.kc;
 
     return KScaffold(
       onRefresh: _refresh,
@@ -111,12 +114,15 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
           key: PageStorageKey<String>('pulse-${mode.wire}'),
           controller: _scrolls[mode],
           slivers: <Widget>[
-            KAppBar(
-              title: 'Pulse',
-              subtitle: mode == PulseMode.foryou
-                  ? 'Tuned to your taste'
-                  : 'From the collectors you follow',
-              expandedHeight: Space.s24 + Space.s12,
+            SliverAppBar(
+              pinned: true,
+              automaticallyImplyLeading: false,
+              toolbarHeight: Layout.topBarHeight,
+              backgroundColor: colors.bgBase,
+              surfaceTintColor: Colors.transparent,
+              elevation: Elevation.none.y,
+              scrolledUnderElevation: Elevation.none.y,
+              title: Text('Pulse', style: context.kt.title2),
               actions: <Widget>[
                 KIconButton(
                   icon: Icons.search_rounded,
@@ -124,6 +130,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
                   onPressed: () => context.push(Routes.search),
                 ),
                 const MessagesAction(),
+                const SizedBox(width: Space.s2),
               ],
               bottom: _PulseTabs(
                 selected: mode,
@@ -133,6 +140,9 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
                 onToggleFilters: () =>
                     setState(() => _filtersOpen = !_filtersOpen),
               ),
+            ),
+            SliverToBoxAdapter(
+              child: _PulsePrompt(onPressed: () => unawaited(_compose())),
             ),
             // The filter drawer unfolds under the tabs — animated collapse,
             // zero height when shut.
@@ -163,9 +173,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     Set<String>? tasteIds,
   ) {
     if (feed.items.isEmpty && feed.loading) {
-      return const <Widget>[
-        SliverToBoxAdapter(child: KSkeletonList(rows: 4)),
-      ];
+      return const <Widget>[SliverToBoxAdapter(child: KSkeletonList(rows: 4))];
     }
     if (feed.items.isEmpty && feed.error != null) {
       return <Widget>[
@@ -186,7 +194,8 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
           child: mode == PulseMode.foryou
               ? KEmptyState(
                   title: 'Nothing to rank yet',
-                  message: 'For-you learns from what you like, save and '
+                  message:
+                      'For-you learns from what you like, save and '
                       'collect. Surf a little and this feed starts thinking.',
                   icon: Icons.auto_awesome_outlined,
                   actionLabel: 'Go surf',
@@ -196,7 +205,8 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
                 )
               : KEmptyState(
                   title: 'Your Pulse is quiet',
-                  message: 'Follow a few collectors and everything they add, '
+                  message:
+                      'Follow a few collectors and everything they add, '
                       'repost and say lands here.',
                   icon: Icons.bolt_outlined,
                   actionLabel: 'Find collectors like you',
@@ -217,7 +227,8 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
           hasScrollBody: false,
           child: KEmptyState(
             title: 'Nothing matches those filters',
-            message: 'Loosen the Type or Time filters — or keep scrolling: '
+            message:
+                'Loosen the Type or Time filters — or keep scrolling: '
                 'older pages load underneath and may match.',
             icon: Icons.filter_alt_off_outlined,
             actionLabel: 'Clear filters',
@@ -303,69 +314,63 @@ class _PulseTabs extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    return SizedBox(
-      height: Space.s12,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Space.s4,
-          vertical: Space.s2,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.bgBase,
+        border: Border(
+          bottom: BorderSide(
+            color: colors.borderSubtle,
+            width: Strokes.hairline,
+          ),
         ),
+      ),
+      child: SizedBox(
+        height: Space.s12,
         child: Row(
           children: <Widget>[
-            Container(
-              padding: const EdgeInsets.all(Space.s05),
-              decoration: BoxDecoration(
-                color: colors.surface2,
-                borderRadius: BorderRadius.circular(Radii.full),
-                border: Border.all(
-                  color: colors.borderSubtle,
-                  width: Strokes.hairline,
+            for (final mode in PulseMode.values)
+              Expanded(
+                child: _PulseTab(
+                  mode: mode,
+                  selected: mode == selected,
+                  onSelect: onSelect,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+            SizedBox(
+              width: Space.s12,
+              child: Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
                 children: <Widget>[
-                  for (final mode in PulseMode.values)
-                    _PulseTab(
-                      mode: mode,
-                      selected: mode == selected,
-                      onSelect: onSelect,
-                    ),
-                ],
-              ),
-            ),
-            const Spacer(),
-            Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                KIconButton(
-                  icon: filtersOpen
-                      ? Icons.tune_rounded
-                      : Icons.tune_outlined,
-                  semanticLabel: filtersOpen
-                      ? 'Hide filters'
-                      : 'Show filters',
-                  color: filtersOpen || filtersActive
-                      ? colors.accentDefault
-                      : colors.textSecondary,
-                  onPressed: onToggleFilters,
-                ),
-                if (filtersActive)
-                  Positioned(
-                    top: Space.s1,
-                    right: Space.s1,
-                    child: IgnorePointer(
-                      child: Container(
-                        width: Space.s2,
-                        height: Space.s2,
-                        decoration: BoxDecoration(
-                          color: colors.accentDefault,
-                          shape: BoxShape.circle,
+                  KIconButton(
+                    icon: filtersOpen
+                        ? Icons.tune_rounded
+                        : Icons.tune_outlined,
+                    semanticLabel: filtersOpen
+                        ? 'Hide filters'
+                        : 'Show filters',
+                    color: filtersOpen || filtersActive
+                        ? colors.accentDefault
+                        : colors.textSecondary,
+                    onPressed: onToggleFilters,
+                  ),
+                  if (filtersActive)
+                    Positioned(
+                      top: Space.s1,
+                      right: Space.s1,
+                      child: IgnorePointer(
+                        child: Container(
+                          width: Space.s2,
+                          height: Space.s2,
+                          decoration: BoxDecoration(
+                            color: colors.accentDefault,
+                            shape: BoxShape.circle,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -391,23 +396,86 @@ class _PulseTab extends StatelessWidget {
     return KPressable(
       onTap: () => onSelect(mode),
       enforceMinTapTarget: false,
-      semanticLabel:
-          selected ? '${mode.label}, selected' : mode.label,
-      child: AnimatedContainer(
-        duration: KMotion.duration(context, KDurations.fast),
-        curve: KMotion.curve(context, KCurves.emphasized),
-        padding: const EdgeInsets.symmetric(
-          horizontal: Space.s4,
-          vertical: Space.s1,
+      semanticLabel: selected ? '${mode.label}, selected' : mode.label,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          Expanded(
+            child: Center(
+              child: Text(
+                mode.label,
+                style: context.kt.label.copyWith(
+                  color: selected ? colors.textPrimary : colors.textSecondary,
+                ),
+              ),
+            ),
+          ),
+          AnimatedContainer(
+            duration: KMotion.duration(context, KDurations.fast),
+            curve: KMotion.curve(context, KCurves.emphasized),
+            width: selected ? Space.s8 : Space.s0,
+            height: Strokes.thick,
+            decoration: BoxDecoration(
+              color: selected ? colors.accentDefault : Colors.transparent,
+              borderRadius: BorderRadius.circular(Radii.full),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A visible entry into conversation so Pulse immediately reads as the place
+/// to post, quote and talk â€” not just another gallery.
+class _PulsePrompt extends ConsumerWidget {
+  const _PulsePrompt({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.kc;
+    final profile = ref.watch(myProfileProvider).value;
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(profile?.avatarPath, bucket: StorageBucket.avatars);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: colors.borderSubtle,
+            width: Strokes.hairline,
+          ),
         ),
-        decoration: BoxDecoration(
-          color: selected ? colors.accentDefault : Colors.transparent,
-          borderRadius: BorderRadius.circular(Radii.full),
-        ),
-        child: Text(
-          mode.label,
-          style: context.kt.label.copyWith(
-            color: selected ? colors.textOnAccent : colors.textSecondary,
+      ),
+      child: KPressable(
+        onTap: onPressed,
+        enforceMinTapTarget: false,
+        semanticLabel: 'Create a Pulse post',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Space.s4,
+            vertical: Space.s3,
+          ),
+          child: Row(
+            children: <Widget>[
+              KAvatar(imageUrl: avatarUrl, name: profile?.name, size: Space.s8),
+              const SizedBox(width: Space.s3),
+              Expanded(
+                child: Text(
+                  'What is happening on your shelves?',
+                  style: context.kt.body.copyWith(color: colors.textSecondary),
+                ),
+              ),
+              const SizedBox(width: Space.s2),
+              Icon(
+                Icons.image_outlined,
+                size: Space.s5,
+                color: colors.accentDefault,
+              ),
+            ],
           ),
         ),
       ),
@@ -479,30 +547,19 @@ class _ComposeButton extends StatelessWidget {
       onTap: onPressed,
       semanticLabel: 'Share something to Pulse',
       enforceMinTapTarget: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Space.s5,
-          vertical: Space.s3,
-        ),
-        decoration: BoxDecoration(
-          color: colors.accentDefault,
-          borderRadius: BorderRadius.circular(Radii.full),
-          boxShadow: KlectTheme.shadow(Elevation.mid),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.bolt_rounded,
-              size: Space.s5,
-              color: colors.textOnAccent,
-            ),
-            const SizedBox(width: Space.s2),
-            Text(
-              'Share',
-              style: context.kt.bodyStrong.copyWith(color: colors.textOnAccent),
-            ),
-          ],
+      child: SizedBox.square(
+        dimension: Space.s12,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.accentDefault,
+            shape: BoxShape.circle,
+            boxShadow: KlectTheme.shadow(Elevation.mid),
+          ),
+          child: Icon(
+            Icons.edit_rounded,
+            size: Space.s6,
+            color: colors.textOnAccent,
+          ),
         ),
       ),
     );
