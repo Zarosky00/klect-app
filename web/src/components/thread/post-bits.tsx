@@ -180,46 +180,61 @@ function QuotedPostCard({ target }: { target: PulseTarget }) {
 function EntityTargetCard({ target }: { target: PulseTarget }) {
   const childCount = target.child_count ?? 0;
   const likeCount = target.like_count ?? 0;
+  const targetMedia = (target.media ?? []).slice(0, 4);
   const childLabel =
     target.type === 'item'
       ? `${compactCount(childCount)} ${plural(childCount, 'photo')}`
       : `${compactCount(childCount)} ${plural(childCount, 'item')}`;
 
   return (
-    <Link
-      href={targetHref(target)}
+    <div
       className={cn(
-        'focus-ring group flex gap-3 overflow-hidden rounded-lg border border-line',
-        'bg-surface-1 transition-colors dur-fast ease-standard hover:border-line-strong',
+        'group overflow-hidden rounded-lg border border-line bg-surface-1',
+        'transition-colors dur-fast ease-standard hover:border-line-strong',
       )}
     >
-      <div className="w-28 shrink-0 sm:w-36">
-        <BlurhashImage
-          src={mediaUrl(target.cover_path)}
-          alt=""
-          width={target.cover_width ?? null}
-          height={target.cover_height ?? null}
-          blurhash={target.cover_blurhash}
-          fallbackAspect={1}
-          sizes="144px"
-        />
-      </div>
+      {targetMedia.length > 0 ? (
+        <PostMediaGrid media={targetMedia} href={targetHref(target)} />
+      ) : target.cover_path ? (
+        <Link href={targetHref(target)} className="focus-ring block">
+          <BlurhashImage
+            src={mediaUrl(target.cover_path)}
+            alt=""
+            width={target.cover_width ?? null}
+            height={target.cover_height ?? null}
+            blurhash={target.cover_blurhash}
+            fallbackAspect={aspect.gridMax}
+            sizes="(max-width: 768px) 90vw, 560px"
+          />
+        </Link>
+      ) : null}
 
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 py-3 pr-3">
-        <span className="text-micro uppercase tracking-widest text-ink-3">
-          {ENTITY_LABEL[target.type]}
-          {target.author ? ` · @${target.author.username}` : ''}
+      <Link href={targetHref(target)} className="focus-ring block p-3">
+        <span className="flex items-center gap-2 text-micro uppercase tracking-widest text-ink-3">
+          {target.author ? (
+            <Avatar
+              path={target.author.avatar_path}
+              name={target.author.display_name}
+              username={target.author.username}
+              size="xs"
+              verified={target.author.is_verified}
+            />
+          ) : null}
+          <span>
+            {ENTITY_LABEL[target.type]}
+            {target.author ? ` · @${target.author.username}` : ''}
+          </span>
         </span>
-        <span className="truncate font-display text-title2 text-ink">
+        <span className="mt-1 block truncate font-display text-title2 text-ink">
           {target.title ?? 'Untitled'}
         </span>
         {target.subtitle ? (
-          <span className="line-clamp-2 text-caption text-ink-2">{target.subtitle}</span>
+          <span className="mt-1 line-clamp-2 text-caption text-ink-2">{target.subtitle}</span>
         ) : null}
-        <span className="tabular text-caption text-ink-3">
+        <span className="mt-1 block tabular text-caption text-ink-3">
           {childLabel} · {compactCount(likeCount)} {plural(likeCount, 'like')}
         </span>
-      </div>
-    </Link>
+      </Link>
+    </div>
   );
 }

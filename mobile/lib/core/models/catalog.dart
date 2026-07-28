@@ -21,6 +21,7 @@ class CollectionModel {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.viewCount = 0,
     this.subcollectionCount = 0,
@@ -50,6 +51,7 @@ class CollectionModel {
         likeCount: asInt(json['like_count']),
         saveCount: asInt(json['save_count']),
         repostCount: asInt(json['repost_count']),
+        quoteCount: asInt(json['quote_count']),
         commentCount: asInt(json['comment_count']),
         viewCount: asInt(json['view_count']),
         subcollectionCount: asInt(json['subcollection_count']),
@@ -108,6 +110,9 @@ class CollectionModel {
   /// Trigger-maintained.
   final int repostCount;
 
+  /// Trigger-maintained quote count.
+  final int quoteCount;
+
   /// Trigger-maintained.
   final int commentCount;
 
@@ -153,6 +158,7 @@ class SubcollectionModel {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.viewCount = 0,
     this.itemCount = 0,
@@ -178,6 +184,7 @@ class SubcollectionModel {
         likeCount: asInt(json['like_count']),
         saveCount: asInt(json['save_count']),
         repostCount: asInt(json['repost_count']),
+        quoteCount: asInt(json['quote_count']),
         commentCount: asInt(json['comment_count']),
         viewCount: asInt(json['view_count']),
         itemCount: asInt(json['item_count']),
@@ -225,6 +232,9 @@ class SubcollectionModel {
 
   /// Trigger-maintained.
   final int repostCount;
+
+  /// Trigger-maintained quote count.
+  final int quoteCount;
 
   /// Trigger-maintained.
   final int commentCount;
@@ -277,6 +287,7 @@ class ItemModel {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.viewCount = 0,
     this.mediaCount = 0,
@@ -292,40 +303,41 @@ class ItemModel {
 
   /// Parses an `items` row, or the `item` block of `get_closeup`.
   factory ItemModel.fromJson(Map<String, dynamic> json) => ItemModel(
-        id: asString(json['id']),
-        title: asString(json['title']),
-        userId: asStringOrNull(json['user_id']),
-        collectionId: asStringOrNull(json['collection_id']),
-        subcollectionId: asStringOrNull(json['subcollection_id']),
-        description: asStringOrNull(json['description']),
-        brand: asStringOrNull(json['brand']),
-        model: asStringOrNull(json['model']),
-        year: asIntOrNull(json['year']),
-        condition: asStringOrNull(json['condition']),
-        rarity: asStringOrNull(json['rarity']),
-        acquisitionDate: asDateOrNull(json['acquisition_date']),
-        acquisitionPlace: asStringOrNull(json['acquisition_place']),
-        purchasePrice: asDoubleOrNull(json['purchase_price']),
-        currency: asStringOrNull(json['currency']),
-        isFavorite: asBool(json['is_favorite']),
-        visibility: EntityVisibility.tryParse(json['visibility']),
-        attributes: asMap(json['attributes']),
-        position: asInt(json['position']),
-        likeCount: asInt(json['like_count']),
-        saveCount: asInt(json['save_count']),
-        repostCount: asInt(json['repost_count']),
-        commentCount: asInt(json['comment_count']),
-        viewCount: asInt(json['view_count']),
-        mediaCount: asInt(json['media_count']),
-        coverPath: asStringOrNull(json['cover_path']),
-        coverBlurhash: asStringOrNull(json['cover_blurhash']),
-        coverWidth: asIntOrNull(json['cover_width']),
-        coverHeight: asIntOrNull(json['cover_height']),
-        hiddenAt: asDateOrNull(json['hidden_at']),
-        deletedAt: asDateOrNull(json['deleted_at']),
-        createdAt: asDateOrNull(json['created_at']),
-        updatedAt: asDateOrNull(json['updated_at']),
-      );
+    id: asString(json['id']),
+    title: asString(json['title']),
+    userId: asStringOrNull(json['user_id']),
+    collectionId: asStringOrNull(json['collection_id']),
+    subcollectionId: asStringOrNull(json['subcollection_id']),
+    description: asStringOrNull(json['description']),
+    brand: asStringOrNull(json['brand']),
+    model: asStringOrNull(json['model']),
+    year: asIntOrNull(json['year']),
+    condition: asStringOrNull(json['condition']),
+    rarity: asStringOrNull(json['rarity']),
+    acquisitionDate: asDateOrNull(json['acquisition_date']),
+    acquisitionPlace: asStringOrNull(json['acquisition_place']),
+    purchasePrice: asDoubleOrNull(json['purchase_price']),
+    currency: asStringOrNull(json['currency']),
+    isFavorite: asBool(json['is_favorite']),
+    visibility: EntityVisibility.tryParse(json['visibility']),
+    attributes: asMap(json['attributes']),
+    position: asInt(json['position']),
+    likeCount: asInt(json['like_count']),
+    saveCount: asInt(json['save_count']),
+    repostCount: asInt(json['repost_count']),
+    quoteCount: asInt(json['quote_count']),
+    commentCount: asInt(json['comment_count']),
+    viewCount: asInt(json['view_count']),
+    mediaCount: asInt(json['media_count']),
+    coverPath: asStringOrNull(json['cover_path']),
+    coverBlurhash: asStringOrNull(json['cover_blurhash']),
+    coverWidth: asIntOrNull(json['cover_width']),
+    coverHeight: asIntOrNull(json['cover_height']),
+    hiddenAt: asDateOrNull(json['hidden_at']),
+    deletedAt: asDateOrNull(json['deleted_at']),
+    createdAt: asDateOrNull(json['created_at']),
+    updatedAt: asDateOrNull(json['updated_at']),
+  );
 
   /// Primary key.
   final String id;
@@ -393,6 +405,9 @@ class ItemModel {
   /// Trigger-maintained.
   final int repostCount;
 
+  /// Trigger-maintained quote count.
+  final int quoteCount;
+
   /// Trigger-maintained.
   final int commentCount;
 
@@ -459,20 +474,20 @@ class ItemMedia {
 
   /// Parses an `item_media` row or a closeup `media[]` entry.
   factory ItemMedia.fromJson(Map<String, dynamic> json) => ItemMedia(
-        id: asString(json['id']),
-        storagePath: asString(json['storage_path']),
-        itemId: asStringOrNull(json['item_id']),
-        userId: asStringOrNull(json['user_id']),
-        altText: asStringOrNull(json['alt_text']),
-        width: asIntOrNull(json['width']),
-        height: asIntOrNull(json['height']),
-        blurhash: asStringOrNull(json['blurhash']),
-        dominantColor: asStringOrNull(json['dominant_color']),
-        mimeType: asStringOrNull(json['mime_type']),
-        bytes: asIntOrNull(json['bytes']),
-        position: asInt(json['position']),
-        createdAt: asDateOrNull(json['created_at']),
-      );
+    id: asString(json['id']),
+    storagePath: asString(json['storage_path']),
+    itemId: asStringOrNull(json['item_id']),
+    userId: asStringOrNull(json['user_id']),
+    altText: asStringOrNull(json['alt_text']),
+    width: asIntOrNull(json['width']),
+    height: asIntOrNull(json['height']),
+    blurhash: asStringOrNull(json['blurhash']),
+    dominantColor: asStringOrNull(json['dominant_color']),
+    mimeType: asStringOrNull(json['mime_type']),
+    bytes: asIntOrNull(json['bytes']),
+    position: asInt(json['position']),
+    createdAt: asDateOrNull(json['created_at']),
+  );
 
   /// Primary key.
   final String id;
@@ -591,11 +606,11 @@ class TagModel {
 
   /// Parses a `tags` row or a `search_all` tag entry.
   factory TagModel.fromJson(Map<String, dynamic> json) => TagModel(
-        slug: asString(json['slug']),
-        name: asString(json['name']),
-        id: asStringOrNull(json['id']),
-        useCount: asInt(json['use_count']),
-      );
+    slug: asString(json['slug']),
+    name: asString(json['name']),
+    id: asStringOrNull(json['id']),
+    useCount: asInt(json['use_count']),
+  );
 
   /// Primary key. Absent from `search_all` projections.
   final String? id;

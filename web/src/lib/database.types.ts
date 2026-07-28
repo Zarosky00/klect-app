@@ -87,7 +87,11 @@ export type Database = {
       }
       call_participants: {
         Row: {
+          answered_at: string | null
+          answered_device_id: string | null
           call_id: string
+          declined_at: string | null
+          invite_state: string
           joined_at: string | null
           left_at: string | null
           muted: boolean
@@ -95,7 +99,11 @@ export type Database = {
           video_on: boolean
         }
         Insert: {
+          answered_at?: string | null
+          answered_device_id?: string | null
           call_id: string
+          declined_at?: string | null
+          invite_state?: string
           joined_at?: string | null
           left_at?: string | null
           muted?: boolean
@@ -103,7 +111,11 @@ export type Database = {
           video_on?: boolean
         }
         Update: {
+          answered_at?: string | null
+          answered_device_id?: string | null
           call_id?: string
+          declined_at?: string | null
+          invite_state?: string
           joined_at?: string | null
           left_at?: string | null
           muted?: boolean
@@ -181,42 +193,61 @@ export type Database = {
       }
       calls: {
         Row: {
+          answered_by: string | null
           conversation_id: string
           created_at: string
           created_by: string
+          diagnostics: Json
           duration_seconds: number | null
           end_reason: string | null
           ended_at: string | null
+          expires_at: string
           id: string
           kind: Database["public"]["Enums"]["call_kind"]
           started_at: string | null
+          state_version: number
           status: Database["public"]["Enums"]["call_status"]
         }
         Insert: {
+          answered_by?: string | null
           conversation_id: string
           created_at?: string
           created_by: string
+          diagnostics?: Json
           duration_seconds?: number | null
           end_reason?: string | null
           ended_at?: string | null
+          expires_at?: string
           id?: string
           kind: Database["public"]["Enums"]["call_kind"]
           started_at?: string | null
+          state_version?: number
           status?: Database["public"]["Enums"]["call_status"]
         }
         Update: {
+          answered_by?: string | null
           conversation_id?: string
           created_at?: string
           created_by?: string
+          diagnostics?: Json
           duration_seconds?: number | null
           end_reason?: string | null
           ended_at?: string | null
+          expires_at?: string
           id?: string
           kind?: Database["public"]["Enums"]["call_kind"]
           started_at?: string | null
+          state_version?: number
           status?: Database["public"]["Enums"]["call_status"]
         }
         Relationships: [
+          {
+            foreignKeyName: "calls_answered_by_fkey"
+            columns: ["answered_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "calls_conversation_id_fkey"
             columns: ["conversation_id"]
@@ -289,6 +320,7 @@ export type Database = {
           like_count: number
           name: string
           position: number
+          quote_count: number
           repost_count: number
           save_count: number
           search_tsv: unknown
@@ -316,6 +348,7 @@ export type Database = {
           like_count?: number
           name: string
           position?: number
+          quote_count?: number
           repost_count?: number
           save_count?: number
           search_tsv?: unknown
@@ -343,6 +376,7 @@ export type Database = {
           like_count?: number
           name?: string
           position?: number
+          quote_count?: number
           repost_count?: number
           save_count?: number
           search_tsv?: unknown
@@ -452,7 +486,9 @@ export type Database = {
           last_read_at: string | null
           left_at: string | null
           muted_until: string | null
+          notification_level: string
           pinned: boolean
+          request_state: string
           role: Database["public"]["Enums"]["member_role"]
           unread_count: number
           user_id: string
@@ -465,7 +501,9 @@ export type Database = {
           last_read_at?: string | null
           left_at?: string | null
           muted_until?: string | null
+          notification_level?: string
           pinned?: boolean
+          request_state?: string
           role?: Database["public"]["Enums"]["member_role"]
           unread_count?: number
           user_id: string
@@ -478,7 +516,9 @@ export type Database = {
           last_read_at?: string | null
           left_at?: string | null
           muted_until?: string | null
+          notification_level?: string
           pinned?: boolean
+          request_state?: string
           role?: Database["public"]["Enums"]["member_role"]
           unread_count?: number
           user_id?: string
@@ -507,7 +547,12 @@ export type Database = {
           created_by: string
           description: string | null
           dm_key: string | null
+          group_policy: Json
           id: string
+          invite_rotated_at: string | null
+          invite_token_hash: string | null
+          invite_token_prefix: string | null
+          join_approval_required: boolean
           kind: Database["public"]["Enums"]["conversation_kind"]
           last_message_at: string | null
           last_message_by: string | null
@@ -521,7 +566,12 @@ export type Database = {
           created_by: string
           description?: string | null
           dm_key?: string | null
+          group_policy?: Json
           id?: string
+          invite_rotated_at?: string | null
+          invite_token_hash?: string | null
+          invite_token_prefix?: string | null
+          join_approval_required?: boolean
           kind: Database["public"]["Enums"]["conversation_kind"]
           last_message_at?: string | null
           last_message_by?: string | null
@@ -535,7 +585,12 @@ export type Database = {
           created_by?: string
           description?: string | null
           dm_key?: string | null
+          group_policy?: Json
           id?: string
+          invite_rotated_at?: string | null
+          invite_token_hash?: string | null
+          invite_token_prefix?: string | null
+          join_approval_required?: boolean
           kind?: Database["public"]["Enums"]["conversation_kind"]
           last_message_at?: string | null
           last_message_by?: string | null
@@ -630,6 +685,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      feature_flags: {
+        Row: {
+          config: Json
+          enabled: boolean
+          key: string
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          enabled?: boolean
+          key: string
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          enabled?: boolean
+          key?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       follows: {
         Row: {
@@ -752,6 +828,7 @@ export type Database = {
           model: string | null
           position: number
           purchase_price: number | null
+          quote_count: number
           rarity: string | null
           repost_count: number
           save_count: number
@@ -788,6 +865,7 @@ export type Database = {
           model?: string | null
           position?: number
           purchase_price?: number | null
+          quote_count?: number
           rarity?: string | null
           repost_count?: number
           save_count?: number
@@ -824,6 +902,7 @@ export type Database = {
           model?: string | null
           position?: number
           purchase_price?: number | null
+          quote_count?: number
           rarity?: string | null
           repost_count?: number
           save_count?: number
@@ -1300,6 +1379,7 @@ export type Database = {
           id: string
           kind: Database["public"]["Enums"]["post_kind"]
           like_count: number
+          quote_count: number
           reply_count: number
           reply_to_post_id: string | null
           repost_count: number
@@ -1323,6 +1403,7 @@ export type Database = {
           id?: string
           kind?: Database["public"]["Enums"]["post_kind"]
           like_count?: number
+          quote_count?: number
           reply_count?: number
           reply_to_post_id?: string | null
           repost_count?: number
@@ -1346,6 +1427,7 @@ export type Database = {
           id?: string
           kind?: Database["public"]["Enums"]["post_kind"]
           like_count?: number
+          quote_count?: number
           reply_count?: number
           reply_to_post_id?: string | null
           repost_count?: number
@@ -1384,6 +1466,7 @@ export type Database = {
         Row: {
           accent_color: string | null
           account_visibility: Database["public"]["Enums"]["visibility"]
+          allow_calls_from: string
           allow_messages_from: string
           avatar_path: string | null
           banner_path: string | null
@@ -1411,6 +1494,7 @@ export type Database = {
         Insert: {
           accent_color?: string | null
           account_visibility?: Database["public"]["Enums"]["visibility"]
+          allow_calls_from?: string
           allow_messages_from?: string
           avatar_path?: string | null
           banner_path?: string | null
@@ -1438,6 +1522,7 @@ export type Database = {
         Update: {
           accent_color?: string | null
           account_visibility?: Database["public"]["Enums"]["visibility"]
+          allow_calls_from?: string
           allow_messages_from?: string
           avatar_path?: string | null
           banner_path?: string | null
@@ -1466,22 +1551,34 @@ export type Database = {
       }
       push_tokens: {
         Row: {
+          app_version: string | null
           created_at: string
+          device_id: string | null
+          enabled: boolean
           id: string
+          last_seen_at: string
           platform: string
           token: string
           user_id: string
         }
         Insert: {
+          app_version?: string | null
           created_at?: string
+          device_id?: string | null
+          enabled?: boolean
           id?: string
+          last_seen_at?: string
           platform: string
           token: string
           user_id: string
         }
         Update: {
+          app_version?: string | null
           created_at?: string
+          device_id?: string | null
+          enabled?: boolean
           id?: string
+          last_seen_at?: string
           platform?: string
           token?: string
           user_id?: string
@@ -1692,6 +1789,7 @@ export type Database = {
           like_count: number
           name: string
           position: number
+          quote_count: number
           repost_count: number
           save_count: number
           search_tsv: unknown
@@ -1715,6 +1813,7 @@ export type Database = {
           like_count?: number
           name: string
           position?: number
+          quote_count?: number
           repost_count?: number
           save_count?: number
           search_tsv?: unknown
@@ -1738,6 +1837,7 @@ export type Database = {
           like_count?: number
           name?: string
           position?: number
+          quote_count?: number
           repost_count?: number
           save_count?: number
           search_tsv?: unknown
@@ -1822,6 +1922,35 @@ export type Database = {
             foreignKeyName: "user_matches_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_preferences: {
+        Row: {
+          appearance: Json
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          appearance?: Json
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          appearance?: Json
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1951,6 +2080,10 @@ export type Database = {
         Returns: Json
       }
       admin_user_detail: { Args: { p_user: string }; Returns: Json }
+      answer_call: {
+        Args: { p_call: string; p_device_id?: string }
+        Returns: Json
+      }
       audit: {
         Args: {
           p_action: string
@@ -1961,6 +2094,19 @@ export type Database = {
         Returns: undefined
       }
       blocked_with: { Args: { p_other: string }; Returns: boolean }
+      bump_quote_target: {
+        Args: {
+          p_id: string
+          p_step: number
+          p_type: Database["public"]["Enums"]["entity_type"]
+        }
+        Returns: undefined
+      }
+      call_feature_enabled: { Args: never; Returns: boolean }
+      call_peer_allowed: {
+        Args: { p_callee: string; p_caller: string }
+        Returns: boolean
+      }
       can_see_owner: { Args: { p_owner: string }; Returns: boolean }
       can_view_entity: {
         Args: {
@@ -1968,6 +2114,10 @@ export type Database = {
           p_type: Database["public"]["Enums"]["entity_type"]
         }
         Returns: boolean
+      }
+      clear_group_avatar: {
+        Args: { p_conversation: string }
+        Returns: undefined
       }
       create_group: {
         Args: {
@@ -1989,7 +2139,18 @@ export type Database = {
         }
         Returns: Json
       }
+      decline_call: { Args: { p_call: string }; Returns: Json }
       delete_comment: { Args: { p_comment: string }; Returns: Json }
+      delete_group: { Args: { p_conversation: string }; Returns: undefined }
+      delete_post: { Args: { p_post: string }; Returns: Json }
+      end_call: {
+        Args: {
+          p_call: string
+          p_outcome?: Database["public"]["Enums"]["call_status"]
+          p_reason?: string
+        }
+        Returns: Json
+      }
       entity_counter: {
         Args: {
           p_col: string
@@ -2005,9 +2166,20 @@ export type Database = {
         }
         Returns: string
       }
+      expire_ringing_calls: { Args: never; Returns: number }
       get_closeup: {
         Args: {
           p_id: string
+          p_type: Database["public"]["Enums"]["entity_type"]
+        }
+        Returns: Json
+      }
+      get_comment_thread: {
+        Args: {
+          p_cursor?: Json
+          p_id: string
+          p_limit?: number
+          p_sort?: string
           p_type: Database["public"]["Enums"]["entity_type"]
         }
         Returns: Json
@@ -2025,6 +2197,10 @@ export type Database = {
         }
         Returns: Json
       }
+      group_policy_allows: {
+        Args: { p_action: string; p_conversation: string; p_user?: string }
+        Returns: boolean
+      }
       has_role: {
         Args: { p_role: Database["public"]["Enums"]["app_role"] }
         Returns: boolean
@@ -2039,11 +2215,23 @@ export type Database = {
         Returns: boolean
       }
       is_staff: { Args: never; Returns: boolean }
+      join_call: { Args: { p_call: string }; Returns: undefined }
+      join_group_invite: { Args: { p_token: string }; Returns: Json }
+      leave_call: { Args: { p_call: string }; Returns: undefined }
       mark_conversation_read: {
         Args: { p_conversation: string }
         Returns: undefined
       }
       mark_notifications_read: { Args: { p_ids?: string[] }; Returns: number }
+      my_profile_reactions_v1: {
+        Args: {
+          p_action: string
+          p_cursor?: Json
+          p_limit?: number
+          p_surface: string
+        }
+        Returns: Json
+      }
       nightly_maintenance: { Args: never; Returns: undefined }
       notify: {
         Args: {
@@ -2060,6 +2248,38 @@ export type Database = {
         }
         Returns: undefined
       }
+      profile_discussion_activity_v1: {
+        Args: {
+          p_cursor?: Json
+          p_limit?: number
+          p_surface?: string
+          p_user: string
+        }
+        Returns: Json
+      }
+      profile_pulse_activity_v1: {
+        Args: {
+          p_cursor?: Json
+          p_limit?: number
+          p_user: string
+          p_view?: string
+        }
+        Returns: Json
+      }
+      pulse_entity_fallback_cover: {
+        Args: {
+          p_id: string
+          p_type: Database["public"]["Enums"]["entity_type"]
+        }
+        Returns: Json
+      }
+      pulse_entity_media: {
+        Args: {
+          p_id: string
+          p_type: Database["public"]["Enums"]["entity_type"]
+        }
+        Returns: Json
+      }
       pulse_feed: {
         Args: {
           p_before?: string
@@ -2067,6 +2287,14 @@ export type Database = {
           p_limit?: number
           p_mode?: string
         }
+        Returns: Json
+      }
+      pulse_feed_ranked_v1: {
+        Args: { p_before?: string; p_before_id?: string; p_limit?: number }
+        Returns: Json
+      }
+      pulse_feed_v2: {
+        Args: { p_cursor?: Json; p_limit?: number; p_mode?: string }
         Returns: Json
       }
       pulse_post_envelope: {
@@ -2092,6 +2320,21 @@ export type Database = {
         }
         Returns: Json
       }
+      pulse_target_payload_depth: {
+        Args: {
+          p_depth: number
+          p_id: string
+          p_type: Database["public"]["Enums"]["entity_type"]
+        }
+        Returns: Json
+      }
+      record_call_activity: {
+        Args: {
+          p_call: Database["public"]["Tables"]["calls"]["Row"]
+          p_label: string
+        }
+        Returns: undefined
+      }
       record_view: {
         Args: {
           p_id: string
@@ -2104,12 +2347,61 @@ export type Database = {
         Returns: undefined
       }
       refresh_user_taste: { Args: { p_user: string }; Returns: undefined }
+      register_push_token: {
+        Args: {
+          p_app_version?: string
+          p_device_id?: string
+          p_platform: string
+          p_token: string
+        }
+        Returns: undefined
+      }
       remove_group_member: {
         Args: { p_conversation: string; p_member: string }
         Returns: undefined
       }
       require_auth: { Args: never; Returns: string }
+      review_group_join_request: {
+        Args: { p_accept: boolean; p_conversation: string; p_member: string }
+        Returns: undefined
+      }
+      revoke_group_invite: {
+        Args: { p_conversation: string }
+        Returns: undefined
+      }
+      rotate_group_invite: { Args: { p_conversation: string }; Returns: string }
+      save_appearance_preferences: {
+        Args: { p_appearance: Json; p_version: number }
+        Returns: Json
+      }
       search_all: { Args: { p_limit?: number; p_q: string }; Returns: Json }
+      send_call_signal: {
+        Args: {
+          p_call: string
+          p_payload: Json
+          p_recipient: string
+          p_type: string
+        }
+        Returns: number
+      }
+      send_message: {
+        Args: {
+          p_attachments?: Json
+          p_body?: string
+          p_call_id?: string
+          p_conversation: string
+          p_id: string
+          p_kind?: Database["public"]["Enums"]["message_kind"]
+          p_reply_to?: string
+          p_shared_entity_id?: string
+          p_shared_entity_type?: Database["public"]["Enums"]["entity_type"]
+        }
+        Returns: string
+      }
+      set_group_join_approval: {
+        Args: { p_conversation: string; p_required: boolean }
+        Returns: boolean
+      }
       set_group_member_role: {
         Args: {
           p_conversation: string
@@ -2118,7 +2410,35 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_group_policy: {
+        Args: { p_conversation: string; p_policy: Json }
+        Returns: Json
+      }
       slugify: { Args: { p_text: string }; Returns: string }
+      social_engagement_v1: {
+        Args: {
+          p_cursor?: Json
+          p_id: string
+          p_limit?: number
+          p_tab?: string
+          p_type: Database["public"]["Enums"]["entity_type"]
+        }
+        Returns: Json
+      }
+      social_target_active: {
+        Args: {
+          p_id: string
+          p_type: Database["public"]["Enums"]["entity_type"]
+        }
+        Returns: boolean
+      }
+      start_call: {
+        Args: {
+          p_conversation: string
+          p_kind: Database["public"]["Enums"]["call_kind"]
+        }
+        Returns: Json
+      }
       start_dm: { Args: { p_other: string }; Returns: string }
       submit_report: {
         Args: {
@@ -2170,6 +2490,7 @@ export type Database = {
         }
         Returns: Json
       }
+      unregister_push_token: { Args: { p_token: string }; Returns: undefined }
       update_group_info: {
         Args: {
           p_avatar_path?: string

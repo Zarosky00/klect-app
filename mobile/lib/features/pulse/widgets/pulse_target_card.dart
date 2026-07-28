@@ -650,6 +650,12 @@ final pulseTargetProvider = FutureProvider.autoDispose
           if (post == null) return unavailable();
           final media = await api.fetchPostMedia(entity.id);
           final cover = media.isEmpty ? null : media.first;
+          final attached = post.entityType == null || post.entityId == null
+              ? null
+              : await _loadAttachedTarget(
+                  api,
+                  EntityRef(post.entityType!, post.entityId!),
+                );
           return PulseTarget(
             id: post.id,
             type: EntityType.post,
@@ -661,8 +667,11 @@ final pulseTargetProvider = FutureProvider.autoDispose
             coverHeight: cover?.height,
             childCount: post.replyCount,
             likeCount: post.likeCount,
+            quoteCount: post.quoteCount,
             createdAt: post.createdAt,
             author: post.author,
+            media: media,
+            attachedTarget: attached,
           );
 
         case EntityType.item:
@@ -671,6 +680,7 @@ final pulseTargetProvider = FutureProvider.autoDispose
           final itemOwner = item.userId == null
               ? null
               : await api.fetchProfile(item.userId!);
+          final media = await api.fetchItemMedia(item.id);
           return PulseTarget(
             id: item.id,
             type: EntityType.item,
@@ -682,8 +692,10 @@ final pulseTargetProvider = FutureProvider.autoDispose
             coverHeight: item.coverHeight,
             childCount: item.mediaCount,
             likeCount: item.likeCount,
+            quoteCount: item.quoteCount,
             createdAt: item.createdAt,
             author: itemOwner,
+            media: media,
           );
 
         case EntityType.subcollection:
@@ -701,6 +713,7 @@ final pulseTargetProvider = FutureProvider.autoDispose
             coverBlurhash: sub.coverBlurhash,
             childCount: sub.itemCount,
             likeCount: sub.likeCount,
+            quoteCount: sub.quoteCount,
             createdAt: sub.createdAt,
             author: subOwner,
           );
@@ -720,6 +733,7 @@ final pulseTargetProvider = FutureProvider.autoDispose
             coverBlurhash: collection.coverBlurhash,
             childCount: collection.itemCount,
             likeCount: collection.likeCount,
+            quoteCount: collection.quoteCount,
             createdAt: collection.createdAt,
             author: collectionOwner,
           );
@@ -728,3 +742,71 @@ final pulseTargetProvider = FutureProvider.autoDispose
           return unavailable();
       }
     }, name: 'pulseTarget');
+
+Future<PulseTarget?> _loadAttachedTarget(KlectApi api, EntityRef entity) async {
+  switch (entity.type) {
+    case EntityType.item:
+      final item = await api.fetchItem(entity.id);
+      if (item == null) return null;
+      final owner = item.userId == null
+          ? null
+          : await api.fetchProfile(item.userId!);
+      final media = await api.fetchItemMedia(item.id);
+      return PulseTarget(
+        id: item.id,
+        type: EntityType.item,
+        title: item.title,
+        subtitle: item.brand ?? item.description,
+        coverPath: item.coverPath,
+        coverBlurhash: item.coverBlurhash,
+        coverWidth: item.coverWidth,
+        coverHeight: item.coverHeight,
+        childCount: item.mediaCount,
+        likeCount: item.likeCount,
+        quoteCount: item.quoteCount,
+        createdAt: item.createdAt,
+        author: owner,
+        media: media,
+      );
+    case EntityType.subcollection:
+      final sub = await api.fetchSubcollection(entity.id);
+      if (sub == null) return null;
+      final owner = sub.userId == null
+          ? null
+          : await api.fetchProfile(sub.userId!);
+      return PulseTarget(
+        id: sub.id,
+        type: EntityType.subcollection,
+        title: sub.name,
+        subtitle: sub.description,
+        coverPath: sub.coverPath,
+        coverBlurhash: sub.coverBlurhash,
+        childCount: sub.itemCount,
+        likeCount: sub.likeCount,
+        quoteCount: sub.quoteCount,
+        createdAt: sub.createdAt,
+        author: owner,
+      );
+    case EntityType.collection:
+      final collection = await api.fetchCollection(entity.id);
+      if (collection == null) return null;
+      final owner = collection.userId == null
+          ? null
+          : await api.fetchProfile(collection.userId!);
+      return PulseTarget(
+        id: collection.id,
+        type: EntityType.collection,
+        title: collection.name,
+        subtitle: collection.description,
+        coverPath: collection.coverPath,
+        coverBlurhash: collection.coverBlurhash,
+        childCount: collection.itemCount,
+        likeCount: collection.likeCount,
+        quoteCount: collection.quoteCount,
+        createdAt: collection.createdAt,
+        author: owner,
+      );
+    case EntityType.post || EntityType.comment:
+      return null;
+  }
+}

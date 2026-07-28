@@ -11,6 +11,7 @@ import '../../../core/interactions/interactions.dart';
 import '../../../core/links.dart';
 import '../../../core/models/models.dart';
 import '../../../core/supabase.dart';
+import '../../../design/motion.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
 import '../../profile/follow_button.dart';
@@ -32,10 +33,18 @@ import 'post_thread_controller.dart';
 /// pinned to the bottom of the screen.
 class PostThreadScreen extends ConsumerStatefulWidget {
   /// Creates the screen for one post.
-  const PostThreadScreen({required this.postId, super.key});
+  const PostThreadScreen({
+    required this.postId,
+    super.key,
+    this.highlightCommentId,
+  });
 
   /// Route parameter.
   final String postId;
+
+  /// Optional profile-activity deep link. The matching row receives a
+  /// restrained highlight so the discussion opens with clear context.
+  final String? highlightCommentId;
 
   @override
   ConsumerState<PostThreadScreen> createState() => _PostThreadScreenState();
@@ -216,6 +225,7 @@ class _PostThreadScreenState extends ConsumerState<PostThreadScreen> {
             return _ThreadCommentRow(
               key: ValueKey<String>(comment.id),
               comment: comment,
+              highlighted: comment.id == widget.highlightCommentId,
               isMine: meId != null && comment.authorId == meId,
               onReply: () => _startReply(comment),
               onDelete: () => unawaited(_controller.removeComment(comment.id)),
@@ -525,6 +535,7 @@ class _ThreadCommentRow extends ConsumerWidget {
     required this.isMine,
     required this.onReply,
     required this.onDelete,
+    this.highlighted = false,
     super.key,
   });
 
@@ -532,6 +543,7 @@ class _ThreadCommentRow extends ConsumerWidget {
   final bool isMine;
   final VoidCallback onReply;
   final VoidCallback onDelete;
+  final bool highlighted;
 
   /// Deepest indent rendered.
   static const int _maxIndent = 2;
@@ -560,7 +572,9 @@ class _ThreadCommentRow extends ConsumerWidget {
 
     return Opacity(
       opacity: comment.isPending ? Opacities.pressed : 1,
-      child: Container(
+      child: AnimatedContainer(
+        duration: KMotion.duration(context, KDurations.medium),
+        curve: Curves_.emphasized,
         padding: EdgeInsets.fromLTRB(
           Space.s4 + indent,
           Space.s3,
@@ -568,6 +582,7 @@ class _ThreadCommentRow extends ConsumerWidget {
           Space.s2,
         ),
         decoration: BoxDecoration(
+          color: highlighted ? colors.actionCommentSubtle : colors.surface1,
           border: Border(
             bottom: BorderSide(
               color: colors.borderSubtle,

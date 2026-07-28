@@ -25,6 +25,7 @@ class PulseFeedState {
     this.error,
     this.freshKey,
     this.fromCache = false,
+    this.nextCursor,
   });
 
   /// Normalised rows, newest first.
@@ -52,6 +53,9 @@ class PulseFeedState {
   /// next retry then reloads from the top instead of paging under stale rows.
   final bool fromCache;
 
+  /// Opaque server cursor. Clients never derive or inspect ranked ordering.
+  final Map<String, dynamic>? nextCursor;
+
   /// Nothing to show and nothing on the way.
   bool get isEmpty => items.isEmpty && !loading;
 
@@ -67,6 +71,8 @@ class PulseFeedState {
     String? freshKey,
     bool clearFresh = false,
     bool? fromCache,
+    Map<String, dynamic>? nextCursor,
+    bool clearCursor = false,
   }) => PulseFeedState(
     items: items ?? this.items,
     loading: loading ?? this.loading,
@@ -76,6 +82,7 @@ class PulseFeedState {
     error: clearError ? null : (error ?? this.error),
     freshKey: clearFresh ? null : (freshKey ?? this.freshKey),
     fromCache: fromCache ?? this.fromCache,
+    nextCursor: clearCursor ? null : (nextCursor ?? this.nextCursor),
   );
 }
 
@@ -147,20 +154,6 @@ class PulseFeedController extends Notifier<PulseFeedState> {
     );
   }
 
-  /// The next `(p_before, p_before_id)`: the row with the minimum `sort_at`
-  /// currently on screen and its `cursor_id`. For-you pages are
-  /// score-ordered, so the last row is not necessarily the oldest.
-  PulseItem? _oldestOnScreen() {
-    PulseItem? oldest;
-    for (final item in state.items) {
-      final at = item.sortAt;
-      if (at == null) continue;
-      final oldestAt = oldest?.sortAt;
-      if (oldestAt == null || at.isBefore(oldestAt)) oldest = item;
-    }
-    return oldest;
-  }
-
   Future<void> _load({required bool reset}) async {
     if (_busy) return;
     _busy = true;
@@ -175,27 +168,18 @@ class PulseFeedController extends Notifier<PulseFeedState> {
           )
         : state.copyWith(loadingMore: true, clearError: true, clearFresh: true);
 
-    final cursor = reset ? null : _oldestOnScreen();
-
     try {
-      final rows = await ref
+      final page = await ref
           .read(klectApiProvider)
-          .pulseFeed(
+          .pulseFeedV2(
             limit: pageSize,
-            before: cursor?.sortAt,
-            beforeId: cursor?.cursorId,
+            cursor: reset ? null : state.nextCursor,
             mode: mode,
           );
 
-      // 0021 extra-row contract: up to pageSize + 1 rows come back; the
-      // extra one only says "there is more" and must not render (it would
-      // duplicate the top of the next page).
-      final hasMore = rows.length > pageSize;
-      final pageRows = hasMore ? rows.sublist(0, pageSize) : rows;
-
       if (reset) _seen.clear();
       final fresh = <PulseItem>[];
-      for (final row in pageRows) {
+      for (final row in page.items) {
         final item = PulseItem.fromEntry(row);
         if (_seen.add(item.key)) fresh.add(item);
       }
@@ -217,7 +201,8 @@ class PulseFeedController extends Notifier<PulseFeedState> {
 
       state = PulseFeedState(
         items: reset ? fresh : <PulseItem>[...state.items, ...fresh],
-        hasMore: hasMore,
+        hasMore: page.hasMore,
+        nextCursor: page.nextCursor,
       );
 
       if (reset && fresh.isNotEmpty) {
@@ -276,6 +261,7 @@ class PulseFeedController extends Notifier<PulseFeedState> {
       hasMore: false,
       error: error,
       fromCache: true,
+      nextCursor: null,
     );
     return true;
   }

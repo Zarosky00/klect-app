@@ -14,5 +14,6 @@ export 'notification.dart';
 export 'post.dart';
 export 'profile.dart';
 export 'results.dart';
+export 'social_activity.dart';
 export 'surf_card.dart';
 export 'thread.dart';

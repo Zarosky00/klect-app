@@ -337,9 +337,7 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
       final body = _text.text.trim();
       final entry = await api.createPost(
         body: body.isEmpty ? null : body,
-        kind: target != null && target.$1 == EntityType.post
-            ? PostKind.quote
-            : PostKind.post,
+        kind: widget.subject != null ? PostKind.quote : PostKind.post,
         entityType: target?.$1,
         entityId: target?.$2,
         media: descriptors.isEmpty ? null : descriptors,
@@ -348,6 +346,15 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
       // 3. Prepend the returned envelope so the stream shows it instantly —
       //    own posts always belong to the Following feed.
       ref.read(pulseFeedProvider(PulseMode.following).notifier).prepend(entry);
+      ref
+          .read(socialActivityMutationProvider.notifier)
+          .record(
+            widget.subject != null
+                ? SocialActivityMutationKind.quote
+                : SocialActivityMutationKind.post,
+            entity: EntityRef(entry.entityType, entry.entityId),
+            active: true,
+          );
 
       if (!mounted) return;
       if (_draftable) unawaited(_store.remove(draftKey));

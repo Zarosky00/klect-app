@@ -4,12 +4,94 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:klect/core/api/klect_api.dart';
 import 'package:klect/core/models/models.dart';
 import 'package:klect/design/theme.dart';
+import 'package:klect/features/pulse/data/pulse_entry_view.dart';
+import 'package:klect/features/pulse/widgets/pulse_card.dart';
 import 'package:klect/features/pulse/widgets/pulse_target_card.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'support/test_harness.dart';
 
 void main() {
+  testWidgets(
+    'plain post repost renders original byline, media and Surf attachment',
+    (tester) async {
+      tester.view
+        ..physicalSize = const Size(390, 844)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'test-publishable-key',
+        authOptions: const AuthClientOptions(autoRefreshToken: false),
+      );
+      final container = ProviderContainer.test(
+        overrides: [klectApiProvider.overrideWithValue(KlectApi(client))],
+      );
+      addTearDown(container.dispose);
+
+      final entry = PulseEntry.fromJson(<String, dynamic>{
+        'feed_kind': 'repost',
+        'kind': null,
+        'entity_type': 'post',
+        'entity_id': 'post-1',
+        'cursor_id': 'post-1',
+        'created_at': '2026-07-28T08:30:00+00:00',
+        'author': <String, dynamic>{
+          'id': 'author-1',
+          'username': 'aria',
+          'display_name': 'Aria Vale',
+        },
+        'reposter': <String, dynamic>{
+          'id': 'reposter-1',
+          'username': 'kenji',
+          'display_name': 'Kenji Mori',
+        },
+        'target': <String, dynamic>{
+          'type': 'post',
+          'id': 'post-1',
+          'body': 'The complete original post',
+          'author': <String, dynamic>{
+            'id': 'author-1',
+            'username': 'aria',
+            'display_name': 'Aria Vale',
+          },
+          'media': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': 'post-media-1',
+              'storage_path': 'post-media-1.jpg',
+              'width': 1200,
+              'height': 900,
+              'position': 0,
+            },
+          ],
+          'attached_target': <String, dynamic>{
+            'type': 'item',
+            'id': 'item-1',
+            'title': 'Going Merry model',
+            'subtitle': 'Attached from Surf',
+          },
+        },
+      });
+
+      await pumpKlect(
+        tester,
+        SingleChildScrollView(
+          child: PulseCard(item: PulseItem.fromEntry(entry)),
+        ),
+        container: container,
+      );
+      await tester.pump();
+
+      expect(find.text('Kenji Mori reposted'), findsOneWidget);
+      expect(find.text('Aria Vale'), findsOneWidget);
+      expect(find.text('@aria'), findsOneWidget);
+      expect(find.text('The complete original post'), findsOneWidget);
+      expect(find.byType(PostMediaGrid), findsOneWidget);
+      expect(find.text('Going Merry model'), findsOneWidget);
+      expect(find.text('Attached from Surf'), findsOneWidget);
+    },
+  );
+
   testWidgets('entity repost keeps its owner, text and complete media grid', (
     tester,
   ) async {

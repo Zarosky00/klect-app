@@ -10,6 +10,7 @@ import '../offline/action_queue.dart';
 import '../offline/queued_action.dart';
 import 'entity_ref.dart';
 import 'interaction_state.dart';
+import 'social_activity_mutation.dart';
 
 /// A place to drop authoritative social state before anybody reads it.
 ///
@@ -234,6 +235,17 @@ class InteractionController extends Notifier<InteractionState> {
     state = state
         .withAction(action, active: desired, count: optimisticCount)
         .copyWith(syncing: true, clearError: true);
+    ref
+        .read(socialActivityMutationProvider.notifier)
+        .record(
+          switch (action) {
+            InteractionAction.like => SocialActivityMutationKind.like,
+            InteractionAction.save => SocialActivityMutationKind.save,
+            InteractionAction.repost => SocialActivityMutationKind.repost,
+          },
+          entity: entity,
+          active: desired,
+        );
 
     // Already draining? The running loop will observe the new desired state.
     if (_busy.contains(action)) return;

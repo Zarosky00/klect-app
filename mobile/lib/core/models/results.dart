@@ -14,10 +14,8 @@ class ToggleResult {
   const ToggleResult({required this.active, required this.count});
 
   /// Parses `{active, count}`.
-  factory ToggleResult.fromJson(Map<String, dynamic> json) => ToggleResult(
-        active: asBool(json['active']),
-        count: asInt(json['count']),
-      );
+  factory ToggleResult.fromJson(Map<String, dynamic> json) =>
+      ToggleResult(active: asBool(json['active']), count: asInt(json['count']));
 
   /// Whether the relationship now exists (liked / saved / reposted / follows).
   final bool active;
@@ -32,10 +30,8 @@ class CommentResult {
   const CommentResult({required this.id, required this.count});
 
   /// Parses `{id, count}`.
-  factory CommentResult.fromJson(Map<String, dynamic> json) => CommentResult(
-        id: asString(json['id']),
-        count: asInt(json['count']),
-      );
+  factory CommentResult.fromJson(Map<String, dynamic> json) =>
+      CommentResult(id: asString(json['id']), count: asInt(json['count']));
 
   /// The new comment's server id.
   final String id;
@@ -51,9 +47,9 @@ class ReportResult {
 
   /// Parses `{id, already_reported}`.
   factory ReportResult.fromJson(Map<String, dynamic> json) => ReportResult(
-        id: asString(json['id']),
-        alreadyReported: asBool(json['already_reported']),
-      );
+    id: asString(json['id']),
+    alreadyReported: asBool(json['already_reported']),
+  );
 
   /// The report row id.
   final String id;
@@ -144,18 +140,18 @@ class ItemSearchHit {
 
   /// Parses an `items` entry of `search_all`.
   factory ItemSearchHit.fromJson(Map<String, dynamic> json) => ItemSearchHit(
-        id: asString(json['id']),
-        title: asString(json['title']),
-        brand: asStringOrNull(json['brand']),
-        coverPath: asStringOrNull(json['cover_path']),
-        coverBlurhash: asStringOrNull(json['cover_blurhash']),
-        coverWidth: asIntOrNull(json['cover_width']),
-        coverHeight: asIntOrNull(json['cover_height']),
-        likeCount: asInt(json['like_count']),
-        username: asStringOrNull(json['username']),
-        displayName: asStringOrNull(json['display_name']),
-        avatarPath: asStringOrNull(json['avatar_path']),
-      );
+    id: asString(json['id']),
+    title: asString(json['title']),
+    brand: asStringOrNull(json['brand']),
+    coverPath: asStringOrNull(json['cover_path']),
+    coverBlurhash: asStringOrNull(json['cover_blurhash']),
+    coverWidth: asIntOrNull(json['cover_width']),
+    coverHeight: asIntOrNull(json['cover_height']),
+    likeCount: asInt(json['like_count']),
+    username: asStringOrNull(json['username']),
+    displayName: asStringOrNull(json['display_name']),
+    avatarPath: asStringOrNull(json['avatar_path']),
+  );
 
   /// Item id.
   final String id;
@@ -269,23 +265,23 @@ class SearchResults {
 
   /// Parses the `search_all` payload.
   factory SearchResults.fromJson(Map<String, dynamic> json) => SearchResults(
-        people: <Profile>[
-          for (final p in asMapList(json['people'])) Profile.fromJson(p),
-        ],
-        collections: <CollectionSearchHit>[
-          for (final c in asMapList(json['collections']))
-            CollectionSearchHit.fromJson(c),
-        ],
-        items: <ItemSearchHit>[
-          for (final i in asMapList(json['items'])) ItemSearchHit.fromJson(i),
-        ],
-        tags: <TagModel>[
-          for (final t in asMapList(json['tags'])) TagModel.fromJson(t),
-        ],
-        posts: <PostSearchHit>[
-          for (final p in asMapList(json['posts'])) PostSearchHit.fromJson(p),
-        ],
-      );
+    people: <Profile>[
+      for (final p in asMapList(json['people'])) Profile.fromJson(p),
+    ],
+    collections: <CollectionSearchHit>[
+      for (final c in asMapList(json['collections']))
+        CollectionSearchHit.fromJson(c),
+    ],
+    items: <ItemSearchHit>[
+      for (final i in asMapList(json['items'])) ItemSearchHit.fromJson(i),
+    ],
+    tags: <TagModel>[
+      for (final t in asMapList(json['tags'])) TagModel.fromJson(t),
+    ],
+    posts: <PostSearchHit>[
+      for (final p in asMapList(json['posts'])) PostSearchHit.fromJson(p),
+    ],
+  );
 
   /// Matching people.
   final List<Profile> people;
@@ -373,6 +369,7 @@ class PulseEntry {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.viewCount = 0,
     this.viewerLiked = false,
@@ -403,6 +400,7 @@ class PulseEntry {
       likeCount: count('like', 'like_count'),
       saveCount: count('save', 'save_count'),
       repostCount: count('repost', 'repost_count'),
+      quoteCount: count('quote', 'quote_count'),
       commentCount: count('comment', 'comment_count'),
       viewCount: count('view', 'view_count'),
       viewerLiked: asBool(json['viewer_liked']),
@@ -452,6 +450,9 @@ class PulseEntry {
 
   /// Live repost count.
   final int repostCount;
+
+  /// Trigger-maintained number of quote posts that reference this entity.
+  final int quoteCount;
 
   /// Live comment count.
   final int commentCount;
