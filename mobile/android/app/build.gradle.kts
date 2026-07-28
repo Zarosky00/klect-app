@@ -4,6 +4,17 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val klectKeystorePath = System.getenv("KLECT_KEYSTORE_PATH")
+val klectKeystorePassword = System.getenv("KLECT_KEYSTORE_PASSWORD")
+val klectKeyAlias = System.getenv("KLECT_KEY_ALIAS")
+val klectKeyPassword = System.getenv("KLECT_KEY_PASSWORD")
+val hasKlectReleaseSigning = listOf(
+    klectKeystorePath,
+    klectKeystorePassword,
+    klectKeyAlias,
+    klectKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.klect.klect"
     compileSdk = flutter.compileSdkVersion
@@ -28,11 +39,24 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasKlectReleaseSigning) {
+            create("release") {
+                storeFile = file(klectKeystorePath!!)
+                storePassword = klectKeystorePassword
+                keyAlias = klectKeyAlias
+                keyPassword = klectKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Pull requests can still verify a release build without secrets,
+            // while the tagged release workflow always supplies the stable key.
+            signingConfig = signingConfigs.getByName(
+                if (hasKlectReleaseSigning) "release" else "debug",
+            )
         }
     }
 }
