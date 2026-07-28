@@ -397,6 +397,7 @@ export interface PulseTarget {
   type: EntityType;
   id: string;
   unavailable?: boolean;
+  availability?: 'available' | 'unavailable';
   title?: string | null;
   subtitle?: string | null;
   body?: string | null;
@@ -407,12 +408,18 @@ export interface PulseTarget {
   cover_height?: number | null;
   child_count?: number | null;
   like_count?: number | null;
+  /** Quotes are distinct from plain reposts and are maintained by the server. */
+  quote_count?: number | null;
   created_at?: string | null;
   author?: PulseActor | null;
   /** Comment targets only (0021): the entity the comment hangs off, so a
    *  reposted comment can deep-link into its discussion. */
   parent_type?: EntityType | null;
   parent_id?: string | null;
+  /** Complete ordered media for this target (at most four descriptors). */
+  media?: PulseMedia[];
+  /** One immutable nested attachment level for quoted posts. */
+  attached_target?: PulseTarget | null;
 }
 
 export interface PulseEntry {
@@ -428,6 +435,8 @@ export interface PulseEntry {
   like_count: number;
   save_count: number;
   repost_count: number;
+  /** Authored quote posts referencing this entity; never folded into repost_count. */
+  quote_count?: number;
   comment_count: number;
   view_count: number;
   reply_count: number;
@@ -453,6 +462,84 @@ export interface PulseEntry {
    * rendered row as `(p_before, p_before_id)`.
    */
   cursor_id?: string | null;
+}
+
+/** Opaque JSON keyset cursor returned by the v1.6.3 social RPCs. */
+export type SocialCursor = Record<string, unknown>;
+
+export interface CursorPage<T> {
+  items: T[];
+  has_more: boolean;
+  next_cursor: SocialCursor | null;
+}
+
+export type EngagementTab = 'like' | 'repost' | 'quote';
+
+export interface EngagementSummary {
+  like_count: number;
+  repost_count: number;
+  quote_count: number;
+}
+
+export interface EngagementActorItem {
+  kind: 'actor';
+  user: PulseActor & { id: string };
+  viewer_follows: boolean;
+  acted_at: string;
+}
+
+export interface EngagementQuoteItem {
+  kind: 'quote';
+  entry: PulseEntry;
+  acted_at: string;
+}
+
+export type EngagementItem = EngagementActorItem | EngagementQuoteItem;
+
+export interface EngagementPage extends CursorPage<EngagementItem> {
+  summary: EngagementSummary;
+}
+
+export type ProfilePulseView = 'all' | 'originals' | 'reposts' | 'quotes' | 'media';
+export type ProfileSurface = 'all' | 'surf' | 'pulse';
+export type ProfileReactionAction = 'like' | 'save';
+
+export interface ProfileDiscussionContext {
+  target_type: EntityType;
+  target_id: string;
+  title: string | null;
+  body: string | null;
+  cover_path: string | null;
+  author: PulseActor | null;
+  unavailable?: boolean;
+}
+
+export interface ProfileDiscussionDestination {
+  type: EntityType;
+  id: string;
+  highlight_comment_id: string;
+}
+
+export interface ProfileDiscussionItem {
+  id: string;
+  body: string;
+  created_at: string;
+  parent_id: string | null;
+  root_id: string | null;
+  author: PulseActor | null;
+  counts: { like: number; save: number; repost: number; reply: number };
+  viewer: { liked: boolean; saved: boolean; reposted: boolean };
+  surface: 'surf' | 'pulse';
+  context: ProfileDiscussionContext;
+  destination: ProfileDiscussionDestination;
+}
+
+export interface ProfileReactionItem {
+  acted_at: string;
+  target_type: EntityType;
+  target_id: string;
+  entry: PulseEntry | null;
+  target: PulseTarget | null;
 }
 
 /**

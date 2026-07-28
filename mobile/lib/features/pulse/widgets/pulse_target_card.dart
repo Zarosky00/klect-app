@@ -58,8 +58,9 @@ class PulseTargetCard extends ConsumerWidget {
       return const _TargetTombstone();
     }
 
+    final resolvedMedia = media.isEmpty ? target.media : media;
     final card = switch (target.type!) {
-      EntityType.post => _QuotedPostBody(target: target, media: media),
+      EntityType.post => _QuotedPostBody(target: target, media: resolvedMedia),
       EntityType.comment => _CommentBody(target: target),
       _ => _EntityBody(target: target),
     };
@@ -246,6 +247,10 @@ class _QuotedPostBody extends ConsumerWidget {
                 semanticLabel: body ?? 'Post photo',
               ),
             ],
+            if (target.attachedTarget case final attached?) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              PulseTargetCard(target: attached, interactive: false),
+            ],
           ],
         ),
       ),
@@ -259,6 +264,7 @@ class _QuotedMediaGrid extends ConsumerWidget {
   final List<ItemMedia> media;
 
   static const double _gap = Space.s05;
+  static const double _maxSingleHeight = Space.s24 * 3;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -279,14 +285,20 @@ class _QuotedMediaGrid extends ConsumerWidget {
           item.width != null && item.height != null && item.height! > 0
           ? item.width! / item.height!
           : Aspect.cover;
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(Radii.md),
-        child: image(
-          item,
-          aspectRatio: intrinsic
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          final clamped = intrinsic
               .clamp(Aspect.gridMin, Aspect.gridMax)
-              .toDouble(),
-        ),
+              .toDouble();
+          final heightBound = constraints.maxWidth / _maxSingleHeight;
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(Radii.md),
+            child: image(
+              item,
+              aspectRatio: clamped < heightBound ? heightBound : clamped,
+            ),
+          );
+        },
       );
     }
 
@@ -446,7 +458,11 @@ class _CommentBody extends ConsumerWidget {
   }
 }
 
-/// A shared collection / shelf / thing: cover, type label, title, counts.
+/// A shared collection / shelf / thing rendered as a real Pulse attachment.
+///
+/// The old compact thumbnail row hid most of the original object. Reposts and
+/// quotes now keep the owner's byline, title/description and the complete
+/// preview media together, matching the quoted-post shape above it.
 class _EntityBody extends ConsumerWidget {
   const _EntityBody({required this.target});
 
@@ -467,8 +483,8 @@ class _EntityBody extends ConsumerWidget {
   };
 
   String get _childLabel => switch (target.type) {
-    EntityType.item => 'photos',
-    _ => 'things',
+    EntityType.item => target.childCount == 1 ? 'photo' : 'photos',
+    _ => target.childCount == 1 ? 'thing' : 'things',
   };
 
   @override
@@ -476,7 +492,7 @@ class _EntityBody extends ConsumerWidget {
     final colors = context.kc;
     final text = context.kt;
     final author = target.author;
-    final url = target.coverPath == null
+    final coverUrl = target.coverPath == null
         ? null
         : ref.watch(klectApiProvider).publicUrl(target.coverPath);
     final avatarUrl = author?.avatarPath == null
@@ -486,98 +502,100 @@ class _EntityBody extends ConsumerWidget {
               .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
 
     return _TargetShell(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          SizedBox(
-            width: PulseTargetCard.thumb,
-            height: PulseTargetCard.thumb,
-            child: KBlurhashImage(
-              url: url,
-              blurhash: target.coverBlurhash,
-              semanticLabel: target.title ?? _typeLabel,
-              borderRadius: BorderRadius.zero,
-              memCacheWidth:
-                  (PulseTargetCard.thumb *
-                          MediaQuery.devicePixelRatioOf(context))
-                      .round(),
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: Space.s3,
-                vertical: Space.s2,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  if (author != null)
-                    Row(
+      child: Padding(
+        padding: const EdgeInsets.all(Space.s3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                if (author != null) ...<Widget>[
+                  KAvatar(
+                    imageUrl: avatarUrl,
+                    name: author.name,
+                    size: Space.s6,
+                    isVerified: author.isVerified,
+                  ),
+                  const SizedBox(width: Space.s2),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        KAvatar(
-                          imageUrl: avatarUrl,
-                          name: author.name,
-                          size: Space.s5,
-                          isVerified: author.isVerified,
+                        Text(
+                          author.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.label,
                         ),
-                        const SizedBox(width: Space.s1),
-                        Flexible(
-                          child: Text(
-                            author.name,
+                        if (author.username.isNotEmpty)
+                          Text(
+                            author.handle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: text.micro,
+                            style: text.micro.copyWith(
+                              color: colors.textTertiary,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: Space.s1),
-                        Icon(_icon, size: Space.s3, color: colors.textTertiary),
-                      ],
-                    )
-                  else
-                    Row(
-                      children: <Widget>[
-                        Icon(_icon, size: Space.s3, color: colors.textTertiary),
-                        const SizedBox(width: Space.s1),
-                        Text(
-                          _typeLabel.toUpperCase(),
-                          style: text.micro.copyWith(
-                            color: colors.textTertiary,
-                          ),
-                        ),
                       ],
                     ),
-                  const SizedBox(height: Space.s1),
-                  Text(
-                    target.title ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.bodyStrong,
                   ),
-                  if (target.subtitle != null &&
-                      target.subtitle!.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: Space.s05),
-                    Text(
-                      target.subtitle!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: text.caption.copyWith(color: colors.textSecondary),
-                    ),
-                  ],
-                  if (target.childCount > 0) ...<Widget>[
-                    const SizedBox(height: Space.s1),
-                    Text(
-                      '${formatCount(target.childCount)} $_childLabel',
-                      style: text.micro.copyWith(color: colors.textTertiary),
-                    ),
-                  ],
-                ],
-              ),
+                ] else
+                  Expanded(child: Text(_typeLabel, style: text.label)),
+                const SizedBox(width: Space.s2),
+                Icon(_icon, size: Space.s4, color: colors.textTertiary),
+                const SizedBox(width: Space.s1),
+                Text(
+                  _typeLabel.toUpperCase(),
+                  style: text.micro.copyWith(color: colors.textTertiary),
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: Space.s2),
+            Text(
+              target.title ?? _typeLabel,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: text.bodyStrong,
+            ),
+            if (target.subtitle != null &&
+                target.subtitle!.isNotEmpty) ...<Widget>[
+              const SizedBox(height: Space.s1),
+              Text(
+                target.subtitle!,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: text.caption.copyWith(color: colors.textSecondary),
+              ),
+            ],
+            if (target.media.isNotEmpty) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              KeyedSubtree(
+                key: const ValueKey<String>('pulse-target-media-grid'),
+                child: _QuotedMediaGrid(media: target.media),
+              ),
+            ] else if (target.coverPath != null) ...<Widget>[
+              const SizedBox(height: Space.s3),
+              KBlurhashImage(
+                url: coverUrl,
+                blurhash: target.coverBlurhash,
+                aspectRatio: (target.coverAspect ?? Aspect.cover)
+                    .clamp(Aspect.gridMin, Aspect.gridMax)
+                    .toDouble(),
+                borderRadius: BorderRadius.circular(Radii.md),
+                semanticLabel: target.title ?? _typeLabel,
+              ),
+            ],
+            if (target.childCount > 0) ...<Widget>[
+              const SizedBox(height: Space.s2),
+              Text(
+                '${formatCount(target.childCount)} $_childLabel',
+                style: text.micro.copyWith(color: colors.textTertiary),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -632,6 +650,12 @@ final pulseTargetProvider = FutureProvider.autoDispose
           if (post == null) return unavailable();
           final media = await api.fetchPostMedia(entity.id);
           final cover = media.isEmpty ? null : media.first;
+          final attached = post.entityType == null || post.entityId == null
+              ? null
+              : await _loadAttachedTarget(
+                  api,
+                  EntityRef(post.entityType!, post.entityId!),
+                );
           return PulseTarget(
             id: post.id,
             type: EntityType.post,
@@ -643,8 +667,11 @@ final pulseTargetProvider = FutureProvider.autoDispose
             coverHeight: cover?.height,
             childCount: post.replyCount,
             likeCount: post.likeCount,
+            quoteCount: post.quoteCount,
             createdAt: post.createdAt,
             author: post.author,
+            media: media,
+            attachedTarget: attached,
           );
 
         case EntityType.item:
@@ -653,6 +680,7 @@ final pulseTargetProvider = FutureProvider.autoDispose
           final itemOwner = item.userId == null
               ? null
               : await api.fetchProfile(item.userId!);
+          final media = await api.fetchItemMedia(item.id);
           return PulseTarget(
             id: item.id,
             type: EntityType.item,
@@ -664,8 +692,10 @@ final pulseTargetProvider = FutureProvider.autoDispose
             coverHeight: item.coverHeight,
             childCount: item.mediaCount,
             likeCount: item.likeCount,
+            quoteCount: item.quoteCount,
             createdAt: item.createdAt,
             author: itemOwner,
+            media: media,
           );
 
         case EntityType.subcollection:
@@ -683,6 +713,7 @@ final pulseTargetProvider = FutureProvider.autoDispose
             coverBlurhash: sub.coverBlurhash,
             childCount: sub.itemCount,
             likeCount: sub.likeCount,
+            quoteCount: sub.quoteCount,
             createdAt: sub.createdAt,
             author: subOwner,
           );
@@ -702,6 +733,7 @@ final pulseTargetProvider = FutureProvider.autoDispose
             coverBlurhash: collection.coverBlurhash,
             childCount: collection.itemCount,
             likeCount: collection.likeCount,
+            quoteCount: collection.quoteCount,
             createdAt: collection.createdAt,
             author: collectionOwner,
           );
@@ -710,3 +742,71 @@ final pulseTargetProvider = FutureProvider.autoDispose
           return unavailable();
       }
     }, name: 'pulseTarget');
+
+Future<PulseTarget?> _loadAttachedTarget(KlectApi api, EntityRef entity) async {
+  switch (entity.type) {
+    case EntityType.item:
+      final item = await api.fetchItem(entity.id);
+      if (item == null) return null;
+      final owner = item.userId == null
+          ? null
+          : await api.fetchProfile(item.userId!);
+      final media = await api.fetchItemMedia(item.id);
+      return PulseTarget(
+        id: item.id,
+        type: EntityType.item,
+        title: item.title,
+        subtitle: item.brand ?? item.description,
+        coverPath: item.coverPath,
+        coverBlurhash: item.coverBlurhash,
+        coverWidth: item.coverWidth,
+        coverHeight: item.coverHeight,
+        childCount: item.mediaCount,
+        likeCount: item.likeCount,
+        quoteCount: item.quoteCount,
+        createdAt: item.createdAt,
+        author: owner,
+        media: media,
+      );
+    case EntityType.subcollection:
+      final sub = await api.fetchSubcollection(entity.id);
+      if (sub == null) return null;
+      final owner = sub.userId == null
+          ? null
+          : await api.fetchProfile(sub.userId!);
+      return PulseTarget(
+        id: sub.id,
+        type: EntityType.subcollection,
+        title: sub.name,
+        subtitle: sub.description,
+        coverPath: sub.coverPath,
+        coverBlurhash: sub.coverBlurhash,
+        childCount: sub.itemCount,
+        likeCount: sub.likeCount,
+        quoteCount: sub.quoteCount,
+        createdAt: sub.createdAt,
+        author: owner,
+      );
+    case EntityType.collection:
+      final collection = await api.fetchCollection(entity.id);
+      if (collection == null) return null;
+      final owner = collection.userId == null
+          ? null
+          : await api.fetchProfile(collection.userId!);
+      return PulseTarget(
+        id: collection.id,
+        type: EntityType.collection,
+        title: collection.name,
+        subtitle: collection.description,
+        coverPath: collection.coverPath,
+        coverBlurhash: collection.coverBlurhash,
+        childCount: collection.itemCount,
+        likeCount: collection.likeCount,
+        quoteCount: collection.quoteCount,
+        createdAt: collection.createdAt,
+        author: owner,
+      );
+    case EntityType.post || EntityType.comment:
+      return null;
+  }
+}

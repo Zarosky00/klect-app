@@ -23,6 +23,7 @@ class CommentsState {
     this.error,
     this.failedDraft,
     this.failedParentId,
+    this.nextCursor,
   });
 
   /// Every loaded comment, flat: root comments in [sort] order followed by
@@ -51,6 +52,9 @@ class CommentsState {
   /// Which reply the failed draft belonged to.
   final String? failedParentId;
 
+  /// Opaque composite cursor for root pagination.
+  final Map<String, dynamic>? nextCursor;
+
   /// Copy with overrides.
   CommentsState copyWith({
     List<CommentModel>? comments,
@@ -63,18 +67,19 @@ class CommentsState {
     String? failedDraft,
     String? failedParentId,
     bool clearDraft = false,
-  }) =>
-      CommentsState(
-        comments: comments ?? this.comments,
-        loading: loading ?? this.loading,
-        loadingMore: loadingMore ?? this.loadingMore,
-        hasMore: hasMore ?? this.hasMore,
-        sort: sort ?? this.sort,
-        error: clearError ? null : (error ?? this.error),
-        failedDraft: clearDraft ? null : (failedDraft ?? this.failedDraft),
-        failedParentId:
-            clearDraft ? null : (failedParentId ?? this.failedParentId),
-      );
+    Map<String, dynamic>? nextCursor,
+    bool clearCursor = false,
+  }) => CommentsState(
+    comments: comments ?? this.comments,
+    loading: loading ?? this.loading,
+    loadingMore: loadingMore ?? this.loadingMore,
+    hasMore: hasMore ?? this.hasMore,
+    sort: sort ?? this.sort,
+    error: clearError ? null : (error ?? this.error),
+    failedDraft: clearDraft ? null : (failedDraft ?? this.failedDraft),
+    failedParentId: clearDraft ? null : (failedParentId ?? this.failedParentId),
+    nextCursor: clearCursor ? null : (nextCursor ?? this.nextCursor),
+  );
 }
 
 /// Threaded comments with optimistic posting, Top/Newest sorting and
@@ -138,48 +143,24 @@ class CommentsController extends Notifier<CommentsState> {
     if (_disposed || _busy) return;
     _busy = true;
     state = reset
-        ? state.copyWith(loading: true, clearError: true)
+        ? state.copyWith(loading: true, clearError: true, clearCursor: true)
         : state.copyWith(loadingMore: true, clearError: true);
     try {
-      final api = ref.read(klectApiProvider);
-      final existingRoots = reset
-          ? 0
-          : state.comments.where((c) => c.parentId == null).length;
-
-      final roots = await api.fetchComments(
-        type: entity.type,
-        id: entity.id,
-        sort: state.sort,
-        limit: pageSize,
-        offset: existingRoots,
-      );
+      final page = await ref
+          .read(klectApiProvider)
+          .getCommentThread(
+            type: entity.type,
+            id: entity.id,
+            sort: state.sort,
+            limit: pageSize,
+            cursor: reset ? null : state.nextCursor,
+          );
       // One query serves every reply on the thread; the view attaches them.
-      final replies = reset || state.comments.isEmpty
-          ? await api.fetchCommentReplies(type: entity.type, id: entity.id)
-          : const <CommentModel>[];
+      final seeded = page.nodes;
 
       // Batched viewer-state seeding — three parallel queries for the whole
       // page (comments are likeable, saveable AND repostable since 0021), a
       // plain table select carries none of these.
-      final fresh = <CommentModel>[...roots, ...replies];
-      final ids = <String>[for (final comment in fresh) comment.id];
-      final viewerState = await Future.wait(<Future<Set<String>>>[
-        api.fetchLikedCommentIds(ids),
-        api.fetchSavedCommentIds(ids),
-        api.fetchRepostedCommentIds(ids),
-      ]);
-      final liked = viewerState[0];
-      final saved = viewerState[1];
-      final reposted = viewerState[2];
-      final seeded = <CommentModel>[
-        for (final comment in fresh)
-          comment.copyWith(
-            viewerLiked: liked.contains(comment.id),
-            viewerSaved: saved.contains(comment.id),
-            viewerReposted: reposted.contains(comment.id),
-          ),
-      ];
-
       // Comments are full social citizens in their own right, so seed the
       // engine for each one before any pill is built.
       final store = ref.read(interactionSeedStoreProvider);
@@ -192,7 +173,8 @@ class CommentsController extends Notifier<CommentsState> {
 
       if (_disposed) return;
       final known = <String>{
-        if (!reset) for (final comment in state.comments) comment.id,
+        if (!reset)
+          for (final comment in state.comments) comment.id,
       };
       state = state.copyWith(
         comments: <CommentModel>[
@@ -202,15 +184,12 @@ class CommentsController extends Notifier<CommentsState> {
         ],
         loading: false,
         loadingMore: false,
-        hasMore: roots.length >= pageSize,
+        hasMore: page.hasMore,
+        nextCursor: page.nextCursor,
       );
     } on KlectError catch (error) {
       if (_disposed) return;
-      state = state.copyWith(
-        loading: false,
-        loadingMore: false,
-        error: error,
-      );
+      state = state.copyWith(loading: false, loadingMore: false, error: error);
     } finally {
       _busy = false;
     }
@@ -254,9 +233,18 @@ class CommentsController extends Notifier<CommentsState> {
     );
     final interactions = ref.read(interactionProvider(entity).notifier)
       ..bumpCommentCount(1);
+    ref
+        .read(socialActivityMutationProvider.notifier)
+        .record(
+          SocialActivityMutationKind.comment,
+          entity: entity,
+          active: true,
+        );
 
     try {
-      final result = await ref.read(klectApiProvider).addComment(
+      final result = await ref
+          .read(klectApiProvider)
+          .addComment(
             type: entity.type,
             id: entity.id,
             body: trimmed,
@@ -298,6 +286,13 @@ class CommentsController extends Notifier<CommentsState> {
       ],
       clearError: true,
     );
+    ref
+        .read(socialActivityMutationProvider.notifier)
+        .record(
+          SocialActivityMutationKind.delete,
+          entity: EntityRef.comment(commentId),
+          active: false,
+        );
     try {
       final count = await ref.read(klectApiProvider).deleteComment(commentId);
       if (_disposed) return;
@@ -320,6 +315,6 @@ class CommentsController extends Notifier<CommentsState> {
 /// The comment thread, keyed by entity.
 final commentsProvider = NotifierProvider.autoDispose
     .family<CommentsController, CommentsState, EntityRef>(
-  CommentsController.new,
-  name: 'comments',
-);
+      CommentsController.new,
+      name: 'comments',
+    );

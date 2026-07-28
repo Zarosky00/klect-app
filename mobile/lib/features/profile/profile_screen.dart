@@ -4,16 +4,22 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
+import '../../core/api/api_error.dart';
 import '../../core/api/klect_api.dart';
 import '../../core/interactions/interactions.dart';
+import '../../core/links.dart';
 import '../../core/models/models.dart';
 import '../../core/supabase.dart';
 import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
 import '../auth/auth_controller.dart';
+import '../pulse/data/pulse_entry_view.dart';
+import '../pulse/widgets/comment_action_bar.dart';
 import '../pulse/widgets/pulse_card.dart';
+import '../pulse/widgets/pulse_target_card.dart';
 import 'edit_profile_screen.dart';
 import 'entity_tile.dart';
 import 'fill_viewport.dart';
@@ -24,29 +30,23 @@ import 'user_actions.dart';
 import 'user_posts_controller.dart';
 
 /// Which slice of a profile is on screen.
-enum ProfileTab {
+enum ProfileMode {
   /// The shelves this account owns.
-  collections('Collections'),
+  surf('Surf'),
 
   /// Posts, quotes and reposts — `user_posts` (0021).
-  posts('Posts'),
+  pulse('Pulse'),
 
   /// Every item, newest first.
-  items('Items'),
+  activity('Activity');
 
-  /// What the viewer has liked. Private — own profile only.
-  likes('Likes'),
-
-  /// What the viewer has saved. Private — own profile only.
-  saves('Saves');
-
-  const ProfileTab(this.label);
+  const ProfileMode(this.label);
 
   /// Tab label.
   final String label;
 
   /// Whether only the account owner may see this tab.
-  bool get isPrivate => this == ProfileTab.likes || this == ProfileTab.saves;
+  bool get isPrivate => this == ProfileMode.activity;
 }
 
 /// A collector's profile.
@@ -70,7 +70,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  ProfileTab _tab = ProfileTab.collections;
+  ProfileMode _mode = ProfileMode.surf;
 
   bool get _isMe => widget.username == null;
 
@@ -91,12 +91,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _refreshProfile();
     ref
       ..invalidate(profileCollectionsProvider(userId))
-      ..invalidate(userPostsProvider(userId))
       ..invalidate(profileItemsProvider(userId))
       ..invalidate(profileTasteTagsProvider(userId))
       ..invalidate(profileLikesProvider(userId))
       ..invalidate(profileSavesProvider(userId))
       ..invalidate(myFollowingIdsProvider);
+    for (final view in ProfilePulseView.values) {
+      ref.invalidate(userPostsProvider((userId: userId, view: view)));
+    }
+    for (final surface in ProfileSurface.values) {
+      ref.invalidate(
+        profileDiscussionProvider((userId: userId, surface: surface)),
+      );
+    }
+    for (final action in ProfileReactionAction.values) {
+      for (final surface in <ProfileSurface>[
+        ProfileSurface.surf,
+        ProfileSurface.pulse,
+      ]) {
+        ref.invalidate(
+          profileReactionProvider((action: action, surface: surface)),
+        );
+      }
+    }
   }
 
   @override
@@ -133,8 +150,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           : _ProfileBody(
               profile: person,
               isMe: _isMe || person.id == ref.watch(currentUserIdProvider),
-              tab: _tab,
-              onTabChanged: (tab) => setState(() => _tab = tab),
+              mode: _mode,
+              onModeChanged: (mode) => setState(() => _mode = mode),
               onRefresh: () => _refresh(person.id),
             ),
     );
@@ -145,25 +162,25 @@ class _ProfileBody extends ConsumerWidget {
   const _ProfileBody({
     required this.profile,
     required this.isMe,
-    required this.tab,
-    required this.onTabChanged,
+    required this.mode,
+    required this.onModeChanged,
     required this.onRefresh,
   });
 
   final Profile profile;
   final bool isMe;
-  final ProfileTab tab;
-  final ValueChanged<ProfileTab> onTabChanged;
+  final ProfileMode mode;
+  final ValueChanged<ProfileMode> onModeChanged;
   final Future<void> Function() onRefresh;
 
-  List<ProfileTab> get _tabs => <ProfileTab>[
-    for (final candidate in ProfileTab.values)
+  List<ProfileMode> get _tabs => <ProfileMode>[
+    for (final candidate in ProfileMode.values)
       if (isMe || !candidate.isPrivate) candidate,
   ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final visibleTab = _tabs.contains(tab) ? tab : ProfileTab.collections;
+    final visibleTab = _tabs.contains(mode) ? mode : ProfileMode.surf;
 
     return KScaffold(
       safeTop: false,
@@ -179,13 +196,14 @@ class _ProfileBody extends ConsumerWidget {
             delegate: _TabBarDelegate(
               tabs: _tabs,
               selected: visibleTab,
-              onChanged: onTabChanged,
+              onChanged: onModeChanged,
             ),
           ),
-          _ProfileTabContent(
-            key: ValueKey<ProfileTab>(visibleTab),
+          _ProfileModeContent(
+            key: ValueKey<ProfileMode>(visibleTab),
             profile: profile,
-            tab: visibleTab,
+            mode: visibleTab,
+            isMe: isMe,
           ),
           const SliverToBoxAdapter(child: SizedBox(height: Space.s20)),
         ],
@@ -623,9 +641,9 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
     required this.onChanged,
   });
 
-  final List<ProfileTab> tabs;
-  final ProfileTab selected;
-  final ValueChanged<ProfileTab> onChanged;
+  final List<ProfileMode> tabs;
+  final ProfileMode selected;
+  final ValueChanged<ProfileMode> onChanged;
 
   static const double _height = Space.s12;
 
@@ -704,7 +722,7 @@ class _TabButton extends StatelessWidget {
     required this.onTap,
   });
 
-  final ProfileTab tab;
+  final ProfileMode tab;
   final bool selected;
   final VoidCallback onTap;
 
@@ -748,153 +766,180 @@ class _TabButton extends StatelessWidget {
   }
 }
 
-class _ProfileTabContent extends ConsumerWidget {
-  const _ProfileTabContent({
+class _ProfileModeContent extends ConsumerWidget {
+  const _ProfileModeContent({
     required this.profile,
-    required this.tab,
+    required this.mode,
+    required this.isMe,
     super.key,
   });
 
   final Profile profile;
-  final ProfileTab tab;
+  final ProfileMode mode;
+  final bool isMe;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return switch (tab) {
-      ProfileTab.posts => _PostsSliver(userId: profile.id),
-      ProfileTab.collections => _CardsSliver(
-        value: ref
-            .watch(profileCollectionsProvider(profile.id))
-            .whenData(
-              (list) => <ProfileEntityCard>[
-                for (final collection in list)
-                  ProfileEntityCard.fromCollection(collection),
-              ],
-            ),
-        onRetry: () => ref.invalidate(profileCollectionsProvider(profile.id)),
-        emptyTitle: 'No shelves yet',
-        emptyMessage:
-            'A collection is the top of the hierarchy — "Anime", "Vinyl", '
-            '"Cameras". Everything else hangs off it.',
-        emptyAction: 'Start a collection',
-        onEmptyAction: () => context.push('/create/collection'),
-        showEmptyAction: profile.id == ref.watch(currentUserIdProvider),
-      ),
-      ProfileTab.items => _CardsSliver(
-        value: ref
-            .watch(profileItemsProvider(profile.id))
-            .whenData(
-              (list) => <ProfileEntityCard>[
-                for (final item in list) ProfileEntityCard.fromItem(item),
-              ],
-            ),
-        onRetry: () => ref.invalidate(profileItemsProvider(profile.id)),
-        emptyTitle: 'Nothing on the shelves',
-        emptyMessage:
-            'Items are the things themselves — each with as many '
-            'photos as it deserves.',
-        emptyAction: 'Add an item',
-        onEmptyAction: () => context.push('/create/item'),
-        showEmptyAction: profile.id == ref.watch(currentUserIdProvider),
-      ),
-      ProfileTab.likes => _CardsSliver(
-        value: ref.watch(profileLikesProvider(profile.id)),
-        onRetry: () => ref.invalidate(profileLikesProvider(profile.id)),
-        emptyTitle: 'Nothing liked yet',
-        emptyMessage:
-            'Tap the heart on anything — a whole collection, one '
-            'shelf inside it, or a single item.',
-        emptyAction: 'Go surfing',
-        onEmptyAction: () => context.go('/surf'),
-      ),
-      ProfileTab.saves => _CardsSliver(
-        value: ref.watch(profileSavesProvider(profile.id)),
-        onRetry: () => ref.invalidate(profileSavesProvider(profile.id)),
-        emptyTitle: 'Nothing saved yet',
-        emptyMessage:
-            'Saving is the brand action — it is how you build a '
-            'reference shelf from collections you do not own.',
-        emptyAction: 'Go surfing',
-        onEmptyAction: () => context.go('/surf'),
-      ),
+    return switch (mode) {
+      ProfileMode.surf => _SurfSliver(profile: profile),
+      ProfileMode.pulse => _PostsSliver(userId: profile.id),
+      ProfileMode.activity =>
+        isMe
+            ? const _ActivitySliver()
+            : const SliverToBoxAdapter(child: SizedBox.shrink()),
     };
   }
 }
 
 /// The Posts tab — `user_posts` (0021) rendered with the exact stream row
 /// the Pulse feed uses, so a post reads identically on both surfaces.
-class _PostsSliver extends ConsumerWidget {
+enum _SurfSection {
+  collections('Collections'),
+  items('Items');
+
+  const _SurfSection(this.label);
+  final String label;
+}
+
+class _SurfSliver extends ConsumerStatefulWidget {
+  const _SurfSliver({required this.profile});
+
+  final Profile profile;
+
+  @override
+  ConsumerState<_SurfSliver> createState() => _SurfSliverState();
+}
+
+class _SurfSliverState extends ConsumerState<_SurfSliver> {
+  _SurfSection _section = _SurfSection.collections;
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = widget.profile.id;
+    final isMe = userId == ref.watch(currentUserIdProvider);
+    final content = switch (_section) {
+      _SurfSection.collections => _CardsSliver(
+        value: ref
+            .watch(profileCollectionsProvider(userId))
+            .whenData(
+              (list) => <ProfileEntityCard>[
+                for (final collection in list)
+                  ProfileEntityCard.fromCollection(collection),
+              ],
+            ),
+        onRetry: () => ref.invalidate(profileCollectionsProvider(userId)),
+        emptyTitle: 'No shelves yet',
+        emptyMessage:
+            'Collections are the public home of everything this collector keeps.',
+        emptyAction: 'Start a collection',
+        onEmptyAction: () => context.push('/create/collection'),
+        showEmptyAction: isMe,
+      ),
+      _SurfSection.items => _CardsSliver(
+        value: ref
+            .watch(profileItemsProvider(userId))
+            .whenData(
+              (list) => <ProfileEntityCard>[
+                for (final item in list) ProfileEntityCard.fromItem(item),
+              ],
+            ),
+        onRetry: () => ref.invalidate(profileItemsProvider(userId)),
+        emptyTitle: 'Nothing on the shelves',
+        emptyMessage: 'Individual collected things appear here newest first.',
+        emptyAction: 'Add an item',
+        onEmptyAction: () => context.push('/create/item'),
+        showEmptyAction: isMe,
+      ),
+    };
+
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
+        _ProfileFilterRail(
+          labels: <String>[
+            for (final value in _SurfSection.values) value.label,
+          ],
+          selected: _section.index,
+          onSelected: (index) =>
+              setState(() => _section = _SurfSection.values[index]),
+        ),
+        content,
+      ],
+    );
+  }
+}
+
+enum _ProfilePulseTab {
+  posts('Posts'),
+  replies('Replies'),
+  media('Media');
+
+  const _ProfilePulseTab(this.label);
+
+  final String label;
+}
+
+class _PostsSliver extends ConsumerStatefulWidget {
   const _PostsSliver({required this.userId});
 
   final String userId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(userPostsProvider(userId));
+  ConsumerState<_PostsSliver> createState() => _PostsSliverState();
+}
 
-    if (state.loading && state.items.isEmpty) {
-      return const SliverToBoxAdapter(child: KSkeletonList(rows: 3));
-    }
-    final error = state.error;
-    if (error != null && state.items.isEmpty) {
-      return SliverToBoxAdapter(
-        child: KErrorState(
-          error: error,
-          compact: true,
-          onRetry: () => ref.invalidate(userPostsProvider(userId)),
-        ),
-      );
-    }
-    if (state.items.isEmpty) {
-      return const SliverToBoxAdapter(
-        child: KEmptyState(
-          title: 'Nothing said yet',
-          message:
-              'Posts, quotes and reposts land here — the Pulse side of '
-              'a collector.',
-          icon: Icons.bolt_outlined,
-          compact: true,
-        ),
-      );
-    }
+class _PostsSliverState extends ConsumerState<_PostsSliver> {
+  _ProfilePulseTab _tab = _ProfilePulseTab.posts;
+  ProfilePulseView _postView = ProfilePulseView.all;
+  ProfileSurface _replySurface = ProfileSurface.all;
 
+  @override
+  Widget build(BuildContext context) {
+    return _buildPulse(context);
+  }
+
+  Widget _buildPulse(BuildContext context) {
     return SliverMainAxisGroup(
       slivers: <Widget>[
-        SliverList.builder(
-          itemCount: state.items.length,
-          itemBuilder: (context, index) {
-            final item = state.items[index];
-            return PulseCard(key: ValueKey<String>(item.key), item: item);
-          },
+        _ProfileFilterRail(
+          labels: <String>[
+            for (final value in _ProfilePulseTab.values) value.label,
+          ],
+          selected: _tab.index,
+          onSelected: (index) =>
+              setState(() => _tab = _ProfilePulseTab.values[index]),
         ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(Space.s4),
-            child: error != null
-                ? KInlineError(
-                    message: error.message,
-                    onRetry: () => unawaited(
-                      ref.read(userPostsProvider(userId).notifier).loadMore(),
-                    ),
-                  )
-                : state.hasMore
-                ? KButton(
-                    label: state.loadingMore ? 'Loading…' : 'Show more posts',
-                    variant: KButtonVariant.ghost,
-                    size: KButtonSize.small,
-                    busy: state.loadingMore,
-                    expand: true,
-                    onPressed: state.loadingMore
-                        ? null
-                        : () => unawaited(
-                            ref
-                                .read(userPostsProvider(userId).notifier)
-                                .loadMore(),
-                          ),
-                  )
-                : const SizedBox.shrink(),
+        if (_tab == _ProfilePulseTab.posts) ...<Widget>[
+          _ProfileFilterRail(
+            labels: const <String>['All', 'Originals', 'Reposts', 'Quotes'],
+            selected: <ProfilePulseView>[
+              ProfilePulseView.all,
+              ProfilePulseView.originals,
+              ProfilePulseView.reposts,
+              ProfilePulseView.quotes,
+            ].indexOf(_postView),
+            compact: true,
+            onSelected: (index) => setState(
+              () => _postView = <ProfilePulseView>[
+                ProfilePulseView.all,
+                ProfilePulseView.originals,
+                ProfilePulseView.reposts,
+                ProfilePulseView.quotes,
+              ][index],
+            ),
           ),
-        ),
+          _PulseItemsSliver(userId: widget.userId, view: _postView),
+        ] else if (_tab == _ProfilePulseTab.media)
+          _PulseItemsSliver(userId: widget.userId, view: ProfilePulseView.media)
+        else ...<Widget>[
+          _ProfileFilterRail(
+            labels: const <String>['All', 'Surf', 'Pulse'],
+            selected: _replySurface.index,
+            compact: true,
+            onSelected: (index) =>
+                setState(() => _replySurface = ProfileSurface.values[index]),
+          ),
+          _DiscussionSliver(userId: widget.userId, surface: _replySurface),
+        ],
       ],
     );
   }
@@ -905,6 +950,574 @@ class _PostsSliver extends ConsumerWidget {
 /// The ragged masonry belongs to Surf; a library reads better — and scrolls
 /// cheaper — as an even gallery, because [SliverGrid] only builds the tiles
 /// actually on screen.
+class _ProfileFilterRail extends StatelessWidget {
+  const _ProfileFilterRail({
+    required this.labels,
+    required this.selected,
+    required this.onSelected,
+    this.compact = false,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelected;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => SliverToBoxAdapter(
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.fromLTRB(
+        Space.s4,
+        compact ? Space.s1 : Space.s3,
+        Space.s4,
+        Space.s2,
+      ),
+      child: Row(
+        children: <Widget>[
+          for (var index = 0; index < labels.length; index++) ...<Widget>[
+            KChip(
+              label: labels[index],
+              selected: selected == index,
+              dense: true,
+              onTap: () => onSelected(index),
+            ),
+            if (index != labels.length - 1) const SizedBox(width: Space.s2),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+class _PulseItemsSliver extends ConsumerWidget {
+  const _PulseItemsSliver({required this.userId, required this.view});
+
+  final String userId;
+  final ProfilePulseView view;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final query = (userId: userId, view: view);
+    final state = ref.watch(userPostsProvider(query));
+    if (state.loading && state.items.isEmpty) {
+      return const SliverToBoxAdapter(child: KSkeletonList(rows: 3));
+    }
+    if (state.error != null && state.items.isEmpty) {
+      return SliverToBoxAdapter(
+        child: KErrorState(
+          error: state.error,
+          compact: true,
+          onRetry: () => ref.read(userPostsProvider(query).notifier).refresh(),
+        ),
+      );
+    }
+    final items = <PulseItem>[
+      for (final item in state.items)
+        if (!(item.kind == PulseKind.repost &&
+            (item.target?.unavailable ?? false)))
+          item,
+    ];
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
+        if (items.isEmpty)
+          SliverToBoxAdapter(
+            child: KEmptyState(
+              title: view == ProfilePulseView.media
+                  ? 'No uploaded media yet'
+                  : 'Nothing here yet',
+              message: view == ProfilePulseView.media
+                  ? 'Only photos uploaded in original posts and quotes appear here.'
+                  : 'Original posts, reposts and quotes will appear in this timeline.',
+              icon: view == ProfilePulseView.media
+                  ? Icons.perm_media_outlined
+                  : Icons.bolt_outlined,
+              compact: true,
+            ),
+          )
+        else
+          SliverList.builder(
+            itemCount: items.length,
+            itemBuilder: (context, index) => PulseCard(
+              key: ValueKey<String>(items[index].key),
+              item: items[index],
+              showOwnerActions: userId == ref.watch(currentUserIdProvider),
+            ),
+          ),
+        _PagingFooter(
+          loading: state.loadingMore,
+          hasMore: state.hasMore,
+          error: state.error,
+          label: 'Show more posts',
+          onLoad: () => ref.read(userPostsProvider(query).notifier).loadMore(),
+        ),
+      ],
+    );
+  }
+}
+
+class _DiscussionSliver extends ConsumerWidget {
+  const _DiscussionSliver({required this.userId, required this.surface});
+
+  final String userId;
+  final ProfileSurface surface;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final query = (userId: userId, surface: surface);
+    final state = ref.watch(profileDiscussionProvider(query));
+    if (state.loading && state.items.isEmpty) {
+      return const SliverToBoxAdapter(child: KSkeletonList(rows: 4));
+    }
+    if (state.error != null && state.items.isEmpty) {
+      return SliverToBoxAdapter(
+        child: KErrorState(
+          error: state.error,
+          compact: true,
+          onRetry: () =>
+              ref.read(profileDiscussionProvider(query).notifier).refresh(),
+        ),
+      );
+    }
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
+        if (state.items.isEmpty)
+          const SliverToBoxAdapter(
+            child: KEmptyState(
+              title: 'No discussions yet',
+              message:
+                  'Comments and nested replies from Surf and Pulse appear here in one clear chronology.',
+              icon: Icons.forum_outlined,
+              compact: true,
+            ),
+          )
+        else
+          SliverList.builder(
+            itemCount: state.items.length,
+            itemBuilder: (context, index) => _DiscussionCard(
+              key: ValueKey<String>(state.items[index].comment.id),
+              activity: state.items[index],
+            ),
+          ),
+        _PagingFooter(
+          loading: state.loadingMore,
+          hasMore: state.hasMore,
+          error: state.error,
+          label: 'Show more replies',
+          onLoad: () =>
+              ref.read(profileDiscussionProvider(query).notifier).loadMore(),
+        ),
+      ],
+    );
+  }
+}
+
+class _DiscussionCard extends ConsumerWidget {
+  const _DiscussionCard({required this.activity, super.key});
+
+  final ProfileDiscussionActivity activity;
+
+  String get _destination {
+    final destination = activity.destination;
+    final base = destination.type == EntityType.post
+        ? KlectLinks.postThreadPath(destination.id)
+        : KlectLinks.closeupPath(destination.type, destination.id);
+    return '$base?comment=${destination.highlightCommentId}';
+  }
+
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await KConfirmDialog.show(
+      context,
+      title: 'Delete this reply?',
+      message: 'It disappears from the original discussion too.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!confirmed) return;
+    try {
+      await ref.read(klectApiProvider).deleteComment(activity.comment.id);
+      ref
+          .read(socialActivityMutationProvider.notifier)
+          .record(
+            SocialActivityMutationKind.delete,
+            entity: EntityRef.comment(activity.comment.id),
+            active: false,
+          );
+      if (context.mounted) KToast.success(context, 'Reply deleted');
+    } on KlectError catch (error) {
+      if (context.mounted) KToast.error(context, error.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.kc;
+    final comment = activity.comment;
+    final author = comment.author;
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
+    final replyingTo = activity.replyingTo;
+    final isMine = comment.authorId == ref.watch(currentUserIdProvider);
+
+    return KGestureRegion(
+      semanticLabel: '${author?.name ?? 'Someone'} replied: ${comment.body}',
+      onTap: () => context.push(_destination),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(
+          Space.s4,
+          Space.s3,
+          Space.s4,
+          Space.s2,
+        ),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: colors.borderSubtle,
+              width: Strokes.hairline,
+            ),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Column(
+              children: <Widget>[
+                KAvatar(
+                  imageUrl: avatarUrl,
+                  name: author?.name,
+                  size: Space.s10,
+                  isVerified: author?.isVerified ?? false,
+                ),
+                const SizedBox(height: Space.s1),
+                Container(
+                  width: Strokes.thick,
+                  height: Space.s8,
+                  color: activity.surface == ProfileSurface.surf
+                      ? colors.actionSave
+                      : colors.actionComment,
+                ),
+              ],
+            ),
+            const SizedBox(width: Space.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          author?.name ?? 'Someone',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.kt.bodyStrong,
+                        ),
+                      ),
+                      if (author != null) ...<Widget>[
+                        const SizedBox(width: Space.s1),
+                        Flexible(
+                          child: Text(
+                            author.handle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.kt.caption.copyWith(
+                              color: colors.textTertiary,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: Space.s1),
+                      Text(
+                        comment.createdAt == null
+                            ? ''
+                            : timeago.format(
+                                comment.createdAt!,
+                                locale: 'en_short',
+                              ),
+                        style: context.kt.micro.copyWith(
+                          color: colors.textTertiary,
+                        ),
+                      ),
+                      if (isMine) ...<Widget>[
+                        const Spacer(),
+                        KIconButton(
+                          icon: Icons.more_horiz_rounded,
+                          semanticLabel: 'Reply options',
+                          size: Space.s4,
+                          onPressed: () => unawaited(_delete(context, ref)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: Space.s1),
+                  Row(
+                    children: <Widget>[
+                      _SourceBadge(surface: activity.surface),
+                      const SizedBox(width: Space.s2),
+                      Expanded(
+                        child: Text(
+                          replyingTo?.username != null
+                              ? 'Replying to @${replyingTo!.username}'
+                              : 'On ${activity.context.title ?? activity.context.body ?? 'a discussion'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.kt.micro.copyWith(
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (replyingTo?.body?.isNotEmpty == true) ...<Widget>[
+                    const SizedBox(height: Space.s2),
+                    Container(
+                      padding: const EdgeInsets.only(left: Space.s2),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                            color: colors.borderStrong,
+                            width: Strokes.thick,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        replyingTo!.body!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.kt.caption.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: Space.s2),
+                  Text(comment.body, style: context.kt.body),
+                  const SizedBox(height: Space.s1),
+                  CommentActionBar(
+                    comment: comment,
+                    onReply: () => context.push(_destination),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SourceBadge extends StatelessWidget {
+  const _SourceBadge({required this.surface});
+
+  final ProfileSurface surface;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final pulse = surface == ProfileSurface.pulse;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.s15,
+        vertical: Space.s05,
+      ),
+      decoration: BoxDecoration(
+        color: pulse ? colors.actionCommentSubtle : colors.actionSaveSubtle,
+        borderRadius: BorderRadius.circular(Radii.full),
+      ),
+      child: Text(
+        pulse ? 'PULSE' : 'SURF',
+        style: context.kt.micro.copyWith(
+          color: pulse ? colors.actionComment : colors.actionSave,
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivitySliver extends ConsumerStatefulWidget {
+  const _ActivitySliver();
+
+  @override
+  ConsumerState<_ActivitySliver> createState() => _ActivitySliverState();
+}
+
+class _ActivitySliverState extends ConsumerState<_ActivitySliver> {
+  ProfileReactionAction _action = ProfileReactionAction.like;
+  ProfileSurface _surface = ProfileSurface.surf;
+
+  @override
+  Widget build(BuildContext context) => SliverMainAxisGroup(
+    slivers: <Widget>[
+      _ProfileFilterRail(
+        labels: const <String>['Likes', 'Saves'],
+        selected: _action.index,
+        onSelected: (index) =>
+            setState(() => _action = ProfileReactionAction.values[index]),
+      ),
+      _ProfileFilterRail(
+        labels: const <String>['Surf', 'Pulse'],
+        selected: _surface == ProfileSurface.surf ? 0 : 1,
+        compact: true,
+        onSelected: (index) => setState(
+          () => _surface = index == 0
+              ? ProfileSurface.surf
+              : ProfileSurface.pulse,
+        ),
+      ),
+      _ReactionItemsSliver(action: _action, surface: _surface),
+    ],
+  );
+}
+
+class _ReactionItemsSliver extends ConsumerWidget {
+  const _ReactionItemsSliver({required this.action, required this.surface});
+
+  final ProfileReactionAction action;
+  final ProfileSurface surface;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final query = (action: action, surface: surface);
+    final state = ref.watch(profileReactionProvider(query));
+    if (state.loading && state.items.isEmpty) {
+      return surface == ProfileSurface.surf
+          ? const SliverToBoxAdapter(child: KSkeletonGrid(tiles: 6))
+          : const SliverToBoxAdapter(child: KSkeletonList(rows: 3));
+    }
+    if (state.error != null && state.items.isEmpty) {
+      return SliverToBoxAdapter(
+        child: KErrorState(
+          error: state.error,
+          compact: true,
+          onRetry: () =>
+              ref.read(profileReactionProvider(query).notifier).refresh(),
+        ),
+      );
+    }
+    if (state.items.isEmpty) {
+      return SliverToBoxAdapter(
+        child: KEmptyState(
+          title: action == ProfileReactionAction.like
+              ? 'Nothing liked here yet'
+              : 'Nothing saved here yet',
+          message: surface == ProfileSurface.surf
+              ? 'Your private Surf history is collected here.'
+              : 'Posts and comments from Pulse appear here.',
+          icon: action == ProfileReactionAction.like
+              ? Icons.favorite_border_rounded
+              : Icons.bookmark_border_rounded,
+          compact: true,
+        ),
+      );
+    }
+
+    final content = surface == ProfileSurface.surf
+        ? _ReactionSurfGrid(items: state.items)
+        : SliverList.builder(
+            itemCount: state.items.length,
+            itemBuilder: (context, index) {
+              final item = state.items[index];
+              final entry = item.entry;
+              if (entry != null) {
+                return PulseCard(item: PulseItem.fromEntry(entry));
+              }
+              final target = item.target;
+              return target == null
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      padding: const EdgeInsets.all(Space.s4),
+                      child: PulseTargetCard(target: target),
+                    );
+            },
+          );
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
+        content,
+        _PagingFooter(
+          loading: state.loadingMore,
+          hasMore: state.hasMore,
+          error: state.error,
+          label: 'Show more activity',
+          onLoad: () =>
+              ref.read(profileReactionProvider(query).notifier).loadMore(),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReactionSurfGrid extends StatelessWidget {
+  const _ReactionSurfGrid({required this.items});
+
+  final List<ProfileReactionActivity> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = <ProfileEntityCard>[
+      for (final item in items)
+        if (item.target != null && !item.target!.unavailable)
+          ProfileEntityCard.fromTarget(item.target!),
+    ];
+    final columns = Layout.masonryColumns(MediaQuery.sizeOf(context).width);
+    return SliverPadding(
+      padding: const EdgeInsets.all(Layout.masonryGutter),
+      sliver: SliverGrid(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisSpacing: Layout.masonryGutter,
+          crossAxisSpacing: Layout.masonryGutter,
+          childAspectRatio: Aspect.cover,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => EntityTile(
+            key: ValueKey<String>(cards[index].key),
+            card: cards[index],
+            index: index,
+          ),
+          childCount: cards.length,
+        ),
+      ),
+    );
+  }
+}
+
+class _PagingFooter extends StatelessWidget {
+  const _PagingFooter({
+    required this.loading,
+    required this.hasMore,
+    required this.error,
+    required this.label,
+    required this.onLoad,
+  });
+
+  final bool loading;
+  final bool hasMore;
+  final KlectError? error;
+  final String label;
+  final VoidCallback onLoad;
+
+  @override
+  Widget build(BuildContext context) => SliverToBoxAdapter(
+    child: Padding(
+      padding: const EdgeInsets.all(Space.s4),
+      child: error != null
+          ? KInlineError(message: error!.message, onRetry: onLoad)
+          : hasMore
+          ? KButton(
+              label: loading ? 'Loading…' : label,
+              variant: KButtonVariant.ghost,
+              size: KButtonSize.small,
+              busy: loading,
+              expand: true,
+              onPressed: loading ? null : onLoad,
+            )
+          : const SizedBox.shrink(),
+    ),
+  );
+}
+
 class _CardsSliver extends StatelessWidget {
   const _CardsSliver({
     required this.value,

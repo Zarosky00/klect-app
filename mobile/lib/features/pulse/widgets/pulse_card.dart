@@ -1,13 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
+import '../../../core/interactions/interactions.dart';
 import '../../../core/links.dart';
 import '../../../core/models/models.dart';
+import '../../../core/settings/app_settings.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
 import '../../surf/surf.dart';
@@ -32,10 +36,17 @@ import 'pulse_target_card.dart';
 /// same optimistic engine — a like here and a like there are the same like.
 class PulseCard extends ConsumerWidget {
   /// Creates a Pulse card.
-  const PulseCard({required this.item, super.key});
+  const PulseCard({
+    required this.item,
+    super.key,
+    this.showOwnerActions = false,
+  });
 
   /// The normalised row.
   final PulseItem item;
+
+  /// Adds the management overflow used only on the signed-in owner's profile.
+  final bool showOwnerActions;
 
   /// Whose name and avatar head the card.
   Profile? get _presenter => switch (item.kind) {
@@ -87,6 +98,80 @@ class PulseCard extends ConsumerWidget {
     return KlectLinks.closeupPath(entity.type, entity.id);
   }
 
+  Future<void> _ownerMenu(BuildContext context, WidgetRef ref) async {
+    final destination = _destination;
+    final isRepost = item.kind == PulseKind.repost;
+    final choice = await KSheet.show<_OwnerPulseAction>(
+      context: context,
+      title: 'Post options',
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (destination != null)
+            _OwnerOption(
+              icon: Icons.open_in_new_rounded,
+              label: 'Open',
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(_OwnerPulseAction.open),
+            ),
+          _OwnerOption(
+            icon: Icons.link_rounded,
+            label: 'Copy link',
+            onTap: () => Navigator.of(sheetContext).pop(_OwnerPulseAction.copy),
+          ),
+          _OwnerOption(
+            icon: isRepost ? Icons.undo_rounded : Icons.delete_outline_rounded,
+            label: isRepost ? 'Undo repost' : 'Delete post',
+            destructive: !isRepost,
+            onTap: () => Navigator.of(
+              sheetContext,
+            ).pop(isRepost ? _OwnerPulseAction.undo : _OwnerPulseAction.delete),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    switch (choice) {
+      case _OwnerPulseAction.open:
+        if (destination != null) unawaited(context.push(destination));
+      case _OwnerPulseAction.copy:
+        await Clipboard.setData(
+          ClipboardData(
+            text: KlectLinks.urlFor(item.entity.type, item.entity.id),
+          ),
+        );
+        if (context.mounted) KToast.success(context, 'Link copied');
+      case _OwnerPulseAction.undo:
+        await ref
+            .read(interactionProvider(item.entity).notifier)
+            .toggleRepost();
+      case _OwnerPulseAction.delete:
+        final postId = item.postId;
+        if (postId == null) return;
+        final confirmed = await KConfirmDialog.show(
+          context,
+          title: 'Delete this post?',
+          message: 'It disappears from Pulse and your profile.',
+          confirmLabel: 'Delete',
+          destructive: true,
+        );
+        if (!confirmed) return;
+        try {
+          await ref.read(klectApiProvider).deletePost(postId);
+          ref
+              .read(socialActivityMutationProvider.notifier)
+              .record(
+                SocialActivityMutationKind.delete,
+                entity: EntityRef.post(postId),
+                active: false,
+              );
+          if (context.mounted) KToast.success(context, 'Post deleted');
+        } on KlectError catch (error) {
+          if (context.mounted) KToast.error(context, error.message);
+        }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
@@ -112,6 +197,8 @@ class PulseCard extends ConsumerWidget {
                 coverHeight: firstMedia?.height,
                 createdAt: item.sortAt,
                 author: presenter,
+                media: item.media,
+                attachedTarget: item.target?.attachedTarget,
               )
         : (item.target?.id == actionEntity.id ? item.target : null);
     final quoteMedia =
@@ -122,6 +209,12 @@ class PulseCard extends ConsumerWidget {
         .watch(klectApiProvider)
         .publicUrl(presenter?.avatarPath, bucket: StorageBucket.avatars);
     final destination = _destination;
+    final mediaForward =
+        ref.watch(appSettingsProvider).pulseLayout ==
+        PulseLayoutPreference.mediaForward;
+    final streamMediaHeight = mediaForward
+        ? PostMediaGrid.streamMaxHeight
+        : Space.s24 * 2.5;
 
     return KGestureRegion(
       semanticLabel: body ?? presenter?.name,
@@ -199,27 +292,45 @@ class PulseCard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      _Byline(presenter: presenter, at: item.sortAt),
+                      _Byline(
+                        presenter: presenter,
+                        at: item.sortAt,
+                        onMore: showOwnerActions
+                            ? () => unawaited(_ownerMenu(context, ref))
+                            : null,
+                      ),
                       if (body != null && body.isNotEmpty) ...<Widget>[
                         const SizedBox(height: Space.s1),
                         Text(body, style: text.body),
                       ],
-                      if (item.media.isNotEmpty) ...<Widget>[
+                      if (item.kind != PulseKind.repost &&
+                          item.media.isNotEmpty) ...<Widget>[
                         const SizedBox(height: Space.s3),
                         // Bounded in the stream: a tall photo previews inside
                         // the row instead of masquerading as a masonry tile.
                         PostMediaGrid(
                           media: item.media,
-                          maxHeight: PostMediaGrid.streamMaxHeight,
+                          maxHeight: streamMediaHeight,
                         ),
                       ],
                       if (inlinePost != null) ...<Widget>[
                         if (inlinePost.unavailable) ...<Widget>[
                           const SizedBox(height: Space.s3),
                           PulseTargetCard(target: inlinePost),
+                        ] else if (inlinePost.media.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          PostMediaGrid(
+                            media: inlinePost.media,
+                            maxHeight: streamMediaHeight,
+                          ),
                         ] else if (inlinePost.coverPath != null) ...<Widget>[
                           const SizedBox(height: Space.s3),
                           _InlinePostCover(target: inlinePost),
+                        ],
+                        if (inlinePost.attachedTarget
+                            case final attached?) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          PulseTargetCard(target: attached),
                         ],
                       ],
                       if (target != null) ...<Widget>[
@@ -410,11 +521,49 @@ class PostMediaGrid extends ConsumerWidget {
   }
 }
 
+enum _OwnerPulseAction { open, copy, undo, delete }
+
+class _OwnerOption extends StatelessWidget {
+  const _OwnerOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive
+        ? context.kc.semanticDanger
+        : context.kc.textPrimary;
+    return KPressable(
+      onTap: onTap,
+      semanticLabel: label,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Space.s3),
+        child: Row(
+          children: <Widget>[
+            Icon(icon, color: color, size: Space.s5),
+            const SizedBox(width: Space.s3),
+            Text(label, style: context.kt.bodyStrong.copyWith(color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Byline extends StatelessWidget {
-  const _Byline({required this.presenter, required this.at});
+  const _Byline({required this.presenter, required this.at, this.onMore});
 
   final Profile? presenter;
   final DateTime? at;
+  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -448,6 +597,15 @@ class _Byline extends StatelessWidget {
           Text(
             '· ${timeago.format(when, locale: 'en_short')}',
             style: text.caption.copyWith(color: colors.textTertiary),
+          ),
+        ],
+        if (onMore != null) ...<Widget>[
+          const Spacer(),
+          KIconButton(
+            icon: Icons.more_horiz_rounded,
+            semanticLabel: 'Post options',
+            onPressed: onMore,
+            size: Space.s4,
           ),
         ],
       ],

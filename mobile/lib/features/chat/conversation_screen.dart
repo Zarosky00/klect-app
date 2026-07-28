@@ -23,7 +23,6 @@ import 'thread_controller.dart';
 import 'widgets/chat_composer.dart';
 import 'widgets/forward_sheet.dart';
 import 'widgets/group_avatar.dart';
-import 'widgets/incoming_call_overlay.dart';
 import 'widgets/message_actions_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/thread_search.dart';
@@ -43,6 +42,13 @@ const int _jumpPageCap = 10;
 /// How many scroll-and-settle steps a jump may take before giving up — the
 /// lazy list needs a frame per step to build rows near the new offset.
 const int _jumpScrollAttempts = 24;
+
+/// Keeps unfinished calling controls out of production conversations. The
+/// backend flag only turns true after Firebase delivery, TURN and native call
+/// integration have passed their device matrix.
+final _callFeatureEnabledProvider = FutureProvider.autoDispose<bool>((ref) {
+  return ref.watch(chatApiProvider).callFeatureEnabled();
+}, name: 'callFeatureEnabled');
 
 /// One conversation.
 ///
@@ -124,17 +130,34 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
   // ────────────────────────────────────────────────────────────── actions ──
 
   Future<void> _startCall(CallKind kind, Profile? peer) async {
+    try {
+      final enabled = await ref.read(chatApiProvider).callFeatureEnabled();
+      if (!enabled) {
+        if (mounted) {
+          KToast.show(
+            context,
+            'Calls are being prepared for reliable mobile delivery.',
+          );
+        }
+        return;
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        KToast.error(context, KlectError.from(error).message);
+      }
+      return;
+    }
+    if (!mounted) return;
+
     final granted = await CallPermissions.request(
       context,
       kind: kind,
       outgoing: true,
     );
     if (!mounted || granted != CallPermissionResult.granted) return;
-    final call = await ref.read(activeCallProvider.notifier).place(
-          conversationId: widget.conversationId,
-          kind: kind,
-          peer: peer,
-        );
+    final call = await ref
+        .read(activeCallProvider.notifier)
+        .place(conversationId: widget.conversationId, kind: kind, peer: peer);
     if (!mounted || call == null) return;
     await context.push('/call/${call.id}');
   }
@@ -146,7 +169,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
         message: message,
         isMine: isMine,
         viewerId: ref.read(currentUserIdProvider),
-        onReact: (emoji) => unawaited(_thread.toggleReaction(message.id, emoji)),
+        onReact: (emoji) =>
+            unawaited(_thread.toggleReaction(message.id, emoji)),
         onReply: () => _armReply(message),
         onForward: message.pending || message.failed
             ? null
@@ -163,9 +187,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
   /// The one path into the composer's reply target — the long-press sheet's
   /// Reply and the swipe gesture both land here.
   void _armReply(ChatMessage message) => setState(() {
-        _replyTo = message;
-        _editing = null;
-      });
+    _replyTo = message;
+    _editing = null;
+  });
 
   // ────────────────────────────────────────────────────────────── forward ──
 
@@ -266,9 +290,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       // rows build; re-derive it every step.
       final estimatedExtent =
           (position.maxScrollExtent + position.viewportDimension) / (total + 1);
-      final estimated = (estimatedExtent * index -
-              position.viewportDimension / 2)
-          .clamp(0.0, position.maxScrollExtent);
+      final estimated =
+          (estimatedExtent * index - position.viewportDimension / 2).clamp(
+            0.0,
+            position.maxScrollExtent,
+          );
       final delta = estimated - position.pixels;
       final step = delta.abs() <= position.viewportDimension
           ? estimated
@@ -304,8 +330,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
 
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
-    _searchDebounce =
-        Timer(KDurations.medium, () => unawaited(_runSearch(value)));
+    _searchDebounce = Timer(
+      KDurations.medium,
+      () => unawaited(_runSearch(value)),
+    );
   }
 
   Future<void> _runSearch(String value) async {
@@ -410,7 +438,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
                 final confirmed = await KConfirmDialog.show(
                   context,
                   title: 'Block ${peer.name}?',
-                  message: 'You stop seeing each other everywhere on KLECT, '
+                  message:
+                      'You stop seeing each other everywhere on KLECT, '
                       'and neither of you can message the other.',
                   confirmLabel: 'Block',
                   destructive: true,
@@ -441,6 +470,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     final state = ref.watch(chatThreadProvider(widget.conversationId));
     final viewerId = ref.watch(currentUserIdProvider);
     final isGroup = state.conversation?.kind == ConversationKind.group;
+    final callsEnabled = ref.watch(_callFeatureEnabledProvider).value ?? false;
     // A group has no single "peer": every peer-shaped affordance (profile
     // push, call, block, report) is DM-only.
     final peer = isGroup ? null : state.otherMember(viewerId)?.profile;
@@ -464,7 +494,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
             state: state,
             peer: peer,
             isGroup: isGroup,
-            canCall: !isGroup,
+            canCall: !isGroup && callsEnabled,
             onCall: (kind) => unawaited(_startCall(kind, peer)),
             onSearch: _openSearch,
             onOverflow: () =>
@@ -472,55 +502,58 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
             onOpenInfo: isGroup ? _openGroupInfo : null,
           );
 
-    return IncomingCallOverlay(
-      child: KScaffold(
-        appBar: topBar,
-        bottomBar: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            TypingIndicator(typing: state.typing),
-            ChatComposer(
-              conversationId: widget.conversationId,
-              replyTo: _replyTo,
-              editing: _editing,
-              enabled: !state.loading || state.messages.isNotEmpty,
-              onCancelReply: () => setState(() => _replyTo = null),
-              onCancelEdit: () => setState(() => _editing = null),
-            ),
-          ],
-        ),
-        body: Stack(
-          children: <Widget>[
-            _ThreadBody(
-              state: state,
-              viewerId: viewerId,
-              scroll: _scroll,
-              highlightedId: _highlightedId,
-              keyFor: _keyFor,
-              onLongPress: _openActions,
-              onQuickReact: (message) => unawaited(
-                _thread.toggleReaction(message.id, kQuickReactions.first),
-              ),
-              onSwipeReply: _armReply,
-              onReplyTap: (replyToId) => unawaited(_jumpToMessage(replyToId)),
-              onRetry: (message) => unawaited(_thread.retry(message.id)),
-              onDiscard: (message) => _thread.discard(message.id),
-              onReaction: (message, emoji) =>
-                  unawaited(_thread.toggleReaction(message.id, emoji)),
-              localPreview: _thread.localPreview,
-              onRefresh: () => unawaited(_thread.refresh()),
-            ),
-            if (_searching && (_searchTerm.isNotEmpty || _searchLoading))
-              Positioned.fill(
-                child: ThreadSearchResults(
-                  term: _searchTerm,
-                  loading: _searchLoading,
-                  results: _searchResults,
-                  onTap: _openSearchResult,
+    return KScaffold(
+      appBar: topBar,
+      // The composer belongs to the resizable body, not Scaffold's
+      // bottomNavigationBar. Scaffold now owns the keyboard inset exactly
+      // once, so Gboard cannot cover the caret or typed text.
+      body: Column(
+        children: <Widget>[
+          Expanded(
+            child: Stack(
+              children: <Widget>[
+                _ThreadBody(
+                  state: state,
+                  viewerId: viewerId,
+                  scroll: _scroll,
+                  highlightedId: _highlightedId,
+                  keyFor: _keyFor,
+                  onLongPress: _openActions,
+                  onQuickReact: (message) => unawaited(
+                    _thread.toggleReaction(message.id, kQuickReactions.first),
+                  ),
+                  onSwipeReply: _armReply,
+                  onReplyTap: (replyToId) =>
+                      unawaited(_jumpToMessage(replyToId)),
+                  onRetry: (message) => unawaited(_thread.retry(message.id)),
+                  onDiscard: (message) => _thread.discard(message.id),
+                  onReaction: (message, emoji) =>
+                      unawaited(_thread.toggleReaction(message.id, emoji)),
+                  localPreview: _thread.localPreview,
+                  onRefresh: () => unawaited(_thread.refresh()),
                 ),
-              ),
-          ],
-        ),
+                if (_searching && (_searchTerm.isNotEmpty || _searchLoading))
+                  Positioned.fill(
+                    child: ThreadSearchResults(
+                      term: _searchTerm,
+                      loading: _searchLoading,
+                      results: _searchResults,
+                      onTap: _openSearchResult,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          TypingIndicator(typing: state.typing),
+          ChatComposer(
+            conversationId: widget.conversationId,
+            replyTo: _replyTo,
+            editing: _editing,
+            enabled: !state.loading || state.messages.isNotEmpty,
+            onCancelReply: () => setState(() => _replyTo = null),
+            onCancelEdit: () => setState(() => _editing = null),
+          ),
+        ],
       ),
     );
   }
@@ -564,8 +597,11 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
-    final title = state.conversation?.displayTitle ?? peer?.name ?? 'Conversation';
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
+    final title =
+        state.conversation?.displayTitle ?? peer?.name ?? 'Conversation';
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(
           isGroup ? state.conversation?.avatarPath : peer?.avatarPath,
           bucket: StorageBucket.avatars,
         );
@@ -578,13 +614,13 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
         semanticLabel: isGroup
             ? 'Open group info'
             : peer == null
-                ? title
-                : 'Open $title profile',
+            ? title
+            : 'Open $title profile',
         onTap: isGroup
             ? onOpenInfo
             : peer == null
-                ? null
-                : () => context.push(KlectLinks.profilePath(peer!.username)),
+            ? null
+            : () => context.push(KlectLinks.profilePath(peer!.username)),
         child: Row(
           children: <Widget>[
             if (isGroup)
@@ -612,7 +648,7 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
                     Text(
                       memberCount > 0
                           ? '$memberCount '
-                              '${memberCount == 1 ? 'member' : 'members'}'
+                                '${memberCount == 1 ? 'member' : 'members'}'
                           : 'Group',
                       style: context.kt.micro.copyWith(
                         color: colors.textTertiary,
@@ -711,7 +747,8 @@ class _ThreadBody extends ConsumerWidget {
     if (state.messages.isEmpty) {
       return const KEmptyState(
         title: 'Say something',
-        message: 'Share a collection, or just start talking. '
+        message:
+            'Share a collection, or just start talking. '
             'Nothing here yet.',
         icon: Icons.chat_bubble_outline_rounded,
       );
@@ -744,12 +781,13 @@ class _ThreadBody extends ConsumerWidget {
         final kind = message.message.kind;
         // Deleted rows never reach the list; system and call_event rows render
         // as notices, so only real utterances take the swipe gesture.
-        final swipeable = (kind == MessageKind.text ||
-                kind == MessageKind.image) &&
+        final swipeable =
+            (kind == MessageKind.text || kind == MessageKind.image) &&
             !message.pending &&
             !message.failed;
         final replyToId = message.message.replyToId;
-        final parentReachable = replyToId != null &&
+        final parentReachable =
+            replyToId != null &&
             message.replyTo != null &&
             message.replyTo!.deletedAt == null;
         return MessageBubble(
@@ -845,9 +883,9 @@ class _ThreadRow {
   }) : separator = null;
 
   const _ThreadRow.separator(this.separator)
-      : message = null,
-        isFirstOfGroup = false,
-        isLastOfGroup = false;
+    : message = null,
+      isFirstOfGroup = false,
+      isLastOfGroup = false;
 
   final ChatMessage? message;
   final DateTime? separator;

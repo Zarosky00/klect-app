@@ -29,6 +29,10 @@ class CommentModel {
     this.viewerReposted = false,
     this.isPending = false,
     this.failed = false,
+    this.rootId,
+    this.relativeDepth = 0,
+    this.replyingToUsername,
+    this.tombstone = false,
   });
 
   /// Parses a `comments` row, optionally with an embedded `author` join.
@@ -38,6 +42,7 @@ class CommentModel {
   factory CommentModel.fromJson(Map<String, dynamic> json) {
     final author = asMap(json['author'] ?? json['profiles']);
     final viewer = asMap(json['viewer']);
+    final replyingTo = asMap(json['replying_to']);
     return CommentModel(
       id: asString(json['id']),
       body: asString(json['body']),
@@ -59,6 +64,10 @@ class CommentModel {
       viewerLiked: asBool(json['viewer_liked'] ?? viewer['liked']),
       viewerSaved: asBool(json['viewer_saved'] ?? viewer['saved']),
       viewerReposted: asBool(json['viewer_reposted'] ?? viewer['reposted']),
+      rootId: asStringOrNull(json['root_id']),
+      relativeDepth: asInt(json['relative_depth']),
+      replyingToUsername: asStringOrNull(replyingTo['username']),
+      tombstone: asBool(json['tombstone'] ?? json['deleted']),
     );
   }
 
@@ -132,6 +141,18 @@ class CommentModel {
   /// than losing the text.
   final bool failed;
 
+  /// Root branch id returned by `get_comment_thread`.
+  final String? rootId;
+
+  /// Depth relative to the paged root branch.
+  final int relativeDepth;
+
+  /// Handle of the direct parent, used for unambiguous reply context.
+  final String? replyingToUsername;
+
+  /// Deleted-parent placeholder; children remain visible beneath it.
+  final bool tombstone;
+
   /// Whether this comment is a reply.
   bool get isReply => parentId != null;
 
@@ -150,29 +171,69 @@ class CommentModel {
     bool? failed,
     DateTime? createdAt,
     Profile? author,
-  }) =>
-      CommentModel(
-        id: id ?? this.id,
-        body: body ?? this.body,
-        entityType: entityType,
-        entityId: entityId,
-        authorId: authorId,
-        parentId: parentId,
-        depth: depth,
-        likeCount: likeCount ?? this.likeCount,
-        saveCount: saveCount ?? this.saveCount,
-        repostCount: repostCount ?? this.repostCount,
-        replyCount: replyCount ?? this.replyCount,
-        editedAt: editedAt,
-        hiddenAt: hiddenAt,
-        deletedAt: deletedAt,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt,
-        author: author ?? this.author,
-        viewerLiked: viewerLiked ?? this.viewerLiked,
-        viewerSaved: viewerSaved ?? this.viewerSaved,
-        viewerReposted: viewerReposted ?? this.viewerReposted,
-        isPending: isPending ?? this.isPending,
-        failed: failed ?? this.failed,
+  }) => CommentModel(
+    id: id ?? this.id,
+    body: body ?? this.body,
+    entityType: entityType,
+    entityId: entityId,
+    authorId: authorId,
+    parentId: parentId,
+    depth: depth,
+    likeCount: likeCount ?? this.likeCount,
+    saveCount: saveCount ?? this.saveCount,
+    repostCount: repostCount ?? this.repostCount,
+    replyCount: replyCount ?? this.replyCount,
+    editedAt: editedAt,
+    hiddenAt: hiddenAt,
+    deletedAt: deletedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt,
+    author: author ?? this.author,
+    viewerLiked: viewerLiked ?? this.viewerLiked,
+    viewerSaved: viewerSaved ?? this.viewerSaved,
+    viewerReposted: viewerReposted ?? this.viewerReposted,
+    isPending: isPending ?? this.isPending,
+    failed: failed ?? this.failed,
+    rootId: rootId,
+    relativeDepth: relativeDepth,
+    replyingToUsername: replyingToUsername,
+    tombstone: tombstone,
+  );
+}
+
+/// One root-paged comment response with every visible descendant hydrated.
+class CommentThreadPage {
+  /// Creates a comment thread page.
+  const CommentThreadPage({
+    required this.nodes,
+    required this.hasMore,
+    this.nextCursor,
+    this.unavailable = false,
+  });
+
+  /// Parses `get_comment_thread`.
+  factory CommentThreadPage.fromJson(Map<String, dynamic> json) =>
+      CommentThreadPage(
+        nodes: <CommentModel>[
+          for (final row in asMapList(json['nodes']))
+            CommentModel.fromJson(row),
+        ],
+        hasMore: asBool(json['has_more']),
+        nextCursor: asMap(json['next_cursor']).isEmpty
+            ? null
+            : asMap(json['next_cursor']),
+        unavailable: asBool(json['unavailable']),
       );
+
+  /// Roots for this page plus all of their visible descendants.
+  final List<CommentModel> nodes;
+
+  /// Whether another root page exists.
+  final bool hasMore;
+
+  /// Opaque composite cursor supplied back to the RPC.
+  final Map<String, dynamic>? nextCursor;
+
+  /// The parent entity is no longer visible.
+  final bool unavailable;
 }

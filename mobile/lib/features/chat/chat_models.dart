@@ -94,13 +94,13 @@ class ChatAttachment {
 
   /// Parses one entry of `messages.attachments`.
   factory ChatAttachment.fromJson(Map<String, dynamic> json) => ChatAttachment(
-        storagePath: asString(json['storage_path']),
-        width: asInt(json['width']),
-        height: asInt(json['height']),
-        mimeType: asStringOrNull(json['mime_type']),
-        sizeBytes: asIntOrNull(json['bytes']),
-        blurhash: asStringOrNull(json['blurhash']),
-      );
+    storagePath: asString(json['storage_path']),
+    width: asInt(json['width']),
+    height: asInt(json['height']),
+    mimeType: asStringOrNull(json['mime_type']),
+    sizeBytes: asIntOrNull(json['bytes']),
+    blurhash: asStringOrNull(json['blurhash']),
+  );
 
   /// Object key inside the `chat` bucket, `{user_id}/{conversation_id}/{uuid}`.
   final String storagePath;
@@ -130,13 +130,13 @@ class ChatAttachment {
 
   /// Serialises back into the jsonb column.
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'storage_path': storagePath,
-        'width': width,
-        'height': height,
-        'mime_type': ?mimeType,
-        'bytes': ?sizeBytes,
-        'blurhash': ?blurhash,
-      };
+    'storage_path': storagePath,
+    'width': width,
+    'height': height,
+    'mime_type': ?mimeType,
+    'bytes': ?sizeBytes,
+    'blurhash': ?blurhash,
+  };
 }
 
 /// A message plus everything the bubble needs to render it in one pass.
@@ -198,8 +198,8 @@ class ChatMessage {
 
   /// Photos carried by this message.
   List<ChatAttachment> get attachments => <ChatAttachment>[
-        for (final row in message.attachments) ChatAttachment.fromJson(row),
-      ];
+    for (final row in message.attachments) ChatAttachment.fromJson(row),
+  ];
 
   /// True when the body is worth rendering as text.
   bool get hasText => (message.body ?? '').trim().isNotEmpty;
@@ -225,9 +225,8 @@ class ChatMessage {
   }
 
   /// Whether the viewer already reacted with [emoji].
-  bool reactedWith(String emoji, String? viewerId) => reactions.any(
-        (r) => r.emoji == emoji && r.userId == viewerId,
-      );
+  bool reactedWith(String emoji, String? viewerId) =>
+      reactions.any((r) => r.emoji == emoji && r.userId == viewerId);
 
   /// Copy with overrides.
   ChatMessage copyWith({
@@ -236,14 +235,13 @@ class ChatMessage {
     MessageModel? replyTo,
     bool? pending,
     bool? failed,
-  }) =>
-      ChatMessage(
-        message: message ?? this.message,
-        reactions: reactions ?? this.reactions,
-        replyTo: replyTo ?? this.replyTo,
-        pending: pending ?? this.pending,
-        failed: failed ?? this.failed,
-      );
+  }) => ChatMessage(
+    message: message ?? this.message,
+    reactions: reactions ?? this.reactions,
+    replyTo: replyTo ?? this.replyTo,
+    pending: pending ?? this.pending,
+    failed: failed ?? this.failed,
+  );
 }
 
 /// One row of the inbox: a conversation seen through the viewer's membership.
@@ -258,6 +256,8 @@ class ChatInboxEntry {
     this.archivedAt,
     this.mutedUntil,
     this.lastReadAt,
+    this.requestState = 'accepted',
+    this.notificationLevel = 'all',
   });
 
   /// The conversation.
@@ -275,11 +275,20 @@ class ChatInboxEntry {
   /// Read watermark.
   final DateTime? lastReadAt;
 
+  /// Message request status for the viewer.
+  final String requestState;
+
+  /// Per-chat notification preference.
+  final String notificationLevel;
+
   /// Conversation id — the map key everywhere in this feature.
   String get id => conversation.id;
 
   /// Whether this row belongs in the archive.
   bool get isArchived => archivedAt != null;
+
+  /// Whether the conversation is waiting for the viewer to accept it.
+  bool get isRequest => requestState == 'pending';
 
   /// Whether notifications are currently silenced.
   bool get isMuted {
@@ -304,16 +313,19 @@ class ChatInboxEntry {
     DateTime? archivedAt,
     DateTime? mutedUntil,
     DateTime? lastReadAt,
+    String? requestState,
+    String? notificationLevel,
     bool clearArchived = false,
     bool clearMuted = false,
-  }) =>
-      ChatInboxEntry(
-        conversation: conversation ?? this.conversation,
-        pinned: pinned ?? this.pinned,
-        archivedAt: clearArchived ? null : (archivedAt ?? this.archivedAt),
-        mutedUntil: clearMuted ? null : (mutedUntil ?? this.mutedUntil),
-        lastReadAt: lastReadAt ?? this.lastReadAt,
-      );
+  }) => ChatInboxEntry(
+    conversation: conversation ?? this.conversation,
+    pinned: pinned ?? this.pinned,
+    archivedAt: clearArchived ? null : (archivedAt ?? this.archivedAt),
+    mutedUntil: clearMuted ? null : (mutedUntil ?? this.mutedUntil),
+    lastReadAt: lastReadAt ?? this.lastReadAt,
+    requestState: requestState ?? this.requestState,
+    notificationLevel: notificationLevel ?? this.notificationLevel,
+  );
 
   /// Orders the inbox: pinned first, then most recent activity.
   static int compare(ChatInboxEntry a, ChatInboxEntry b) {
@@ -357,7 +369,11 @@ class SharedEntityPreview {
 /// Somebody typing, learned over Realtime broadcast — never a table.
 class TypingUser {
   /// Creates a typing marker.
-  const TypingUser({required this.userId, required this.name, required this.at});
+  const TypingUser({
+    required this.userId,
+    required this.name,
+    required this.at,
+  });
 
   /// Who is typing.
   final String userId;
@@ -448,16 +464,15 @@ class ChatThreadState {
     bool? hasMore,
     Object? error,
     bool clearError = false,
-  }) =>
-      ChatThreadState(
-        messages: messages ?? this.messages,
-        members: members ?? this.members,
-        typing: typing ?? this.typing,
-        presentUserIds: presentUserIds ?? this.presentUserIds,
-        conversation: conversation ?? this.conversation,
-        loading: loading ?? this.loading,
-        loadingMore: loadingMore ?? this.loadingMore,
-        hasMore: hasMore ?? this.hasMore,
-        error: clearError ? null : (error ?? this.error),
-      );
+  }) => ChatThreadState(
+    messages: messages ?? this.messages,
+    members: members ?? this.members,
+    typing: typing ?? this.typing,
+    presentUserIds: presentUserIds ?? this.presentUserIds,
+    conversation: conversation ?? this.conversation,
+    loading: loading ?? this.loading,
+    loadingMore: loadingMore ?? this.loadingMore,
+    hasMore: hasMore ?? this.hasMore,
+    error: clearError ? null : (error ?? this.error),
+  );
 }

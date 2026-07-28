@@ -26,6 +26,7 @@ class ProfileEntityCard {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.viewCount = 0,
     this.childCount = 0,
@@ -33,21 +34,22 @@ class ProfileEntityCard {
 
   /// Builds a card from an `items` row.
   factory ProfileEntityCard.fromItem(ItemModel item) => ProfileEntityCard(
-        entityType: EntityType.item,
-        id: item.id,
-        title: item.title,
-        subtitle: item.brand,
-        coverPath: item.coverPath,
-        blurhash: item.coverBlurhash,
-        width: item.coverWidth,
-        height: item.coverHeight,
-        likeCount: item.likeCount,
-        saveCount: item.saveCount,
-        repostCount: item.repostCount,
-        commentCount: item.commentCount,
-        viewCount: item.viewCount,
-        childCount: item.mediaCount,
-      );
+    entityType: EntityType.item,
+    id: item.id,
+    title: item.title,
+    subtitle: item.brand,
+    coverPath: item.coverPath,
+    blurhash: item.coverBlurhash,
+    width: item.coverWidth,
+    height: item.coverHeight,
+    likeCount: item.likeCount,
+    saveCount: item.saveCount,
+    repostCount: item.repostCount,
+    quoteCount: item.quoteCount,
+    commentCount: item.commentCount,
+    viewCount: item.viewCount,
+    childCount: item.mediaCount,
+  );
 
   /// Builds a card from a `collections` row.
   factory ProfileEntityCard.fromCollection(CollectionModel collection) =>
@@ -61,6 +63,7 @@ class ProfileEntityCard {
         likeCount: collection.likeCount,
         saveCount: collection.saveCount,
         repostCount: collection.repostCount,
+        quoteCount: collection.quoteCount,
         commentCount: collection.commentCount,
         viewCount: collection.viewCount,
         childCount: collection.itemCount,
@@ -105,10 +108,26 @@ class ProfileEntityCard {
         likeCount: sub.likeCount,
         saveCount: sub.saveCount,
         repostCount: sub.repostCount,
+        quoteCount: sub.quoteCount,
         commentCount: sub.commentCount,
         viewCount: sub.viewCount,
         childCount: sub.itemCount,
       );
+
+  /// Builds a private Surf Activity tile from the canonical target envelope.
+  factory ProfileEntityCard.fromTarget(PulseTarget target) => ProfileEntityCard(
+    entityType: target.type ?? EntityType.item,
+    id: target.id,
+    title: target.title ?? target.body ?? 'Unavailable',
+    subtitle: target.subtitle,
+    coverPath: target.coverPath,
+    blurhash: target.coverBlurhash,
+    width: target.coverWidth,
+    height: target.coverHeight,
+    likeCount: target.likeCount,
+    quoteCount: target.quoteCount,
+    childCount: target.childCount,
+  );
 
   /// Which of the three curation levels this is.
   final EntityType entityType;
@@ -143,6 +162,9 @@ class ProfileEntityCard {
   /// Trigger-maintained repost count.
   final int repostCount;
 
+  /// Trigger-maintained quote count.
+  final int quoteCount;
+
   /// Trigger-maintained comment count.
   final int commentCount;
 
@@ -169,13 +191,14 @@ class ProfileEntityCard {
 
   /// Authoritative social state, for seeding the optimistic engine.
   InteractionState get interactionSeed => InteractionState(
-        likeCount: likeCount,
-        saveCount: saveCount,
-        repostCount: repostCount,
-        commentCount: commentCount,
-        viewCount: viewCount,
-        hydrated: true,
-      );
+    likeCount: likeCount,
+    saveCount: saveCount,
+    repostCount: repostCount,
+    quoteCount: quoteCount,
+    commentCount: commentCount,
+    viewCount: viewCount,
+    hydrated: true,
+  );
 }
 
 /// One tag the account actually collects, with how often it appears.
@@ -239,17 +262,11 @@ class ProfileQueries {
       });
 
   /// Everything [userId] has liked, newest first.
-  Future<List<ProfileEntityCard>> fetchLiked(
-    String userId, {
-    int limit = 60,
-  }) =>
+  Future<List<ProfileEntityCard>> fetchLiked(String userId, {int limit = 60}) =>
       _fetchRelated('likes', userId, limit);
 
   /// Everything [userId] has saved, newest first.
-  Future<List<ProfileEntityCard>> fetchSaved(
-    String userId, {
-    int limit = 60,
-  }) =>
+  Future<List<ProfileEntityCard>> fetchSaved(String userId, {int limit = 60}) =>
       _fetchRelated('saves', userId, limit);
 
   /// Resolves a polymorphic social table into renderable cards.
@@ -260,46 +277,45 @@ class ProfileQueries {
     String table,
     String userId,
     int limit,
-  ) =>
-      _guard(() async {
-        final rows = await _api.client
-            .from(table)
-            .select('entity_type, entity_id, created_at')
-            .eq('user_id', userId)
-            .order('created_at', ascending: false)
-            .limit(limit);
+  ) => _guard(() async {
+    final rows = await _api.client
+        .from(table)
+        .select('entity_type, entity_id, created_at')
+        .eq('user_id', userId)
+        .order('created_at', ascending: false)
+        .limit(limit);
 
-        final order = <String>[];
-        final byType = <EntityType, List<String>>{};
-        for (final row in rows) {
-          final type = EntityType.tryParse(row['entity_type']);
-          final id = asStringOrNull(row['entity_id']);
-          if (type == null || id == null) continue;
-          // Only the three curation levels are renderable as tiles; a like on a
-          // post or a comment lives in that thread, not in a grid.
-          if (type != EntityType.collection &&
-              type != EntityType.subcollection &&
-              type != EntityType.item) {
-            continue;
-          }
-          order.add('${type.wire}:$id');
-          (byType[type] ??= <String>[]).add(id);
-        }
-        if (order.isEmpty) return const <ProfileEntityCard>[];
+    final order = <String>[];
+    final byType = <EntityType, List<String>>{};
+    for (final row in rows) {
+      final type = EntityType.tryParse(row['entity_type']);
+      final id = asStringOrNull(row['entity_id']);
+      if (type == null || id == null) continue;
+      // Only the three curation levels are renderable as tiles; a like on a
+      // post or a comment lives in that thread, not in a grid.
+      if (type != EntityType.collection &&
+          type != EntityType.subcollection &&
+          type != EntityType.item) {
+        continue;
+      }
+      order.add('${type.wire}:$id');
+      (byType[type] ??= <String>[]).add(id);
+    }
+    if (order.isEmpty) return const <ProfileEntityCard>[];
 
-        final resolved = <String, ProfileEntityCard>{};
-        for (final entry in byType.entries) {
-          final fetched = await _fetchCardsByIds(entry.key, entry.value);
-          for (final card in fetched) {
-            resolved[card.key] = card;
-          }
-        }
+    final resolved = <String, ProfileEntityCard>{};
+    for (final entry in byType.entries) {
+      final fetched = await _fetchCardsByIds(entry.key, entry.value);
+      for (final card in fetched) {
+        resolved[card.key] = card;
+      }
+    }
 
-        return <ProfileEntityCard>[
-          for (final key in order)
-            if (resolved[key] != null) resolved[key]!,
-        ];
-      });
+    return <ProfileEntityCard>[
+      for (final key in order)
+        if (resolved[key] != null) resolved[key]!,
+    ];
+  });
 
   Future<List<ProfileEntityCard>> _fetchCardsByIds(
     EntityType type,
@@ -313,11 +329,12 @@ class ProfileQueries {
     return <ProfileEntityCard>[
       for (final row in rows)
         switch (type) {
-          EntityType.collection =>
-            ProfileEntityCard.fromCollection(CollectionModel.fromJson(row)),
+          EntityType.collection => ProfileEntityCard.fromCollection(
+            CollectionModel.fromJson(row),
+          ),
           EntityType.subcollection => ProfileEntityCard.fromSubcollection(
-              SubcollectionModel.fromJson(row),
-            ),
+            SubcollectionModel.fromJson(row),
+          ),
           _ => ProfileEntityCard.fromItem(ItemModel.fromJson(row)),
         },
     ];
@@ -357,17 +374,17 @@ class ProfileQueries {
 
   /// Everyone the viewer has muted, newest first.
   Future<List<Profile>> fetchMutedUsers() => _guard(() async {
-        final rows = await _api.client
-            .from('mutes')
-            .select('muted_id, created_at, profiles!muted_id(*)')
-            .eq('muter_id', _api.requireUserId)
-            .order('created_at', ascending: false);
-        return <Profile>[
-          for (final row in rows)
-            if (asMap(row['profiles']).isNotEmpty)
-              Profile.fromJson(asMap(row['profiles'])),
-        ];
-      });
+    final rows = await _api.client
+        .from('mutes')
+        .select('muted_id, created_at, profiles!muted_id(*)')
+        .eq('muter_id', _api.requireUserId)
+        .order('created_at', ascending: false);
+    return <Profile>[
+      for (final row in rows)
+        if (asMap(row['profiles']).isNotEmpty)
+          Profile.fromJson(asMap(row['profiles'])),
+    ];
+  });
 
   /// The most-used tags across the whole product — the search zero-state.
   Future<List<TagModel>> fetchTrendingTags({int limit = 16}) =>
@@ -400,12 +417,12 @@ final profileQueriesProvider = Provider<ProfileQueries>(
 );
 
 /// One profile by handle — the `/u/:username` route.
-final profileByUsernameProvider =
-    FutureProvider.autoDispose.family<Profile?, String>(
-  (ref, username) =>
-      ref.watch(klectApiProvider).fetchProfileByUsername(username),
-  name: 'profileByUsername',
-);
+final profileByUsernameProvider = FutureProvider.autoDispose
+    .family<Profile?, String>(
+      (ref, username) =>
+          ref.watch(klectApiProvider).fetchProfileByUsername(username),
+      name: 'profileByUsername',
+    );
 
 /// One profile by id.
 final profileByIdProvider = FutureProvider.autoDispose.family<Profile?, String>(
@@ -414,89 +431,79 @@ final profileByIdProvider = FutureProvider.autoDispose.family<Profile?, String>(
 );
 
 /// An account's collections, pinned first.
-final profileCollectionsProvider =
-    FutureProvider.autoDispose.family<List<CollectionModel>, String>(
-  (ref, userId) => ref.watch(klectApiProvider).fetchCollections(userId),
-  name: 'profileCollections',
-);
+final profileCollectionsProvider = FutureProvider.autoDispose
+    .family<List<CollectionModel>, String>(
+      (ref, userId) => ref.watch(klectApiProvider).fetchCollections(userId),
+      name: 'profileCollections',
+    );
 
 /// An account's items, newest first.
-final profileItemsProvider =
-    FutureProvider.autoDispose.family<List<ItemModel>, String>(
-  (ref, userId) => ref.watch(profileQueriesProvider).fetchUserItems(userId),
-  name: 'profileItems',
-);
+final profileItemsProvider = FutureProvider.autoDispose
+    .family<List<ItemModel>, String>(
+      (ref, userId) => ref.watch(profileQueriesProvider).fetchUserItems(userId),
+      name: 'profileItems',
+    );
 
 /// What an account has liked. Only ever requested for the viewer's own profile.
-final profileLikesProvider =
-    FutureProvider.autoDispose.family<List<ProfileEntityCard>, String>(
-  (ref, userId) => ref.watch(profileQueriesProvider).fetchLiked(userId),
-  name: 'profileLikes',
-);
+final profileLikesProvider = FutureProvider.autoDispose
+    .family<List<ProfileEntityCard>, String>(
+      (ref, userId) => ref.watch(profileQueriesProvider).fetchLiked(userId),
+      name: 'profileLikes',
+    );
 
 /// What an account has saved. Only ever requested for the viewer's own profile.
-final profileSavesProvider =
-    FutureProvider.autoDispose.family<List<ProfileEntityCard>, String>(
-  (ref, userId) => ref.watch(profileQueriesProvider).fetchSaved(userId),
-  name: 'profileSaves',
-);
+final profileSavesProvider = FutureProvider.autoDispose
+    .family<List<ProfileEntityCard>, String>(
+      (ref, userId) => ref.watch(profileQueriesProvider).fetchSaved(userId),
+      name: 'profileSaves',
+    );
 
 /// The "Your taste" strip.
-final profileTasteTagsProvider =
-    FutureProvider.autoDispose.family<List<TasteTag>, String>(
-  (ref, userId) => ref.watch(profileQueriesProvider).fetchTasteTags(userId),
-  name: 'profileTasteTags',
-);
+final profileTasteTagsProvider = FutureProvider.autoDispose
+    .family<List<TasteTag>, String>(
+      (ref, userId) => ref.watch(profileQueriesProvider).fetchTasteTags(userId),
+      name: 'profileTasteTags',
+    );
 
 /// Followers of one account.
-final followersProvider =
-    FutureProvider.autoDispose.family<List<Profile>, String>(
-  (ref, userId) => ref.watch(klectApiProvider).fetchFollowers(userId),
-  name: 'followers',
-);
+final followersProvider = FutureProvider.autoDispose
+    .family<List<Profile>, String>(
+      (ref, userId) => ref.watch(klectApiProvider).fetchFollowers(userId),
+      name: 'followers',
+    );
 
 /// Accounts one account follows.
-final followingProvider =
-    FutureProvider.autoDispose.family<List<Profile>, String>(
-  (ref, userId) => ref.watch(klectApiProvider).fetchFollowing(userId),
-  name: 'following',
-);
+final followingProvider = FutureProvider.autoDispose
+    .family<List<Profile>, String>(
+      (ref, userId) => ref.watch(klectApiProvider).fetchFollowing(userId),
+      name: 'following',
+    );
 
 /// Every id the viewer follows.
 ///
 /// One query serves every follow button in the app — a profile header, a match
 /// card, a search row, a follower list — instead of one `has_followed` round
 /// trip per button.
-final myFollowingIdsProvider = FutureProvider<Set<String>>(
-  (ref) async {
-    final me = ref.watch(currentUserIdProvider);
-    if (me == null) return const <String>{};
-    final following = await ref.watch(klectApiProvider).fetchFollowing(
-          me,
-          limit: 500,
-        );
-    return <String>{for (final person in following) person.id};
-  },
-  name: 'myFollowingIds',
-);
+final myFollowingIdsProvider = FutureProvider<Set<String>>((ref) async {
+  final me = ref.watch(currentUserIdProvider);
+  if (me == null) return const <String>{};
+  final following = await ref
+      .watch(klectApiProvider)
+      .fetchFollowing(me, limit: 500);
+  return <String>{for (final person in following) person.id};
+}, name: 'myFollowingIds');
 
 /// Everyone the viewer has blocked.
-final blockedUsersProvider = FutureProvider<List<Profile>>(
-  (ref) async {
-    if (ref.watch(currentUserIdProvider) == null) return const <Profile>[];
-    return ref.watch(klectApiProvider).fetchBlockedUsers();
-  },
-  name: 'blockedUsers',
-);
+final blockedUsersProvider = FutureProvider<List<Profile>>((ref) async {
+  if (ref.watch(currentUserIdProvider) == null) return const <Profile>[];
+  return ref.watch(klectApiProvider).fetchBlockedUsers();
+}, name: 'blockedUsers');
 
 /// Everyone the viewer has muted.
-final mutedUsersProvider = FutureProvider<List<Profile>>(
-  (ref) async {
-    if (ref.watch(currentUserIdProvider) == null) return const <Profile>[];
-    return ref.watch(profileQueriesProvider).fetchMutedUsers();
-  },
-  name: 'mutedUsers',
-);
+final mutedUsersProvider = FutureProvider<List<Profile>>((ref) async {
+  if (ref.watch(currentUserIdProvider) == null) return const <Profile>[];
+  return ref.watch(profileQueriesProvider).fetchMutedUsers();
+}, name: 'mutedUsers');
 
 /// The most-used tags across the product.
 final trendingTagsProvider = FutureProvider<List<TagModel>>(

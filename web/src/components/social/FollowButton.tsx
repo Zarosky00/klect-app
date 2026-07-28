@@ -15,7 +15,7 @@ import { useToast } from '@/providers/toast-provider';
 export interface FollowButtonProps {
   userId: string;
   /** Server-rendered follower count and viewer state. */
-  followerCount: number;
+  followerCount?: number;
   following: boolean;
   size?: ButtonSize;
   block?: boolean;
@@ -35,7 +35,7 @@ export function FollowButton({
   const [hovering, setHovering] = useState(false);
 
   const state = useFollowState(userId, {
-    followerCount,
+    ...(followerCount === undefined ? {} : { followerCount }),
     viewerFollows: initialFollowing,
   });
 

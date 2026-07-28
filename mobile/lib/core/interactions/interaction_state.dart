@@ -30,6 +30,7 @@ class InteractionState {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.viewCount = 0,
     this.hydrated = false,
@@ -39,29 +40,31 @@ class InteractionState {
 
   /// Seeds from a surf card.
   factory InteractionState.fromCard(SurfCard card) => InteractionState(
-        liked: card.viewerLiked,
-        saved: card.viewerSaved,
-        reposted: card.viewerReposted,
-        likeCount: card.likeCount,
-        saveCount: card.saveCount,
-        repostCount: card.repostCount,
-        commentCount: card.commentCount,
-        viewCount: card.viewCount,
-        hydrated: true,
-      );
+    liked: card.viewerLiked,
+    saved: card.viewerSaved,
+    reposted: card.viewerReposted,
+    likeCount: card.likeCount,
+    saveCount: card.saveCount,
+    repostCount: card.repostCount,
+    quoteCount: card.quoteCount,
+    commentCount: card.commentCount,
+    viewCount: card.viewCount,
+    hydrated: true,
+  );
 
   /// Seeds from a closeup payload.
   factory InteractionState.fromCloseup(Closeup closeup) => InteractionState(
-        liked: closeup.viewer.liked,
-        saved: closeup.viewer.saved,
-        reposted: closeup.viewer.reposted,
-        likeCount: closeup.counts.like,
-        saveCount: closeup.counts.save,
-        repostCount: closeup.counts.repost,
-        commentCount: closeup.counts.comment,
-        viewCount: closeup.counts.view,
-        hydrated: true,
-      );
+    liked: closeup.viewer.liked,
+    saved: closeup.viewer.saved,
+    reposted: closeup.viewer.reposted,
+    likeCount: closeup.counts.like,
+    saveCount: closeup.counts.save,
+    repostCount: closeup.counts.repost,
+    quoteCount: closeup.counts.quote,
+    commentCount: closeup.counts.comment,
+    viewCount: closeup.counts.view,
+    hydrated: true,
+  );
 
   /// Seeds from a comment row — comments are full social citizens (0021),
   /// so a comment's bar hydrates exactly like a post's.
@@ -79,16 +82,17 @@ class InteractionState {
 
   /// Seeds from a pulse entry.
   factory InteractionState.fromPulse(PulseEntry entry) => InteractionState(
-        liked: entry.viewerLiked,
-        saved: entry.viewerSaved,
-        reposted: entry.viewerReposted,
-        likeCount: entry.likeCount,
-        saveCount: entry.saveCount,
-        repostCount: entry.repostCount,
-        commentCount: entry.commentCount,
-        viewCount: entry.viewCount,
-        hydrated: true,
-      );
+    liked: entry.viewerLiked,
+    saved: entry.viewerSaved,
+    reposted: entry.viewerReposted,
+    likeCount: entry.likeCount,
+    saveCount: entry.saveCount,
+    repostCount: entry.repostCount,
+    quoteCount: entry.quoteCount,
+    commentCount: entry.commentCount,
+    viewCount: entry.viewCount,
+    hydrated: true,
+  );
 
   /// Viewer has liked it.
   final bool liked;
@@ -108,6 +112,10 @@ class InteractionState {
   /// Live repost count.
   final int repostCount;
 
+  /// Authoritative number of quote posts. This is deliberately separate from
+  /// [repostCount], whose compact action number represents bare reposts only.
+  final int quoteCount;
+
   /// Live comment count.
   final int commentCount;
 
@@ -125,17 +133,17 @@ class InteractionState {
 
   /// Whether [action] is currently active for the viewer.
   bool isActive(InteractionAction action) => switch (action) {
-        InteractionAction.like => liked,
-        InteractionAction.save => saved,
-        InteractionAction.repost => reposted,
-      };
+    InteractionAction.like => liked,
+    InteractionAction.save => saved,
+    InteractionAction.repost => reposted,
+  };
 
   /// The count for [action].
   int countOf(InteractionAction action) => switch (action) {
-        InteractionAction.like => likeCount,
-        InteractionAction.save => saveCount,
-        InteractionAction.repost => repostCount,
-      };
+    InteractionAction.like => likeCount,
+    InteractionAction.save => saveCount,
+    InteractionAction.repost => repostCount,
+  };
 
   /// Returns a copy with [action] set to [active] and its count set to [count].
   InteractionState withAction(
@@ -159,26 +167,27 @@ class InteractionState {
     int? likeCount,
     int? saveCount,
     int? repostCount,
+    int? quoteCount,
     int? commentCount,
     int? viewCount,
     bool? hydrated,
     bool? syncing,
     KlectError? error,
     bool clearError = false,
-  }) =>
-      InteractionState(
-        liked: liked ?? this.liked,
-        saved: saved ?? this.saved,
-        reposted: reposted ?? this.reposted,
-        likeCount: likeCount ?? this.likeCount,
-        saveCount: saveCount ?? this.saveCount,
-        repostCount: repostCount ?? this.repostCount,
-        commentCount: commentCount ?? this.commentCount,
-        viewCount: viewCount ?? this.viewCount,
-        hydrated: hydrated ?? this.hydrated,
-        syncing: syncing ?? this.syncing,
-        error: clearError ? null : (error ?? this.error),
-      );
+  }) => InteractionState(
+    liked: liked ?? this.liked,
+    saved: saved ?? this.saved,
+    reposted: reposted ?? this.reposted,
+    likeCount: likeCount ?? this.likeCount,
+    saveCount: saveCount ?? this.saveCount,
+    repostCount: repostCount ?? this.repostCount,
+    quoteCount: quoteCount ?? this.quoteCount,
+    commentCount: commentCount ?? this.commentCount,
+    viewCount: viewCount ?? this.viewCount,
+    hydrated: hydrated ?? this.hydrated,
+    syncing: syncing ?? this.syncing,
+    error: clearError ? null : (error ?? this.error),
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -190,6 +199,7 @@ class InteractionState {
           other.likeCount == likeCount &&
           other.saveCount == saveCount &&
           other.repostCount == repostCount &&
+          other.quoteCount == quoteCount &&
           other.commentCount == commentCount &&
           other.viewCount == viewCount &&
           other.hydrated == hydrated &&
@@ -198,21 +208,24 @@ class InteractionState {
 
   @override
   int get hashCode => Object.hash(
-        liked,
-        saved,
-        reposted,
-        likeCount,
-        saveCount,
-        repostCount,
-        commentCount,
-        viewCount,
-        hydrated,
-        syncing,
-        error,
-      );
+    liked,
+    saved,
+    reposted,
+    likeCount,
+    saveCount,
+    repostCount,
+    quoteCount,
+    commentCount,
+    viewCount,
+    hydrated,
+    syncing,
+    error,
+  );
 
   @override
-  String toString() => 'InteractionState(liked: $liked/$likeCount, '
+  String toString() =>
+      'InteractionState(liked: $liked/$likeCount, '
       'saved: $saved/$saveCount, reposted: $reposted/$repostCount, '
+      'quotes: $quoteCount, '
       'comments: $commentCount, views: $viewCount)';
 }

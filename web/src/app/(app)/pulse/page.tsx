@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
-import { pulseFeed } from '@/lib/api';
+import { pulseFeedV2 } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { buildMetadata } from '@/lib/seo';
 import { createClient } from '@/lib/supabase/server';
-import type { PulseEntry } from '@/lib/types';
+import type { CursorPage, PulseEntry } from '@/lib/types';
 import { PulseStream } from './_components/PulseStream';
 
 export const metadata: Metadata = buildMetadata({
@@ -26,13 +26,13 @@ const FIRST_PAGE = 25;
 export default async function PulsePage() {
   const supabase = await createClient();
 
-  let entries: PulseEntry[] = [];
+  let initialPage: CursorPage<PulseEntry> = { items: [], has_more: false, next_cursor: null };
 
   try {
-    entries = await pulseFeed(supabase, { limit: FIRST_PAGE, mode: 'foryou' });
+    initialPage = await pulseFeedV2(supabase, { limit: FIRST_PAGE, mode: 'foryou' });
   } catch {
     // The client owns the retry surface; an empty first page is recoverable.
-    entries = [];
+    initialPage = { items: [], has_more: false, next_cursor: null };
   }
 
   return (
@@ -44,7 +44,7 @@ export default async function PulsePage() {
         </p>
       </header>
 
-      <PulseStream initialEntries={entries} />
+      <PulseStream initialPage={initialPage} />
     </div>
   );
 }

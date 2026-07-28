@@ -128,7 +128,10 @@ Deno.serve(async (req: Request) => {
     );
 
     const { data: tokens } = await supabase
-      .from("push_tokens").select("token, platform").eq("user_id", n.user_id);
+      .from("push_tokens")
+      .select("token, platform")
+      .eq("user_id", n.user_id)
+      .eq("enabled", true);
     if (!tokens?.length) {
       return new Response(JSON.stringify({ sent: 0, reason: "no-devices" }), {
         status: 200, headers: { "Content-Type": "application/json" },

@@ -149,6 +149,8 @@ class ChatInboxController extends Notifier<ChatInboxState> {
             archivedAt: asDateOrNull(row['archived_at']),
             mutedUntil: asDateOrNull(row['muted_until']),
             lastReadAt: asDateOrNull(row['last_read_at']),
+            requestState: asString(row['request_state'], 'accepted'),
+            notificationLevel: asString(row['notification_level'], 'all'),
           ),
     ]..sort(ChatInboxEntry.compare);
     if (entries.isEmpty) return false;
@@ -166,6 +168,8 @@ class ChatInboxController extends Notifier<ChatInboxState> {
             'archived_at': entry.archivedAt?.toIso8601String(),
             'muted_until': entry.mutedUntil?.toIso8601String(),
             'last_read_at': entry.lastReadAt?.toIso8601String(),
+            'request_state': entry.requestState,
+            'notification_level': entry.notificationLevel,
             'conversations': <String, dynamic>{
               'id': entry.conversation.id,
               'kind': entry.conversation.kind.wire,
@@ -249,6 +253,11 @@ class ChatInboxController extends Notifier<ChatInboxState> {
         archivedAt: asDateOrNull(row['archived_at']),
         mutedUntil: asDateOrNull(row['muted_until']),
         lastReadAt: asDateOrNull(row['last_read_at']),
+        requestState: asString(row['request_state'], existing.requestState),
+        notificationLevel: asString(
+          row['notification_level'],
+          existing.notificationLevel,
+        ),
       ),
     );
   }

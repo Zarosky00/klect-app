@@ -1,3 +1,4 @@
+import 'catalog.dart';
 import 'enums.dart';
 import 'json.dart';
 import 'profile.dart';
@@ -19,6 +20,7 @@ class PostModel {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.replyCount = 0,
     this.viewCount = 0,
@@ -43,6 +45,7 @@ class PostModel {
       likeCount: asInt(json['like_count']),
       saveCount: asInt(json['save_count']),
       repostCount: asInt(json['repost_count']),
+      quoteCount: asInt(json['quote_count']),
       commentCount: asInt(json['comment_count']),
       replyCount: asInt(json['reply_count']),
       viewCount: asInt(json['view_count']),
@@ -83,6 +86,9 @@ class PostModel {
 
   /// Trigger-maintained.
   final int repostCount;
+
+  /// Trigger-maintained quote count.
+  final int quoteCount;
 
   /// Trigger-maintained.
   final int commentCount;
@@ -134,10 +140,14 @@ class PulseTarget {
     this.coverHeight,
     this.childCount = 0,
     this.likeCount = 0,
+    this.quoteCount = 0,
     this.createdAt,
     this.author,
     this.parentType,
     this.parentId,
+    this.availability = 'available',
+    this.media = const <ItemMedia>[],
+    this.attachedTarget,
   });
 
   /// Parses the envelope's `target` block.
@@ -157,10 +167,18 @@ class PulseTarget {
       coverHeight: asIntOrNull(json['cover_height']),
       childCount: asInt(json['child_count']),
       likeCount: asInt(json['like_count']),
+      quoteCount: asInt(json['quote_count']),
       createdAt: asDateOrNull(json['created_at']),
       author: author.isEmpty ? null : Profile.fromJson(author),
       parentType: EntityType.tryParse(json['parent_type']),
       parentId: asStringOrNull(json['parent_id']),
+      availability: asStringOrNull(json['availability']) ?? 'available',
+      media: <ItemMedia>[
+        for (final item in asMapList(json['media'])) ItemMedia.fromJson(item),
+      ]..sort((a, b) => a.position.compareTo(b.position)),
+      attachedTarget: asMap(json['attached_target']).isEmpty
+          ? null
+          : PulseTarget.fromJson(asMap(json['attached_target'])),
     );
   }
 
@@ -203,6 +221,9 @@ class PulseTarget {
   /// Live like count at envelope time.
   final int likeCount;
 
+  /// Trigger-maintained quote count for quoteable targets.
+  final int quoteCount;
+
   /// When the target was created.
   final DateTime? createdAt;
 
@@ -215,6 +236,15 @@ class PulseTarget {
 
   /// For a comment target: the id of the entity the comment sits on.
   final String? parentId;
+
+  /// Explicit server-side visibility state.
+  final String availability;
+
+  /// Complete ordered media for the target (at most four descriptors).
+  final List<ItemMedia> media;
+
+  /// One immutable nested attachment level for quoted posts.
+  final PulseTarget? attachedTarget;
 
   /// Cover aspect ratio, or null when unknown.
   double? get coverAspect {

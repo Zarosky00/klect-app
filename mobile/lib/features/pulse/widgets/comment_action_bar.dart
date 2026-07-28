@@ -124,6 +124,59 @@ class _CommentActionBarState extends ConsumerState<CommentActionBar> {
     }
   }
 
+  Future<void> _moreChooser() async {
+    final state = ref.read(interactionProvider(_entity));
+    final choice = await KSheet.show<_CommentMoreChoice>(
+      context: context,
+      title: 'Comment options',
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _SheetOption(
+            icon: state.saved
+                ? Icons.bookmark_remove_rounded
+                : Icons.bookmark_add_outlined,
+            label: state.saved ? 'Remove from saved' : 'Save comment',
+            detail: state.saved
+                ? 'Take it out of your saved comments.'
+                : 'Keep it private in your saved comments.',
+            onTap: () =>
+                Navigator.of(sheetContext).pop(_CommentMoreChoice.save),
+          ),
+          _SheetOption(
+            icon: state.reposted ? Icons.undo_rounded : Icons.repeat_rounded,
+            label: state.reposted ? 'Undo repost' : 'Repost',
+            detail: state.reposted
+                ? 'Remove it from your followers’ Pulse.'
+                : 'Share it into your followers’ Pulse.',
+            onTap: () =>
+                Navigator.of(sheetContext).pop(_CommentMoreChoice.repost),
+          ),
+          _SheetOption(
+            icon: Icons.ios_share_rounded,
+            label: 'Share',
+            detail: 'Copy a link or use another app.',
+            onTap: () =>
+                Navigator.of(sheetContext).pop(_CommentMoreChoice.share),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case _CommentMoreChoice.save:
+        unawaited(_controller.toggleSave());
+        break;
+      case _CommentMoreChoice.repost:
+        unawaited(_repostChooser());
+        break;
+      case _CommentMoreChoice.share:
+        unawaited(_share());
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
@@ -145,36 +198,6 @@ class _CommentActionBarState extends ConsumerState<CommentActionBar> {
               '${state.likeCount}',
           onTap: _controller.toggleLike,
         ),
-        const SizedBox(width: Space.s2),
-        KCountPill(
-          icon: Icons.bookmark_border_rounded,
-          activeIcon: Icons.bookmark_rounded,
-          count: state.saveCount,
-          active: state.saved,
-          activeColor: colors.actionSave,
-          showZero: false,
-          iconSize: Space.s4,
-          gap: Space.s1,
-          semanticLabel:
-              '${state.saved ? 'Unsave' : 'Save'} comment, '
-              '${state.saveCount}',
-          onTap: () => _controller.toggleSave(),
-        ),
-        const SizedBox(width: Space.s2),
-        KCountPill(
-          icon: Icons.repeat_rounded,
-          activeIcon: Icons.repeat_on_rounded,
-          count: state.repostCount,
-          active: state.reposted,
-          activeColor: colors.actionRepost,
-          showZero: false,
-          iconSize: Space.s4,
-          gap: Space.s1,
-          semanticLabel:
-              '${state.reposted ? 'Undo repost of' : 'Repost'} comment, '
-              '${state.repostCount}',
-          onTap: () => unawaited(_repostChooser()),
-        ),
         if (widget.onReply != null) ...<Widget>[
           const SizedBox(width: Space.s2),
           KCountPill(
@@ -188,16 +211,16 @@ class _CommentActionBarState extends ConsumerState<CommentActionBar> {
             onTap: widget.onReply,
           ),
         ],
-        const SizedBox(width: Space.s2),
+        const Spacer(),
         KCountPill(
-          icon: Icons.ios_share_rounded,
+          icon: Icons.more_horiz_rounded,
           count: 0,
           showZero: false,
           iconSize: Space.s4,
           gap: Space.s1,
-          activeColor: colors.actionShare,
-          semanticLabel: 'Share comment',
-          onTap: () => unawaited(_share()),
+          activeColor: colors.textSecondary,
+          semanticLabel: 'More comment options',
+          onTap: () => unawaited(_moreChooser()),
         ),
       ],
     );
@@ -206,6 +229,8 @@ class _CommentActionBarState extends ConsumerState<CommentActionBar> {
 
 /// What the comment share chooser resolved to.
 enum _ShareChoice { copy, system }
+
+enum _CommentMoreChoice { save, repost, share }
 
 /// One row of a comment chooser sheet.
 class _SheetOption extends StatelessWidget {

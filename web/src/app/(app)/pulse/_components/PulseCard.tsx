@@ -46,6 +46,7 @@ function seedFor(entry: PulseEntry): SocialSeed {
     likeCount: entry.like_count,
     saveCount: entry.save_count,
     repostCount: entry.repost_count,
+    quoteCount: entry.quote_count ?? entry.target?.quote_count ?? 0,
     commentCount: entry.comment_count,
     viewCount: entry.view_count,
     viewerLiked: entry.viewer_liked,
@@ -105,8 +106,26 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
   const threadHref = entry.post_id ? postHref(entry.post_id) : null;
 
   const isQuote = Boolean(entry.quote_text);
-  const media = entry.media ?? [];
+  // Repost envelopes also carry target media for older clients. The canonical
+  // target card owns that media; only an authored post renders entry.media.
+  const media = entry.feed_kind === 'post' ? (entry.media ?? []) : [];
   const quoteSubject = onQuote ? quoteSubjectOf(entry) : null;
+  const actions = subject ? (
+    <ActionBar
+      type={subject.type}
+      id={subject.id}
+      seed={seedFor(entry)}
+      title={entry.body ?? entry.target?.title ?? undefined}
+      variant="compact"
+      className="-ml-1.5 mt-1"
+      {...(subjectHref ? { onComment: () => router.push(subjectHref) } : {})}
+      {...(quoteSubject ? { onQuote: () => onQuote?.(quoteSubject) } : {})}
+    />
+  ) : null;
+
+  // A plain repost has no independent content. If its source becomes private
+  // or disappears, omit the envelope instead of showing an identity-less row.
+  if (entry.feed_kind === 'repost' && (!entry.target || entry.target.unavailable)) return null;
 
   return (
     <article
@@ -133,6 +152,12 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
         <p className="whitespace-pre-wrap text-body text-ink">{entry.quote_text}</p>
       ) : null}
 
+      {entry.feed_kind === 'repost' && entry.target ? (
+        <div className="min-w-0 pl-0 sm:pl-7">
+          <PostTargetCard target={entry.target} />
+          {actions}
+        </div>
+      ) : (
       <div className={cn('flex gap-3', isQuote && 'rounded-lg border border-line-subtle p-3')}>
         <Link
           href={author ? profileHref(author.username) : '#'}
@@ -195,22 +220,10 @@ export function PulseCard({ entry, enterIndex, fresh = false, onQuote }: PulseCa
 
           {entry.target ? <PostTargetCard target={entry.target} /> : null}
 
-          {subject ? (
-            <ActionBar
-              type={subject.type}
-              id={subject.id}
-              seed={seedFor(entry)}
-              title={entry.body ?? entry.target?.title ?? undefined}
-              variant="compact"
-              className="-ml-1.5 mt-1"
-              {...(subjectHref
-                ? { onComment: () => router.push(subjectHref) }
-                : {})}
-              {...(quoteSubject ? { onQuote: () => onQuote?.(quoteSubject) } : {})}
-            />
-          ) : null}
+          {actions}
         </div>
       </div>
+      )}
     </article>
   );
 }

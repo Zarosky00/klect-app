@@ -2,6 +2,86 @@ import 'enums.dart';
 import 'json.dart';
 import 'profile.dart';
 
+/// Who may perform one group action.
+enum GroupPermissionScope {
+  /// Only the group owner.
+  owner,
+
+  /// The owner and admins.
+  admins,
+
+  /// Every accepted member.
+  everyone;
+
+  /// Parses the Postgres policy value without trusting unknown strings.
+  static GroupPermissionScope parse(Object? value) => switch (value) {
+    'owner' => GroupPermissionScope.owner,
+    'everyone' => GroupPermissionScope.everyone,
+    _ => GroupPermissionScope.admins,
+  };
+
+  /// Postgres wire value.
+  String get wire => name;
+
+  /// Short user-facing label.
+  String get label => switch (this) {
+    GroupPermissionScope.owner => 'Owner only',
+    GroupPermissionScope.admins => 'Owners and admins',
+    GroupPermissionScope.everyone => 'Everyone',
+  };
+
+  /// Whether a member with [role] is permitted.
+  bool allows(String? role) => switch (this) {
+    GroupPermissionScope.owner => role == 'owner',
+    GroupPermissionScope.admins => role == 'owner' || role == 'admin',
+    GroupPermissionScope.everyone => role != null,
+  };
+}
+
+/// Server-enforced permissions for a group conversation.
+class GroupPolicy {
+  /// Creates a policy snapshot.
+  const GroupPolicy({
+    this.editInfo = GroupPermissionScope.admins,
+    this.addMembers = GroupPermissionScope.admins,
+    this.sendMessages = GroupPermissionScope.everyone,
+  });
+
+  /// Parses `conversations.group_policy`.
+  factory GroupPolicy.fromJson(Map<String, dynamic> json) => GroupPolicy(
+    editInfo: GroupPermissionScope.parse(json['edit_info']),
+    addMembers: GroupPermissionScope.parse(json['add_members']),
+    sendMessages: GroupPermissionScope.parse(json['send_messages']),
+  );
+
+  /// Who may edit the title, description, and photo.
+  final GroupPermissionScope editInfo;
+
+  /// Who may add people, manage join requests, and rotate invite links.
+  final GroupPermissionScope addMembers;
+
+  /// Who may send messages.
+  final GroupPermissionScope sendMessages;
+
+  /// Serialises the exact RPC contract.
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'edit_info': editInfo.wire,
+    'add_members': addMembers.wire,
+    'send_messages': sendMessages.wire,
+  };
+
+  /// Copy with one or more permission changes.
+  GroupPolicy copyWith({
+    GroupPermissionScope? editInfo,
+    GroupPermissionScope? addMembers,
+    GroupPermissionScope? sendMessages,
+  }) => GroupPolicy(
+    editInfo: editInfo ?? this.editInfo,
+    addMembers: addMembers ?? this.addMembers,
+    sendMessages: sendMessages ?? this.sendMessages,
+  );
+}
+
 /// A row of `public.conversations`.
 ///
 /// `start_dm` guarantees exactly one [ConversationKind.dm] row per pair, ever.
@@ -21,12 +101,18 @@ class Conversation {
     this.members = const <ConversationMember>[],
     this.unreadCount = 0,
     this.otherMember,
+    this.groupPolicy = const GroupPolicy(),
+    this.joinApprovalRequired = false,
+    this.inviteTokenPrefix,
+    this.inviteRotatedAt,
   });
 
   /// Parses a `conversations` row.
   factory Conversation.fromJson(Map<String, dynamic> json) {
     final members = <ConversationMember>[
-      for (final m in asMapList(json['conversation_members'] ?? json['members']))
+      for (final m in asMapList(
+        json['conversation_members'] ?? json['members'],
+      ))
         ConversationMember.fromJson(m),
     ];
     final other = asMap(json['other_member'] ?? json['other']);
@@ -44,6 +130,10 @@ class Conversation {
       members: members,
       unreadCount: asInt(json['unread_count']),
       otherMember: other.isEmpty ? null : Profile.fromJson(other),
+      groupPolicy: GroupPolicy.fromJson(asMap(json['group_policy'])),
+      joinApprovalRequired: asBool(json['join_approval_required']),
+      inviteTokenPrefix: asStringOrNull(json['invite_token_prefix']),
+      inviteRotatedAt: asDateOrNull(json['invite_rotated_at']),
     );
   }
 
@@ -86,36 +176,65 @@ class Conversation {
   /// For DMs: the other participant's profile, when joined.
   final Profile? otherMember;
 
+  /// Server-enforced group permissions. Defaults are ignored for DMs.
+  final GroupPolicy groupPolicy;
+
+  /// Whether invite-link joins wait for an admin decision.
+  final bool joinApprovalRequired;
+
+  /// Non-secret prefix proving that an active invite exists.
+  final String? inviteTokenPrefix;
+
+  /// When the current invite was rotated or revoked.
+  final DateTime? inviteRotatedAt;
+
   /// Inbox row title.
   String get displayTitle =>
-      title ?? otherMember?.name ?? (kind == ConversationKind.dm ? 'Direct message' : 'Group');
+      title ??
+      otherMember?.name ??
+      (kind == ConversationKind.dm ? 'Direct message' : 'Group');
 
   /// Whether the badge should show.
   bool get hasUnread => unreadCount > 0;
 
   /// Copy with overrides — used to zero the badge optimistically.
   Conversation copyWith({
+    String? title,
+    String? description,
+    String? avatarPath,
     int? unreadCount,
     String? lastMessagePreview,
     DateTime? lastMessageAt,
     Profile? otherMember,
     List<ConversationMember>? members,
-  }) =>
-      Conversation(
-        id: id,
-        kind: kind,
-        title: title,
-        description: description,
-        avatarPath: avatarPath,
-        createdBy: createdBy,
-        lastMessageAt: lastMessageAt ?? this.lastMessageAt,
-        lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-        members: members ?? this.members,
-        unreadCount: unreadCount ?? this.unreadCount,
-        otherMember: otherMember ?? this.otherMember,
-      );
+    GroupPolicy? groupPolicy,
+    bool? joinApprovalRequired,
+    String? inviteTokenPrefix,
+    DateTime? inviteRotatedAt,
+    bool clearDescription = false,
+    bool clearAvatar = false,
+    bool clearInvite = false,
+  }) => Conversation(
+    id: id,
+    kind: kind,
+    title: title ?? this.title,
+    description: clearDescription ? null : (description ?? this.description),
+    avatarPath: clearAvatar ? null : (avatarPath ?? this.avatarPath),
+    createdBy: createdBy,
+    lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+    lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    members: members ?? this.members,
+    unreadCount: unreadCount ?? this.unreadCount,
+    otherMember: otherMember ?? this.otherMember,
+    groupPolicy: groupPolicy ?? this.groupPolicy,
+    joinApprovalRequired: joinApprovalRequired ?? this.joinApprovalRequired,
+    inviteTokenPrefix: clearInvite
+        ? null
+        : (inviteTokenPrefix ?? this.inviteTokenPrefix),
+    inviteRotatedAt: inviteRotatedAt ?? this.inviteRotatedAt,
+  );
 }
 
 /// A row of `public.conversation_members`. Composite key `(conversation_id, user_id)`.
@@ -129,6 +248,8 @@ class ConversationMember {
     this.lastReadAt,
     this.unreadCount = 0,
     this.mutedUntil,
+    this.requestState = 'accepted',
+    this.notificationLevel = 'all',
     this.leftAt,
     this.profile,
   });
@@ -144,6 +265,8 @@ class ConversationMember {
       lastReadAt: asDateOrNull(json['last_read_at']),
       unreadCount: asInt(json['unread_count']),
       mutedUntil: asDateOrNull(json['muted_until']),
+      requestState: asString(json['request_state'], 'accepted'),
+      notificationLevel: asString(json['notification_level'], 'all'),
       leftAt: asDateOrNull(json['left_at']),
       profile: profile.isEmpty ? null : Profile.fromJson(profile),
     );
@@ -169,6 +292,12 @@ class ConversationMember {
 
   /// Notifications muted until this instant.
   final DateTime? mutedUntil;
+
+  /// `pending`, `accepted`, or `declined` for message requests.
+  final String requestState;
+
+  /// `all`, `mentions`, or `muted` for per-chat notifications.
+  final String notificationLevel;
 
   /// Set when they leave a group.
   final DateTime? leftAt;
@@ -291,26 +420,25 @@ class MessageModel {
     bool? failed,
     DateTime? createdAt,
     Profile? author,
-  }) =>
-      MessageModel(
-        id: id ?? this.id,
-        conversationId: conversationId,
-        authorId: authorId,
-        body: body ?? this.body,
-        kind: kind,
-        attachments: attachments,
-        sharedEntityType: sharedEntityType,
-        sharedEntityId: sharedEntityId,
-        replyToId: replyToId,
-        callId: callId,
-        editedAt: editedAt,
-        deletedAt: deletedAt,
-        createdAt: createdAt ?? this.createdAt,
-        updatedAt: updatedAt,
-        author: author ?? this.author,
-        isPending: isPending ?? this.isPending,
-        failed: failed ?? this.failed,
-      );
+  }) => MessageModel(
+    id: id ?? this.id,
+    conversationId: conversationId,
+    authorId: authorId,
+    body: body ?? this.body,
+    kind: kind,
+    attachments: attachments,
+    sharedEntityType: sharedEntityType,
+    sharedEntityId: sharedEntityId,
+    replyToId: replyToId,
+    callId: callId,
+    editedAt: editedAt,
+    deletedAt: deletedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt,
+    author: author ?? this.author,
+    isPending: isPending ?? this.isPending,
+    failed: failed ?? this.failed,
+  );
 }
 
 /// A row of `public.calls`.
@@ -332,22 +460,23 @@ class CallModel {
 
   /// Parses a `calls` row.
   factory CallModel.fromJson(Map<String, dynamic> json) => CallModel(
-        id: asString(json['id']),
-        conversationId: asString(json['conversation_id']),
-        kind: CallKind.parse(json['kind']),
-        status: CallStatus.parse(json['status']),
-        createdBy: asStringOrNull(json['created_by']),
-        startedAt: asDateOrNull(json['started_at']),
-        endedAt: asDateOrNull(json['ended_at']),
-        durationSeconds: asIntOrNull(json['duration_seconds']),
-        endReason: asStringOrNull(json['end_reason']),
-        createdAt: asDateOrNull(json['created_at']),
-        participants: <CallParticipant>[
-          for (final p
-              in asMapList(json['call_participants'] ?? json['participants']))
-            CallParticipant.fromJson(p),
-        ],
-      );
+    id: asString(json['id']),
+    conversationId: asString(json['conversation_id']),
+    kind: CallKind.parse(json['kind']),
+    status: CallStatus.parse(json['status']),
+    createdBy: asStringOrNull(json['created_by']),
+    startedAt: asDateOrNull(json['started_at']),
+    endedAt: asDateOrNull(json['ended_at']),
+    durationSeconds: asIntOrNull(json['duration_seconds']),
+    endReason: asStringOrNull(json['end_reason']),
+    createdAt: asDateOrNull(json['created_at']),
+    participants: <CallParticipant>[
+      for (final p in asMapList(
+        json['call_participants'] ?? json['participants'],
+      ))
+        CallParticipant.fromJson(p),
+    ],
+  );
 
   /// Primary key.
   final String id;
@@ -452,14 +581,14 @@ class CallSignal {
 
   /// Parses a `call_signals` row.
   factory CallSignal.fromJson(Map<String, dynamic> json) => CallSignal(
-        id: asString(json['id']),
-        callId: asString(json['call_id']),
-        type: CallSignalType.parse(json['type']),
-        senderId: asStringOrNull(json['sender_id']),
-        recipientId: asStringOrNull(json['recipient_id']),
-        payload: asMap(json['payload']),
-        createdAt: asDateOrNull(json['created_at']),
-      );
+    id: asString(json['id']),
+    callId: asString(json['call_id']),
+    type: CallSignalType.parse(json['type']),
+    senderId: asStringOrNull(json['sender_id']),
+    recipientId: asStringOrNull(json['recipient_id']),
+    payload: asMap(json['payload']),
+    createdAt: asDateOrNull(json['created_at']),
+  );
 
   /// Primary key.
   final String id;

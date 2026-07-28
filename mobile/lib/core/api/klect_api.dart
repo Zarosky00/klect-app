@@ -203,6 +203,93 @@ class KlectApi {
     return <PulseEntry>[for (final row in rows) PulseEntry.fromJson(row)];
   }
 
+  /// Canonical opaque-cursor Pulse feed. Unlike the legacy timestamp cursor,
+  /// this keeps ranked For You ordering stable and includes bare repost rows.
+  Future<PulseEntryPage> pulseFeedV2({
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+    PulseMode mode = PulseMode.following,
+  }) async => PulseEntryPage.fromJson(
+    asMap(
+      await _rpc('pulse_feed_v2', <String, dynamic>{
+        'p_mode': mode.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
+  /// Public viewer-safe people/quotes behind an interaction count.
+  Future<SocialEngagementPage> socialEngagement({
+    required EntityType type,
+    required String id,
+    required SocialEngagementTab tab,
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+  }) async => SocialEngagementPage.fromJson(
+    asMap(
+      await _rpc('social_engagement_v1', <String, dynamic>{
+        'p_type': type.wire,
+        'p_id': id,
+        'p_tab': tab.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
+  /// One account's public Pulse identity.
+  Future<PulseEntryPage> profilePulseActivity({
+    required String userId,
+    ProfilePulseView view = ProfilePulseView.all,
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+  }) async => PulseEntryPage.fromJson(
+    asMap(
+      await _rpc('profile_pulse_activity_v1', <String, dynamic>{
+        'p_user': userId,
+        'p_view': view.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
+  /// One account's authored comments and replies across Surf and Pulse.
+  Future<ProfileDiscussionPage> profileDiscussionActivity({
+    required String userId,
+    ProfileSurface surface = ProfileSurface.all,
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+  }) async => ProfileDiscussionPage.fromJson(
+    asMap(
+      await _rpc('profile_discussion_activity_v1', <String, dynamic>{
+        'p_user': userId,
+        'p_surface': surface.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
+  /// The signed-in owner's private Likes/Saves history. The RPC deliberately
+  /// accepts no user id, preventing another account's history being queried.
+  Future<ProfileReactionPage> myProfileReactions({
+    required ProfileReactionAction action,
+    required ProfileSurface surface,
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+  }) async => ProfileReactionPage.fromJson(
+    asMap(
+      await _rpc('my_profile_reactions_v1', <String, dynamic>{
+        'p_action': action.wire,
+        'p_surface': surface.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
   /// `get_post_thread(p_post, p_limit, p_before, p_sort)` — the X thread
   /// payload (0021): `{post, stats, comments[], has_more}` with batched
   /// viewer like/save/repost state per comment.
@@ -230,17 +317,17 @@ class KlectApi {
     } on KlectError catch (error) {
       throw switch (error.raw.trim()) {
         'post_not_found' => KlectError(
-            KlectErrorKind.notFound,
-            'This post is gone — or is no longer visible to you.',
-            code: error.code,
-            cause: error,
-          ),
+          KlectErrorKind.notFound,
+          'This post is gone — or is no longer visible to you.',
+          code: error.code,
+          cause: error,
+        ),
         'bad_sort' => KlectError(
-            KlectErrorKind.unknown,
-            'Comments could not be sorted that way.',
-            code: error.code,
-            cause: error,
-          ),
+          KlectErrorKind.unknown,
+          'Comments could not be sorted that way.',
+          code: error.code,
+          cause: error,
+        ),
         _ => error,
       };
     }
@@ -302,6 +389,12 @@ class KlectApi {
     } on KlectError catch (error) {
       throw _mapCreatePostError(error);
     }
+  }
+
+  /// Soft-deletes one of the viewer's own posts or quotes through the guarded
+  /// RPC. Returns only after server counters and visibility are reconciled.
+  Future<void> deletePost(String postId) async {
+    await _rpc('delete_post', <String, dynamic>{'p_post': postId});
   }
 
   /// Translates `create_post`'s stable snake_case error texts (see the 0018
@@ -923,6 +1016,27 @@ class KlectApi {
     return <CommentModel>[for (final row in rows) CommentModel.fromJson(row)];
   }
 
+  /// Root-paged, fully hydrated comment tree shared by every discussion
+  /// surface. Descendants arrive with their paged root, so replies never
+  /// detach from their parent and viewer state never requires N+1 queries.
+  Future<CommentThreadPage> getCommentThread({
+    required EntityType type,
+    required String id,
+    CommentSort sort = CommentSort.top,
+    int limit = 20,
+    Map<String, dynamic>? cursor,
+  }) async => CommentThreadPage.fromJson(
+    asMap(
+      await _rpc('get_comment_thread', <String, dynamic>{
+        'p_type': type.wire,
+        'p_id': id,
+        'p_limit': limit,
+        'p_cursor': cursor,
+        'p_sort': sort.wire,
+      }),
+    ),
+  );
+
   /// Every reply on an entity's thread, oldest first. One query serves every
   /// loaded root — the view attaches each reply to its parent.
   Future<List<CommentModel>> fetchCommentReplies({
@@ -1151,17 +1265,11 @@ class KlectApi {
     required String conversationId,
     CallKind kind = CallKind.audio,
   }) async {
-    final row = await _guard(
-      () => _client
-          .from('calls')
-          .insert(<String, dynamic>{
-            'conversation_id': conversationId,
-            'created_by': requireUserId,
-            'kind': kind.wire,
-            'status': CallStatus.ringing.wire,
-          })
-          .select()
-          .single(),
+    final row = asMap(
+      await _rpc('start_call', <String, dynamic>{
+        'p_conversation': conversationId,
+        'p_kind': kind.wire,
+      }),
     );
     return CallModel.fromJson(row);
   }
@@ -1180,40 +1288,46 @@ class KlectApi {
     CallStatus status, {
     int? durationSeconds,
     String? endReason,
-  }) => _guard(
-    () => _client
-        .from('calls')
-        .update(<String, dynamic>{
-          'status': status.wire,
-          if (status == CallStatus.active)
-            'started_at': DateTime.now().toUtc().toIso8601String(),
-          if (!status.isLive)
-            'ended_at': DateTime.now().toUtc().toIso8601String(),
-          'duration_seconds': ?durationSeconds,
-          'end_reason': ?endReason,
-        })
-        .eq('id', callId),
-  );
+  }) async {
+    switch (status) {
+      case CallStatus.ringing:
+        return;
+      case CallStatus.active:
+        await joinCall(callId);
+        return;
+      case CallStatus.declined:
+        await _rpc('decline_call', <String, dynamic>{'p_call': callId});
+        return;
+      case CallStatus.ended || CallStatus.missed || CallStatus.failed:
+        await _rpc('end_call', <String, dynamic>{
+          'p_call': callId,
+          'p_reason': endReason ?? status.wire,
+          'p_outcome': status.wire,
+        });
+        return;
+    }
+  }
+
+  /// Accepts a ringing call through the transactional state machine.
+  Future<CallModel> answerCall(String callId, {String? deviceId}) async =>
+      CallModel.fromJson(
+        asMap(
+          await _rpc('answer_call', <String, dynamic>{
+            'p_call': callId,
+            'p_device_id': deviceId,
+          }),
+        ),
+      );
 
   /// Records that the viewer joined the media session.
-  Future<void> joinCall(String callId) => _guard(
-    () => _client.from('call_participants').upsert(<String, dynamic>{
-      'call_id': callId,
-      'user_id': requireUserId,
-      'joined_at': DateTime.now().toUtc().toIso8601String(),
-    }),
-  );
+  Future<void> joinCall(String callId) async {
+    await _rpc('join_call', <String, dynamic>{'p_call': callId});
+  }
 
   /// Records that the viewer left the media session.
-  Future<void> leaveCall(String callId) => _guard(
-    () => _client
-        .from('call_participants')
-        .update(<String, dynamic>{
-          'left_at': DateTime.now().toUtc().toIso8601String(),
-        })
-        .eq('call_id', callId)
-        .eq('user_id', requireUserId),
-  );
+  Future<void> leaveCall(String callId) async {
+    await _rpc('leave_call', <String, dynamic>{'p_call': callId});
+  }
 
   /// Sends one WebRTC signal. Signals are applied in `created_at` order.
   Future<void> sendCallSignal({
@@ -1221,15 +1335,20 @@ class KlectApi {
     required CallSignalType type,
     required Map<String, dynamic> payload,
     String? recipientId,
-  }) => _guard(
-    () => _client.from('call_signals').insert(<String, dynamic>{
-      'call_id': callId,
-      'sender_id': requireUserId,
-      'recipient_id': recipientId,
-      'type': type.wire,
-      'payload': payload,
-    }),
-  );
+  }) async {
+    if (recipientId == null) {
+      throw const KlectError(
+        KlectErrorKind.unknown,
+        'The call recipient is unavailable.',
+      );
+    }
+    await _rpc('send_call_signal', <String, dynamic>{
+      'p_call': callId,
+      'p_recipient': recipientId,
+      'p_type': type.wire,
+      'p_payload': payload,
+    });
+  }
 
   // ────────────────────────────────────────────────────────────── storage ──
 

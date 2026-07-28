@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/api/api_error.dart';
 import '../../core/api/klect_api.dart';
 import '../../core/models/models.dart';
+import '../create/media/image_pipeline.dart';
 import 'chat_models.dart';
 
 /// The chat feature's data surface.
@@ -37,7 +38,8 @@ class ChatApi {
       '*, author:profiles!author_id(*), reactions:message_reactions(*), '
       'reply_to:messages!reply_to_id(id, conversation_id, body, author_id, '
       'kind, attachments, shared_entity_type, shared_entity_id, created_at, '
-      'deleted_at)';
+      'deleted_at, author:profiles!author_id(id, username, display_name, '
+      'avatar_path, is_verified))';
 
   SupabaseClient get _client => _api.client;
 
@@ -78,7 +80,8 @@ class ChatApi {
           .from('conversation_members')
           .select(
             'conversation_id, unread_count, last_read_at, pinned, '
-            'archived_at, muted_until, conversations!inner(*)',
+            'archived_at, muted_until, request_state, notification_level, '
+            'conversations!inner(*)',
           )
           .eq('user_id', me)
           .isFilter('left_at', null)
@@ -102,6 +105,8 @@ class ChatApi {
           archivedAt: asDateOrNull(row['archived_at']),
           mutedUntil: asDateOrNull(row['muted_until']),
           lastReadAt: asDateOrNull(row['last_read_at']),
+          requestState: asString(row['request_state'], 'accepted'),
+          notificationLevel: asString(row['notification_level'], 'all'),
         ),
       );
     }
@@ -129,7 +134,8 @@ class ChatApi {
           .from('conversation_members')
           .select(
             'conversation_id, unread_count, last_read_at, pinned, '
-            'archived_at, muted_until, conversations!inner(*)',
+            'archived_at, muted_until, request_state, notification_level, '
+            'conversations!inner(*)',
           )
           .eq('user_id', me)
           .eq('conversation_id', conversationId)
@@ -148,6 +154,8 @@ class ChatApi {
       archivedAt: asDateOrNull(row['archived_at']),
       mutedUntil: asDateOrNull(row['muted_until']),
       lastReadAt: asDateOrNull(row['last_read_at']),
+      requestState: asString(row['request_state'], 'accepted'),
+      notificationLevel: asString(row['notification_level'], 'all'),
     );
   }
 
@@ -312,6 +320,13 @@ class ChatApi {
     });
   }
 
+  /// Removes the custom group avatar; members fall back to stacked initials.
+  Future<void> clearGroupAvatar(String conversationId) async {
+    await _rpc('clear_group_avatar', <String, dynamic>{
+      'p_conversation': conversationId,
+    });
+  }
+
   /// `set_group_member_role(p_conversation, p_member, p_role)` — owner only.
   ///
   /// Granting `owner` transfers ownership and demotes the previous owner to
@@ -326,6 +341,112 @@ class ChatApi {
       'p_member': memberId,
       'p_role': role,
     });
+  }
+
+  /// Replaces the server-enforced permissions for a group. Owner only.
+  Future<GroupPolicy> setGroupPolicy(
+    String conversationId,
+    GroupPolicy policy,
+  ) async {
+    final result = asMap(
+      await _rpc('set_group_policy', <String, dynamic>{
+        'p_conversation': conversationId,
+        'p_policy': policy.toJson(),
+      }),
+    );
+    return GroupPolicy.fromJson(result);
+  }
+
+  /// Enables or disables approval for invite-link joins. Owner only.
+  Future<bool> setGroupJoinApproval(
+    String conversationId, {
+    required bool required,
+  }) async => asBool(
+    await _rpc('set_group_join_approval', <String, dynamic>{
+      'p_conversation': conversationId,
+      'p_required': required,
+    }),
+  );
+
+  /// Rotates the private invite token and returns the only complete copy.
+  Future<String> rotateGroupInvite(String conversationId) async => asString(
+    await _rpc('rotate_group_invite', <String, dynamic>{
+      'p_conversation': conversationId,
+    }),
+  );
+
+  /// Revokes the active invite token.
+  Future<void> revokeGroupInvite(String conversationId) async {
+    await _rpc('revoke_group_invite', <String, dynamic>{
+      'p_conversation': conversationId,
+    });
+  }
+
+  /// Uses a private invite token, returning the group id and membership state.
+  Future<({String conversationId, String state})> joinGroupInvite(
+    String token,
+  ) async {
+    final result = asMap(
+      await _rpc('join_group_invite', <String, dynamic>{
+        'p_token': token.trim(),
+      }),
+    );
+    return (
+      conversationId: asString(result['conversation_id']),
+      state: asString(result['state'], 'pending'),
+    );
+  }
+
+  /// Accepts or declines one pending invite-link join request.
+  Future<void> reviewGroupJoinRequest(
+    String conversationId,
+    String memberId, {
+    required bool accept,
+  }) async {
+    await _rpc('review_group_join_request', <String, dynamic>{
+      'p_conversation': conversationId,
+      'p_member': memberId,
+      'p_accept': accept,
+    });
+  }
+
+  /// Permanently removes a group and its relational rows. Owner only.
+  Future<void> deleteGroup(String conversationId) async {
+    await _rpc('delete_group', <String, dynamic>{
+      'p_conversation': conversationId,
+    });
+  }
+
+  /// Sets the viewer's notification level for this conversation.
+  Future<void> setNotificationLevel(String conversationId, String level) {
+    if (!const <String>{'all', 'mentions', 'none'}.contains(level)) {
+      throw ArgumentError.value(level, 'level');
+    }
+    return _patchMembership(conversationId, <String, dynamic>{
+      'notification_level': level,
+    });
+  }
+
+  /// Recent photos shared in a conversation, newest message first.
+  Future<List<ChatAttachment>> fetchSharedMedia(
+    String conversationId, {
+    int limit = 120,
+  }) async {
+    final rows = await _guard(
+      () => _client
+          .from('messages')
+          .select('attachments')
+          .eq('conversation_id', conversationId)
+          .isFilter('deleted_at', null)
+          .order('created_at', ascending: false)
+          .limit(limit),
+    );
+    return <ChatAttachment>[
+      for (final row in rows)
+        for (final attachment in asMapList(row['attachments']))
+          if (asString(attachment['storage_path']).isNotEmpty)
+            ChatAttachment.fromJson(attachment),
+    ];
   }
 
   // ─────────────────────────────────────────────────────────────── thread ──
@@ -380,27 +501,28 @@ class ChatApi {
     String? replyToId,
     String? callId,
   }) async {
-    final row = await _guard(
-      () => _client
-          .from('messages')
-          .insert(<String, dynamic>{
-            'id': ?id,
-            'conversation_id': conversationId,
-            'author_id': requireUserId,
-            'body': body,
-            'kind': kind.wire,
-            'attachments': <Map<String, dynamic>>[
-              for (final attachment in attachments) attachment.toJson(),
-            ],
-            'shared_entity_type': sharedEntityType?.wire,
-            'shared_entity_id': sharedEntityId,
-            'reply_to_id': replyToId,
-            'call_id': ?callId,
-          })
-          .select(_messageSelect)
-          .single(),
-    );
-    return ChatMessage.fromJson(row);
+    final messageId = id ?? newId();
+    await _rpc('send_message', <String, dynamic>{
+      'p_conversation': conversationId,
+      'p_id': messageId,
+      'p_body': body,
+      'p_kind': kind.wire,
+      'p_attachments': <Map<String, dynamic>>[
+        for (final attachment in attachments) attachment.toJson(),
+      ],
+      'p_shared_entity_type': sharedEntityType?.wire,
+      'p_shared_entity_id': sharedEntityId,
+      'p_reply_to': replyToId,
+      'p_call_id': callId,
+    });
+    final hydrated = await fetchMessage(messageId);
+    if (hydrated == null) {
+      throw const KlectError(
+        KlectErrorKind.unknown,
+        'The message was sent but could not be displayed yet.',
+      );
+    }
+    return hydrated;
   }
 
   /// Server-side search within one conversation: a case-insensitive substring
@@ -644,6 +766,14 @@ class ChatApi {
     );
   }
 
+  /// Uploads an already square-cropped group display photo.
+  Future<String> uploadGroupAvatar(PreparedImage image) => _api.upload(
+    bucket: StorageBucket.avatars,
+    objectPath: '$requireUserId/groups/${newId()}.${image.extension}',
+    bytes: image.bytes,
+    contentType: image.mimeType,
+  );
+
   /// A time-limited URL for a `chat` object. The bucket is private, so this is
   /// the only way an attachment renders.
   Future<String> signedUrl(String path, {int expiresInSeconds = 3600}) =>
@@ -657,6 +787,10 @@ class ChatApi {
 
   // ──────────────────────────────────────────────────────────────── calls ──
 
+  /// Whether reliable one-to-one calling is enabled by the server.
+  Future<bool> callFeatureEnabled() async =>
+      asBool(await _rpc('call_feature_enabled'));
+
   /// Creates a `calls` row in `ringing`.
   Future<CallModel> createCall({
     required String conversationId,
@@ -665,6 +799,10 @@ class ChatApi {
 
   /// Reads one call.
   Future<CallModel?> fetchCall(String callId) => _api.fetchCall(callId);
+
+  /// Transactionally answers a ringing call.
+  Future<CallModel> answerCall(String callId, {String? deviceId}) =>
+      _api.answerCall(callId, deviceId: deviceId);
 
   /// Moves a call through its lifecycle.
   Future<void> updateCallStatus(

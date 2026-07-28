@@ -26,6 +26,7 @@ class SurfCard {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.viewCount = 0,
     this.childCount = 0,
@@ -57,6 +58,7 @@ class SurfCard {
     likeCount: asInt(json['like_count']),
     saveCount: asInt(json['save_count']),
     repostCount: asInt(json['repost_count']),
+    quoteCount: asInt(json['quote_count']),
     commentCount: asInt(json['comment_count']),
     viewCount: asInt(json['view_count']),
     childCount: asInt(json['child_count']),
@@ -119,6 +121,9 @@ class SurfCard {
 
   /// Live counter column.
   final int repostCount;
+
+  /// Trigger-maintained quote count.
+  final int quoteCount;
 
   /// Live counter column.
   final int commentCount;

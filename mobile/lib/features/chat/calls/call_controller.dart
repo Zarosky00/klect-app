@@ -124,24 +124,25 @@ class ActiveCallState {
     Object? error,
     bool clearError = false,
     bool clearRenderers = false,
-  }) =>
-      ActiveCallState(
-        call: call ?? this.call,
-        phase: phase ?? this.phase,
-        peer: peer ?? this.peer,
-        micEnabled: micEnabled ?? this.micEnabled,
-        cameraEnabled: cameraEnabled ?? this.cameraEnabled,
-        speakerOn: speakerOn ?? this.speakerOn,
-        frontCamera: frontCamera ?? this.frontCamera,
-        hasRemoteVideo: hasRemoteVideo ?? this.hasRemoteVideo,
-        elapsed: elapsed ?? this.elapsed,
-        localRenderer:
-            clearRenderers ? null : (localRenderer ?? this.localRenderer),
-        remoteRenderer:
-            clearRenderers ? null : (remoteRenderer ?? this.remoteRenderer),
-        endReason: endReason ?? this.endReason,
-        error: clearError ? null : (error ?? this.error),
-      );
+  }) => ActiveCallState(
+    call: call ?? this.call,
+    phase: phase ?? this.phase,
+    peer: peer ?? this.peer,
+    micEnabled: micEnabled ?? this.micEnabled,
+    cameraEnabled: cameraEnabled ?? this.cameraEnabled,
+    speakerOn: speakerOn ?? this.speakerOn,
+    frontCamera: frontCamera ?? this.frontCamera,
+    hasRemoteVideo: hasRemoteVideo ?? this.hasRemoteVideo,
+    elapsed: elapsed ?? this.elapsed,
+    localRenderer: clearRenderers
+        ? null
+        : (localRenderer ?? this.localRenderer),
+    remoteRenderer: clearRenderers
+        ? null
+        : (remoteRenderer ?? this.remoteRenderer),
+    endReason: endReason ?? this.endReason,
+    error: clearError ? null : (error ?? this.error),
+  );
 }
 
 /// **The call engine.** One peer connection, one signalling channel, one state.
@@ -256,6 +257,8 @@ class ActiveCallController extends Notifier<ActiveCallState> {
     if (call == null || state.phase != CallPhase.incoming) return;
     try {
       state = state.copyWith(phase: CallPhase.connecting);
+      final accepted = await _api.answerCall(call.id);
+      state = state.copyWith(call: accepted);
       await _openMedia(kind: call.kind);
       _watch(call);
       await _api.joinCall(call.id);
@@ -353,7 +356,8 @@ class ActiveCallController extends Notifier<ActiveCallState> {
   /// Mutes or unmutes the microphone.
   Future<void> toggleMic() async {
     final next = !state.micEnabled;
-    for (final track in _localStream?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
+    for (final track
+        in _localStream?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
       track.enabled = next;
     }
     state = state.copyWith(micEnabled: next);
@@ -515,10 +519,8 @@ class ActiveCallController extends Notifier<ActiveCallState> {
       onSignal: (row) => unawaited(_applySignal(CallSignal.fromJson(row))),
     )..subscribe();
 
-    _calls = _api.callChannel(
-      callId: call.id,
-      onUpdate: _onCallRow,
-    )..subscribe();
+    _calls = _api.callChannel(callId: call.id, onUpdate: _onCallRow)
+      ..subscribe();
   }
 
   Future<void> _startNegotiation() async {
@@ -588,7 +590,8 @@ class ActiveCallController extends Notifier<ActiveCallState> {
       case CallSignalType.bye:
         await _finish(
           status: _connectedAt == null ? CallStatus.declined : CallStatus.ended,
-          reason: asStringOrNull(signal.payload['reason']) ??
+          reason:
+              asStringOrNull(signal.payload['reason']) ??
               (_connectedAt == null ? 'Declined' : 'Call ended'),
           notifyPeer: false,
         );
@@ -752,7 +755,6 @@ class ActiveCallController extends Notifier<ActiveCallState> {
     final call = state.call;
     if (call == null) return;
     try {
-      await _api.updateCallStatus(call.id, CallStatus.active);
       await _api.joinCall(call.id);
     } on KlectError {
       // The row is bookkeeping; a failure here must not drop live media.
@@ -812,13 +814,6 @@ class ActiveCallController extends Notifier<ActiveCallState> {
       } on KlectError {
         // Best effort.
       }
-      // The call log belongs in the conversation, so write it there. Only the
-      // side that decided writes it, or the thread would show two markers.
-      if (writeRow) {
-        unawaited(
-          _writeCallEvent(call: call, status: status, duration: duration),
-        );
-      }
     }
 
     state = state.copyWith(
@@ -828,33 +823,6 @@ class ActiveCallController extends Notifier<ActiveCallState> {
     );
     await _shutdown();
     _closing = false;
-  }
-
-  Future<void> _writeCallEvent({
-    required CallModel call,
-    required CallStatus status,
-    required int duration,
-  }) async {
-    final label = switch (status) {
-      CallStatus.ended => call.kind == CallKind.video
-          ? 'Video call · ${_formatDuration(duration)}'
-          : 'Call · ${_formatDuration(duration)}',
-      CallStatus.missed =>
-        call.kind == CallKind.video ? 'Missed video call' : 'Missed call',
-      CallStatus.declined => 'Call declined',
-      CallStatus.failed => 'Call failed',
-      CallStatus.ringing || CallStatus.active => 'Call',
-    };
-    try {
-      await _api.sendMessage(
-        conversationId: call.conversationId,
-        body: label,
-        kind: MessageKind.callEvent,
-        callId: call.id,
-      );
-    } on KlectError {
-      // A missing marker must never break hanging up.
-    }
   }
 
   Future<void> _shutdown() async {
@@ -930,13 +898,13 @@ class ActiveCallController extends Notifier<ActiveCallState> {
   String? get conversationId => _conversationId ?? state.call?.conversationId;
 
   static String _describe(CallStatus status) => switch (status) {
-        CallStatus.ended => 'Call ended',
-        CallStatus.missed => 'No answer',
-        CallStatus.declined => 'Declined',
-        CallStatus.failed => 'Call failed',
-        CallStatus.ringing => 'Ringing',
-        CallStatus.active => 'In call',
-      };
+    CallStatus.ended => 'Call ended',
+    CallStatus.missed => 'No answer',
+    CallStatus.declined => 'Declined',
+    CallStatus.failed => 'Call failed',
+    CallStatus.ringing => 'Ringing',
+    CallStatus.active => 'In call',
+  };
 
   /// Teardown must never throw: the native layer happily reports "already
   /// closed" as an error, and by then we no longer care.
@@ -947,17 +915,11 @@ class ActiveCallController extends Notifier<ActiveCallState> {
       // Intentionally ignored.
     }
   }
-
-  static String _formatDuration(int seconds) {
-    final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
-    final rest = (seconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$rest';
-  }
 }
 
 /// The one call the app can be in.
 final activeCallProvider =
     NotifierProvider<ActiveCallController, ActiveCallState>(
-  ActiveCallController.new,
-  name: 'activeCall',
-);
+      ActiveCallController.new,
+      name: 'activeCall',
+    );

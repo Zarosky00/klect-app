@@ -35,14 +35,23 @@ import type {
   CommentRow,
   ConversationRow,
   DeleteCommentResult,
+  EngagementPage,
+  EngagementTab,
   ItemRow,
   MatchPerson,
   MessageRow,
   NotificationRow,
   PostThread,
   ProfileRow,
+  ProfileDiscussionItem,
+  ProfilePulseView,
+  ProfileReactionAction,
+  ProfileReactionItem,
+  ProfileSurface,
   PulseEntry,
   PulseMode,
+  SocialCursor,
+  CursorPage,
   SearchResults,
   ThreadSort,
   SubcollectionRow,
@@ -173,6 +182,19 @@ export async function deleteComment(
   return { count: Number((data as { count?: number } | null)?.count ?? 0) };
 }
 
+export async function deletePost(
+  client: Client,
+  postId: string,
+): Promise<{ deleted: boolean; post_id: string }> {
+  const { data, error } = await client.rpc('delete_post', { p_post: postId });
+  if (error) throw toKlectError(error);
+  const raw = data as { deleted?: unknown; post_id?: unknown } | null;
+  return {
+    deleted: Boolean(raw?.deleted),
+    post_id: String(raw?.post_id ?? postId),
+  };
+}
+
 export interface SubmitReportInput {
   reason: ReportReason;
   entityType?: EntityType;
@@ -288,6 +310,119 @@ export async function pulseFeed(
 }
 
 /**
+ * Canonical Pulse feed contract. Unlike the legacy extra-row endpoint this
+ * returns an explicit page envelope and an opaque score-aware cursor.
+ */
+export async function pulseFeedV2(
+  client: Client,
+  params: { limit?: number; mode?: PulseMode; cursor?: SocialCursor | null } = {},
+): Promise<CursorPage<PulseEntry>> {
+  const { data, error } = await client.rpc('pulse_feed_v2', {
+    p_limit: params.limit ?? 25,
+    p_mode: params.mode ?? 'foryou',
+    p_cursor: (params.cursor ?? null) as Json,
+  });
+  if (error) throw toKlectError(error);
+  const raw = asJson<Partial<CursorPage<PulseEntry>>>(data ?? {});
+  return {
+    items: Array.isArray(raw.items) ? raw.items : [],
+    has_more: Boolean(raw.has_more),
+    next_cursor: raw.next_cursor && typeof raw.next_cursor === 'object'
+      ? raw.next_cursor
+      : null,
+  };
+}
+
+export async function socialEngagement(
+  client: Client,
+  type: EntityType,
+  id: string,
+  tab: EngagementTab,
+  params: { limit?: number; cursor?: SocialCursor | null } = {},
+): Promise<EngagementPage> {
+  const { data, error } = await client.rpc('social_engagement_v1', {
+    p_type: type,
+    p_id: id,
+    p_tab: tab,
+    p_limit: params.limit ?? 24,
+    p_cursor: (params.cursor ?? null) as Json,
+  });
+  if (error) throw toKlectError(error);
+  const raw = asJson<Partial<EngagementPage>>(data ?? {});
+  return {
+    summary: {
+      like_count: Number(raw.summary?.like_count ?? 0),
+      repost_count: Number(raw.summary?.repost_count ?? 0),
+      quote_count: Number(raw.summary?.quote_count ?? 0),
+    },
+    items: Array.isArray(raw.items) ? raw.items : [],
+    has_more: Boolean(raw.has_more),
+    next_cursor: raw.next_cursor && typeof raw.next_cursor === 'object'
+      ? raw.next_cursor
+      : null,
+  };
+}
+
+export async function profilePulseActivity(
+  client: Client,
+  userId: string,
+  view: ProfilePulseView,
+  params: { limit?: number; cursor?: SocialCursor | null } = {},
+): Promise<CursorPage<PulseEntry>> {
+  const { data, error } = await client.rpc('profile_pulse_activity_v1', {
+    p_user: userId,
+    p_view: view,
+    p_limit: params.limit ?? 20,
+    p_cursor: (params.cursor ?? null) as Json,
+  });
+  if (error) throw toKlectError(error);
+  return normaliseCursorPage<PulseEntry>(data);
+}
+
+export async function profileDiscussionActivity(
+  client: Client,
+  userId: string,
+  surface: ProfileSurface,
+  params: { limit?: number; cursor?: SocialCursor | null } = {},
+): Promise<CursorPage<ProfileDiscussionItem>> {
+  const { data, error } = await client.rpc('profile_discussion_activity_v1', {
+    p_user: userId,
+    p_surface: surface,
+    p_limit: params.limit ?? 20,
+    p_cursor: (params.cursor ?? null) as Json,
+  });
+  if (error) throw toKlectError(error);
+  return normaliseCursorPage<ProfileDiscussionItem>(data);
+}
+
+export async function myProfileReactions(
+  client: Client,
+  action: ProfileReactionAction,
+  surface: Exclude<ProfileSurface, 'all'>,
+  params: { limit?: number; cursor?: SocialCursor | null } = {},
+): Promise<CursorPage<ProfileReactionItem>> {
+  const { data, error } = await client.rpc('my_profile_reactions_v1', {
+    p_action: action,
+    p_surface: surface,
+    p_limit: params.limit ?? 24,
+    p_cursor: (params.cursor ?? null) as Json,
+  });
+  if (error) throw toKlectError(error);
+  return normaliseCursorPage<ProfileReactionItem>(data);
+}
+
+function normaliseCursorPage<T>(value: unknown): CursorPage<T> {
+  const raw = asJson<Partial<CursorPage<T>>>(value ?? {});
+  return {
+    items: Array.isArray(raw.items) ? raw.items : [],
+    has_more: Boolean(raw.has_more),
+    next_cursor: raw.next_cursor && typeof raw.next_cursor === 'object'
+      ? raw.next_cursor
+      : null,
+  };
+}
+
+/**
  * The X thread payload: `{post, stats, comments[], has_more}` (migration 0021).
  * Anon-callable — the thread page is a public SEO surface; viewer state simply
  * reads false. Returns `null` for a post that is hidden, deleted or invisible
@@ -348,6 +483,8 @@ export interface PostMediaDescriptor {
 
 export interface CreatePostInput {
   body?: string;
+  /** Explicitly distinguishes quoting from an ordinary attached Surf entity. */
+  kind?: 'post' | 'quote';
   /** Share a collection/subcollection/item, or quote a post (`entityType: 'post'`). */
   entityType?: EntityType;
   entityId?: string;
@@ -363,6 +500,7 @@ export interface CreatePostInput {
 export async function createPost(client: Client, input: CreatePostInput): Promise<PulseEntry> {
   const { data, error } = await client.rpc('create_post', {
     p_body: input.body ?? '',
+    ...(input.kind === undefined ? {} : { p_kind: input.kind }),
     ...(input.entityType === undefined ? {} : { p_entity_type: input.entityType }),
     ...(input.entityId === undefined ? {} : { p_entity_id: input.entityId }),
     ...(input.media === undefined ? {} : { p_media: input.media as unknown as Json }),

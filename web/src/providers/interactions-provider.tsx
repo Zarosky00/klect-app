@@ -28,11 +28,12 @@ import {
 } from '@/lib/interactions';
 import { useSession } from '@/providers/session-provider';
 import { useToast } from '@/providers/toast-provider';
+import { emitSocialActivityMutation } from '@/lib/social-activity';
 
 const InteractionsContext = createContext<InteractionStore | null>(null);
 
 export function InteractionsProvider({ children }: { children: ReactNode }) {
-  const { supabase } = useSession();
+  const { supabase, user } = useSession();
   const { fromError } = useToast();
 
   const store = useMemo(
@@ -47,13 +48,25 @@ export function InteractionsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     store.setRunner(
       createToggleRunner({
-        toggleLike: (type, id) => toggleLike(supabase, type, id),
-        toggleSave: (type, id, note) => toggleSave(supabase, type, id, note),
-        toggleRepost: (type, id, quote) => toggleRepost(supabase, type, id, quote),
+        toggleLike: async (type, id) => {
+          const result = await toggleLike(supabase, type, id);
+          emitSocialActivityMutation({ kind: 'like', type, id, actorId: user?.id });
+          return result;
+        },
+        toggleSave: async (type, id, note) => {
+          const result = await toggleSave(supabase, type, id, note);
+          emitSocialActivityMutation({ kind: 'save', type, id, actorId: user?.id });
+          return result;
+        },
+        toggleRepost: async (type, id, quote) => {
+          const result = await toggleRepost(supabase, type, id, quote);
+          emitSocialActivityMutation({ kind: 'repost', type, id, actorId: user?.id });
+          return result;
+        },
         toggleFollow: (userId) => toggleFollow(supabase, userId),
       }),
     );
-  }, [store, supabase]);
+  }, [store, supabase, user?.id]);
 
   return (
     <InteractionsContext.Provider value={store}>{children}</InteractionsContext.Provider>
@@ -222,7 +235,7 @@ export function useRecordView(type: EntityType, id: string, enabled = true): voi
 
 /** Optimistic comment posting: the count moves before the round trip lands. */
 export function useAddComment() {
-  const { supabase } = useSession();
+  const { supabase, user } = useSession();
   const store = useInteractionStore();
   const { fromError } = useToast();
 
@@ -238,6 +251,7 @@ export function useAddComment() {
       try {
         const result = await addCommentRpc(supabase, type, id, body, parentId);
         store.setCommentCount(type, id, result.count);
+        emitSocialActivityMutation({ kind: 'comment', type, id, actorId: user?.id });
         return { id: result.id };
       } catch (error) {
         store.setCommentCount(type, id, before);
@@ -245,6 +259,6 @@ export function useAddComment() {
         return null;
       }
     },
-    [fromError, store, supabase],
+    [fromError, store, supabase, user?.id],
   );
 }

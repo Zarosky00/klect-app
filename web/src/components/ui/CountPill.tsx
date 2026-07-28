@@ -79,6 +79,9 @@ export interface CountPillProps
   readOnly?: boolean;
   hideZero?: boolean;
   compact?: boolean;
+  /** When present, the number is its own control (for engagement details). */
+  onCountClick?: () => void;
+  countLabel?: string;
 }
 
 export const CountPill = forwardRef<HTMLButtonElement, CountPillProps>(function CountPill(
@@ -91,6 +94,8 @@ export const CountPill = forwardRef<HTMLButtonElement, CountPillProps>(function 
     readOnly = false,
     hideZero = false,
     compact = false,
+    onCountClick,
+    countLabel,
     className,
     disabled,
     style,
@@ -115,16 +120,15 @@ export const CountPill = forwardRef<HTMLButtonElement, CountPillProps>(function 
 
   const showCount = !hideZero || count > 0;
 
-  const content = (
-    <>
-      <span className={cn('inline-flex', bursting && 'k-burst')}>
-        <Icon name={icon} filled={active} size={compact ? 'sm' : 'md'} />
-      </span>
-      {showCount ? (
-        <RollingCount value={count} className={compact ? 'text-micro' : 'text-count'} />
-      ) : null}
-    </>
+  const iconContent = (
+    <span className={cn('inline-flex', bursting && 'k-burst')}>
+      <Icon name={icon} filled={active} size={compact ? 'sm' : 'md'} />
+    </span>
   );
+  const countContent = showCount ? (
+    <RollingCount value={count} className={compact ? 'text-micro' : 'text-count'} />
+  ) : null;
+  const content = <>{iconContent}{countContent}</>;
 
   const shared = cn(
     'inline-flex items-center gap-1.5 rounded-full transition-colors dur-fast ease-standard',
@@ -137,6 +141,53 @@ export const CountPill = forwardRef<HTMLButtonElement, CountPillProps>(function 
     return (
       <span className={shared} title={label} aria-label={label} role="img">
         {content}
+      </span>
+    );
+  }
+
+  if (onCountClick) {
+    return (
+      <span className={cn('inline-flex items-center', active ? toneActiveClasses[tone] : 'text-ink-2', className)}>
+        <button
+          ref={ref}
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          aria-pressed={active}
+          aria-label={label}
+          title={label}
+          className={cn(
+            'k-pressable focus-ring inline-flex items-center rounded-full',
+            compact ? 'px-1.5 py-0.5' : 'px-2 py-1',
+            !active && toneHoverClasses[tone],
+            'disabled:pointer-events-none disabled:opacity-[var(--k-opacity-disabled)]',
+          )}
+          style={
+            {
+              ...style,
+              '--k-press-scale': String(pressScale),
+              '--k-burst-scale': String(burstScale),
+            } as CSSProperties
+          }
+          {...rest}
+        >
+          {iconContent}
+        </button>
+        {showCount ? (
+          <button
+            type="button"
+            onClick={onCountClick}
+            aria-label={countLabel ?? `${count} ${label.toLowerCase()}`}
+            title={countLabel ?? `${count} ${label.toLowerCase()}`}
+            className={cn(
+              'k-pressable focus-ring rounded-full transition-colors dur-fast ease-standard',
+              compact ? 'px-1 py-0.5' : 'px-1.5 py-1',
+              toneHoverClasses[tone],
+            )}
+          >
+            {countContent}
+          </button>
+        ) : null}
       </span>
     );
   }

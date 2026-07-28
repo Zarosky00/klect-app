@@ -11,18 +11,20 @@ class CloseupCounts {
     this.like = 0,
     this.save = 0,
     this.repost = 0,
+    this.quote = 0,
     this.comment = 0,
     this.view = 0,
   });
 
   /// Parses the `counts` block of `get_closeup`.
   factory CloseupCounts.fromJson(Map<String, dynamic> json) => CloseupCounts(
-        like: asInt(json['like']),
-        save: asInt(json['save']),
-        repost: asInt(json['repost']),
-        comment: asInt(json['comment']),
-        view: asInt(json['view']),
-      );
+    like: asInt(json['like']),
+    save: asInt(json['save']),
+    repost: asInt(json['repost']),
+    quote: asInt(json['quote'] ?? json['quote_count']),
+    comment: asInt(json['comment']),
+    view: asInt(json['view']),
+  );
 
   /// Trigger-maintained like count.
   final int like;
@@ -32,6 +34,9 @@ class CloseupCounts {
 
   /// Trigger-maintained repost count.
   final int repost;
+
+  /// Trigger-maintained quote count.
+  final int quote;
 
   /// Trigger-maintained comment count.
   final int comment;
@@ -54,12 +59,12 @@ class CloseupViewer {
   /// Parses the `viewer` block of `get_closeup`. All fields are null for
   /// anonymous visitors, which reads as "has done nothing".
   factory CloseupViewer.fromJson(Map<String, dynamic> json) => CloseupViewer(
-        liked: asBool(json['liked']),
-        saved: asBool(json['saved']),
-        reposted: asBool(json['reposted']),
-        follows: asBool(json['follows']),
-        isOwner: asBool(json['is_owner']),
-      );
+    liked: asBool(json['liked']),
+    saved: asBool(json['saved']),
+    reposted: asBool(json['reposted']),
+    follows: asBool(json['follows']),
+    isOwner: asBool(json['is_owner']),
+  );
 
   /// Viewer has liked it.
   final bool liked;
@@ -84,10 +89,10 @@ class EntityRefLite {
 
   /// Parses `{id, name, slug}`.
   factory EntityRefLite.fromJson(Map<String, dynamic> json) => EntityRefLite(
-        id: asString(json['id']),
-        name: asString(json['name']),
-        slug: asStringOrNull(json['slug']),
-      );
+    id: asString(json['id']),
+    name: asString(json['name']),
+    slug: asStringOrNull(json['slug']),
+  );
 
   /// Entity id.
   final String id;
@@ -109,7 +114,9 @@ class CloseupBreadcrumb {
     final collection = asMap(json['collection']);
     final subcollection = asMap(json['subcollection']);
     return CloseupBreadcrumb(
-      collection: collection.isEmpty ? null : EntityRefLite.fromJson(collection),
+      collection: collection.isEmpty
+          ? null
+          : EntityRefLite.fromJson(collection),
       subcollection: subcollection.isEmpty
           ? null
           : EntityRefLite.fromJson(subcollection),
@@ -123,10 +130,7 @@ class CloseupBreadcrumb {
   final EntityRefLite? subcollection;
 
   /// Rendered trail, e.g. `Anime · JJK`.
-  List<EntityRefLite> get trail => <EntityRefLite>[
-        ?collection,
-        ?subcollection,
-      ];
+  List<EntityRefLite> get trail => <EntityRefLite>[?collection, ?subcollection];
 }
 
 /// A sibling or child item card inside a closeup.
@@ -149,19 +153,19 @@ class CloseupItemRef {
 
   /// Parses an entry of `siblings[]` or `items[]`.
   factory CloseupItemRef.fromJson(Map<String, dynamic> json) => CloseupItemRef(
-        id: asString(json['id']),
-        title: asString(json['title']),
-        coverPath: asStringOrNull(json['cover_path']),
-        coverBlurhash: asStringOrNull(json['cover_blurhash']),
-        coverWidth: asIntOrNull(json['cover_width']),
-        coverHeight: asIntOrNull(json['cover_height']),
-        likeCount: asInt(json['like_count']),
-        saveCount: asInt(json['save_count']),
-        commentCount: asInt(json['comment_count']),
-        mediaCount: asInt(json['media_count']),
-        position: asInt(json['position']),
-        subcollectionId: asStringOrNull(json['subcollection_id']),
-      );
+    id: asString(json['id']),
+    title: asString(json['title']),
+    coverPath: asStringOrNull(json['cover_path']),
+    coverBlurhash: asStringOrNull(json['cover_blurhash']),
+    coverWidth: asIntOrNull(json['cover_width']),
+    coverHeight: asIntOrNull(json['cover_height']),
+    likeCount: asInt(json['like_count']),
+    saveCount: asInt(json['save_count']),
+    commentCount: asInt(json['comment_count']),
+    mediaCount: asInt(json['media_count']),
+    position: asInt(json['position']),
+    subcollectionId: asStringOrNull(json['subcollection_id']),
+  );
 
   /// Item id.
   final String id;
@@ -304,8 +308,9 @@ class Closeup {
       media: <ItemMedia>[
         for (final m in asMapList(json['media'])) ItemMedia.fromJson(m),
       ]..sort((a, b) => a.position.compareTo(b.position)),
-      breadcrumb:
-          breadcrumb.isEmpty ? null : CloseupBreadcrumb.fromJson(breadcrumb),
+      breadcrumb: breadcrumb.isEmpty
+          ? null
+          : CloseupBreadcrumb.fromJson(breadcrumb),
       siblings: <CloseupItemRef>[
         for (final s in asMapList(json['siblings'])) CloseupItemRef.fromJson(s),
       ],
@@ -315,8 +320,9 @@ class Closeup {
       items: <CloseupItemRef>[
         for (final i in asMapList(json['items'])) CloseupItemRef.fromJson(i),
       ],
-      collection:
-          collection.isEmpty ? null : CollectionModel.fromJson(collection),
+      collection: collection.isEmpty
+          ? null
+          : CollectionModel.fromJson(collection),
       subcollections: <CloseupSubcollectionRef>[
         for (final s in asMapList(json['subcollections']))
           CloseupSubcollectionRef.fromJson(s),
@@ -372,30 +378,30 @@ class Closeup {
 
   /// Headline for the sheet, whichever level this is.
   String get title => switch (entityType) {
-        EntityType.item => item?.title ?? '',
-        EntityType.subcollection => subcollection?.name ?? '',
-        EntityType.collection => collection?.name ?? '',
-        EntityType.post => post?.body ?? '',
-        EntityType.comment => '',
-      };
+    EntityType.item => item?.title ?? '',
+    EntityType.subcollection => subcollection?.name ?? '',
+    EntityType.collection => collection?.name ?? '',
+    EntityType.post => post?.body ?? '',
+    EntityType.comment => '',
+  };
 
   /// Long-form body text for the sheet, if the level has one.
   String? get description => switch (entityType) {
-        EntityType.item => item?.description,
-        EntityType.subcollection => subcollection?.description,
-        EntityType.collection => collection?.description,
-        EntityType.post => post?.body,
-        EntityType.comment => null,
-      };
+    EntityType.item => item?.description,
+    EntityType.subcollection => subcollection?.description,
+    EntityType.collection => collection?.description,
+    EntityType.post => post?.body,
+    EntityType.comment => null,
+  };
 
   /// The images the immersive viewer should page through. Item closeups have
   /// real media rows; the other levels fall back to their child covers.
   List<String> get immersivePaths => <String>[
-        if (media.isNotEmpty)
-          for (final m in media) m.storagePath
-        else ...<String>[
-          for (final i in items)
-            if (i.coverPath != null) i.coverPath!,
-        ],
-      ];
+    if (media.isNotEmpty)
+      for (final m in media) m.storagePath
+    else ...<String>[
+      for (final i in items)
+        if (i.coverPath != null) i.coverPath!,
+    ],
+  ];
 }

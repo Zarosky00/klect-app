@@ -15,6 +15,7 @@ import '../../design/theme.dart';
 import '../../ui/ui.dart';
 import '../pulse/widgets/pulse_target_card.dart';
 import 'data/closeup_providers.dart';
+import 'data/comments_controller.dart';
 import 'widgets/closeup_sections.dart';
 import 'widgets/comment_thread.dart';
 import 'widgets/entity_gesture_card.dart';
@@ -70,6 +71,7 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
   final DraggableScrollableController _sheet = DraggableScrollableController();
   final PageController _cover = PageController();
   final FocusNode _composerFocus = FocusNode();
+  final CommentDraftController _commentDraft = CommentDraftController();
   final GlobalKey _commentsAnchor = GlobalKey();
 
   late final AnimationController _dismiss = AnimationController.unbounded(
@@ -92,6 +94,7 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
   @override
   void dispose() {
     _dismiss.dispose();
+    _commentDraft.dispose();
     _composerFocus.dispose();
     _cover.dispose();
     _sheet.dispose();
@@ -203,6 +206,20 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
     });
   }
 
+  Future<void> _sendComment() async {
+    final body = _commentDraft.text.text;
+    if (body.trim().isEmpty) return;
+    final parent = _commentDraft.replyTo;
+    _commentDraft.clearAccepted();
+    await ref
+        .read(commentsProvider(_entity).notifier)
+        .post(
+          body: body,
+          parentId: parent?.id,
+          parentDepth: parent?.depth ?? 0,
+        );
+  }
+
   Future<void> _block(Closeup closeup) async {
     final confirmed = await KConfirmDialog.show(
       context,
@@ -303,6 +320,18 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
       safeTop: false,
       safeBottom: false,
       backgroundColor: context.kc.bgSunken,
+      bottomBar: closeup == null
+          ? null
+          : ListenableBuilder(
+              listenable: _commentDraft,
+              builder: (context, _) => CommentComposer(
+                controller: _commentDraft.text,
+                focusNode: _composerFocus,
+                replyTo: _commentDraft.replyTo,
+                onCancelReply: _commentDraft.cancelReply,
+                onSend: () => unawaited(_sendComment()),
+              ),
+            ),
       body: closeup != null
           ? _content(closeup)
           : async.hasError
@@ -496,12 +525,15 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
         CloseupSectionHeader(key: _commentsAnchor, title: 'Comments'),
         top: Space.s6,
       ),
-      _box(CommentThread(entity: entity, focusNode: _composerFocus)),
-      SliverToBoxAdapter(
-        child: SizedBox(
-          height: MediaQuery.viewInsetsOf(context).bottom + Space.s16,
+      _box(
+        CommentThread(
+          entity: entity,
+          focusNode: _composerFocus,
+          draftController: _commentDraft,
+          showComposer: false,
         ),
       ),
+      const SliverToBoxAdapter(child: SizedBox(height: Space.s16)),
     ];
   }
 
