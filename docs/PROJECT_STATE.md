@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-28 · Session: v1.6.1 completion and stable Android signing
+> Last updated: 2026-07-28 · Session: v1.6.2 Pulse and follow-feedback repair
 
 ---
 
@@ -12,9 +12,9 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 37 tables, 91 RLS policies, 53 triggers, 14 realtime tables, 4 storage buckets. The four v1.6 migrations plus two v1.6.1 group-control migrations are applied; advisors report 0 ERROR and 0 performance WARN. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | Canonical Pulse targets, comment trees, idempotent reply-safe messaging, group-policy/invite, appearance-preference, push-token and transactional call RPCs are live. Calls remain feature-gated off. |
-| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.1 SHIPPED** | Pulse/comment/chat fixes plus group invites, approval, policy controls, notifications, member search, shared media and owner deletion are live in `v1.6.1+11`. Analyze is clean; 118 local tests pass. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.2 SHIPPED** | Rich Pulse/Profile repost and quote cards, the compact X-style Pulse shell, and the follow-panel underline fix ship in `v1.6.2+12`. Group controls remain from v1.6.1. Analyze is clean; 120 tests pass. |
 | 5 | Next.js web + admin (`web/`) | ✅ **v1.6 DEPLOYED** | Canonical repost/quote rendering and 320–430 px overflow fixes are live on Vercel deployment `dpl_AUW4gtCweYmEuLD2B99bevYbdYt8`. Group management remains Android-first. |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual matrix pending** | Mobile analyze, 118/118 tests, local/GitHub release builds, web typecheck/9 tests/build and Supabase transaction smoke pass. Android 15 USB install/start/accessibility-tree smoke passed; keyboard, offline, two-account and call matrices remain. |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / manual matrix pending** | Mobile analyze, 120/120 tests, local/GitHub release builds, web typecheck/9 tests/build and Supabase transaction smoke pass. Android 15 USB install/start/Pulse/Profile smoke passed; keyboard, offline and two-account matrices remain. Calls cannot enter that matrix until Firebase/TURN/native prerequisites are configured. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | 🟡 **ADVANCED GROUP CONTROLS SHIPPED** | Keyboard-safe replies, retry, inbox filters, group identity/avatar crop, invite rotate/revoke/join, join approval, enforced edit/add/send policies, member search, notifications, shared media and owner deletion are live. Group reporting and truly server-paginated inbox filters remain. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
@@ -118,6 +118,20 @@
   `460d934bcca98539907f82259f803080be55b153e7df0edec5878d4bf11b334f` from GitHub Secrets.
   Releases through v1.6.0 used lost per-run debug keys, so existing old installs require one
   uninstall/reinstall; v1.6.1 and later can update in place with the stable key.
+
+**v1.6.2 verification (2026-07-28):**
+- PR **#8** merged at `720d77445e8041607d926bed914f53f689e0362f`. Both GitHub mobile
+  checks passed, including clean analysis, all **120/120** Flutter tests and signed release builds.
+- Pulse now uses a compact X-style shell and renders rich original targets for reposts and quotes:
+  owner identity, text/entity details and bounded one-to-four-image layouts appear in both Pulse
+  and Profile Posts. Physical Android 15 checks verified the For You, Following and Profile Posts
+  paths with live production data.
+- Follow notifications now render through a transparent Material overlay with explicit decoration
+  suppression, removing the inherited yellow underline. Calls remain honestly feature-gated off;
+  the unusable call controls are hidden until Firebase, TURN and native call prerequisites pass.
+- The stable-signed local APK verifies as `com.klect.klect`, version `1.6.2` / code `12`, certificate
+  SHA-256 `460d934bcca98539907f82259f803080be55b153e7df0edec5878d4bf11b334f`, and was installed
+  in place over USB on the attached RMX3771 without clearing app data.
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 
@@ -234,9 +248,9 @@ re-check query traffic before adding or dropping an index.
 4. **v1.6 stretch UI:** group reporting, truly server-paginated inbox filters and per-chat wallpaper
    remain. Invite/join approval/policy/member search/shared-media/notification/delete controls ship
    in v1.6.1.
-5. **Pulse visual QA:** an Android 15 RMX3771 is attached and the v1.6.1 Surf accessibility tree
-   rendered after a clean USB install. Realme's screenshot capture returned a black Flutter surface,
-   so same-state visual comparison and the full physical gesture/keyboard matrix remain manual.
+5. **Pulse visual QA:** v1.6.2 rich target cards were verified on an attached Android 15 RMX3771
+   in For You, Following and Profile Posts. Two-account follow-toast behavior and the complete
+   physical gesture/keyboard/offline matrix remain manual.
 
 ---
 
@@ -432,14 +446,27 @@ re-check query traffic before adding or dropping an index.
   it successfully and verified the full Surf semantics tree. Future stable releases can update
   this install normally.
 
+### 2026-07-28 — v1.6.2 Pulse and follow-feedback repair
+- Corrected the release mismatch: v1.6.1 was a group-control/signing release and did not contain
+  the newly requested Pulse presentation, follow-underline or call-availability changes.
+- Rebuilt Pulse around a compact X-style header, full-width feed tabs and a visible composer entry.
+  Rich repost/quote targets now show original author, text or entity details and complete media in
+  Pulse and Profile Posts instead of appearing empty.
+- Removed the follow panel's inherited yellow text decoration and added regression coverage.
+- Confirmed the production call flag is disabled because this account has no KLECT Firebase project
+  or configured TURN service. Hidden the controls that could only fail; no fake call success is
+  claimed. Real calls remain a separately gated v1.7 integration.
+- Merged PR #8, passed both GitHub CI runs, built and USB-installed stable-signed `v1.6.2+12`, and
+  tagged `v1.6.2` for the public updater release.
+
 ---
 
 ## Next actions
 
-1. Continue the v1.6.1 manual matrix on the attached Android phone: repost/quote media, Profile
-   Posts/Replies/Media, comment trees, Gboard-safe chat/replies, inbox filters, every new group
-   control, first-launch haptics off, offline reconciliation and accessibility. Add a second account/
-   phone for follow, messaging, join approval and RLS isolation.
+1. Continue the v1.6.2 manual matrix on the attached Android phone: follow/unfollow panel with a
+   second account, comment trees, Gboard-safe chat/replies, inbox filters, every group control,
+   first-launch haptics off, offline reconciliation and accessibility. Add a second phone/account
+   for messaging, join approval and RLS isolation.
 2. Finish the remaining stretch UI: server-paginated inbox filters, group reporting and per-chat
    wallpaper. Keep web group-management parity as a separate scoped release.
 3. Configure Firebase device push and Cloudflare TURN secrets, implement Android
