@@ -1,10 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { sendMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { entityHref, type EntityType } from '@/lib/entities';
 import { SITE_URL } from '@/lib/env';
+import { routes } from '@/lib/routes';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Sheet } from '@/components/ui/Sheet';
 import { useSession } from '@/providers/session-provider';
@@ -43,6 +45,7 @@ interface ShareRow {
 }
 
 export function ShareMenu({ open, onClose, type, id, title }: ShareMenuProps) {
+  const router = useRouter();
   const { supabase, user } = useSession();
   const { toast, success, fromError } = useToast();
   const [picking, setPicking] = useState(false);
@@ -91,6 +94,22 @@ export function ShareMenu({ open, onClose, type, id, title }: ShareMenuProps) {
     setPicking(true);
   }, [toast, user]);
 
+  const quoteInPulse = useCallback(() => {
+    if (!user) {
+      toast({
+        title: 'Sign in to quote this',
+        description: 'Add your take in Pulse after signing in.',
+        tone: 'accent',
+        action: { label: 'Sign in', onClick: () => window.location.assign(routes.signIn) },
+      });
+      return;
+    }
+
+    const params = new URLSearchParams({ quoteType: type, quoteId: id });
+    onClose();
+    router.push(`${routes.pulse}?${params.toString()}`);
+  }, [id, onClose, router, toast, type, user]);
+
   const sendTo = useCallback(
     async (summary: ConversationSummary) => {
       if (!user) return;
@@ -128,6 +147,17 @@ export function ShareMenu({ open, onClose, type, id, title }: ShareMenuProps) {
       description: 'Straight into a conversation, as a rich card.',
       run: openPicker,
     },
+    ...(type !== 'comment'
+      ? [
+          {
+            key: 'quote',
+            icon: 'repost',
+            label: 'Quote in Pulse',
+            description: 'Add your take while keeping the original intact.',
+            run: quoteInPulse,
+          } satisfies ShareRow,
+        ]
+      : []),
     {
       key: 'copy',
       icon: 'link',

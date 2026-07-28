@@ -129,11 +129,16 @@ class KCountPill extends StatefulWidget {
     this.active = false,
     this.activeColor,
     this.onTap,
+    this.onIconTap,
+    this.onCountTap,
     this.onLongPress,
     this.semanticLabel,
+    this.iconSemanticLabel,
+    this.countSemanticLabel,
     this.showZero = true,
     this.iconSize = Space.s5,
     this.gap = Space.s15,
+    this.denseSplitTargets = false,
   });
 
   /// Icon shown when inactive.
@@ -154,11 +159,24 @@ class KCountPill extends StatefulWidget {
   /// Tap handler. Null renders a read-only pill.
   final VoidCallback? onTap;
 
+  /// Tap handler for the icon hit target. When supplied, the icon and count
+  /// become independent controls (for example toggle vs. view actors).
+  final VoidCallback? onIconTap;
+
+  /// Tap handler for the count hit target.
+  final VoidCallback? onCountTap;
+
   /// Long-press handler, e.g. "who liked this".
   final VoidCallback? onLongPress;
 
   /// Screen-reader label, e.g. "Like, 24".
   final String? semanticLabel;
+
+  /// Screen-reader label for the independent icon control.
+  final String? iconSemanticLabel;
+
+  /// Screen-reader label for the independent count control.
+  final String? countSemanticLabel;
 
   /// When false, a zero count hides the number entirely.
   final bool showZero;
@@ -168,6 +186,12 @@ class KCountPill extends StatefulWidget {
 
   /// Space between icon and number.
   final double gap;
+
+  /// Keeps independent icon/count controls inside narrow timeline rows.
+  ///
+  /// Both controls retain separate semantics and the row keeps the 44px
+  /// vertical target; only their horizontal padding is tightened.
+  final bool denseSplitTargets;
 
   @override
   State<KCountPill> createState() => _KCountPillState();
@@ -216,26 +240,68 @@ class _KCountPillState extends State<KCountPill>
         ? (widget.activeColor ?? colors.accentDefault)
         : colors.textSecondary;
 
+    final icon = AnimatedBuilder(
+      animation: _pop,
+      builder: (context, child) =>
+          Transform.scale(scale: _pop.value, child: child),
+      child: Icon(
+        widget.active ? (widget.activeIcon ?? widget.icon) : widget.icon,
+        size: widget.iconSize,
+        color: tint,
+      ),
+    );
+    final showsCount = widget.showZero || widget.count > 0;
+    final count = KRollingCount(
+      value: widget.count,
+      style: context.kt.count.copyWith(color: tint),
+    );
+
+    if (widget.onIconTap != null || widget.onCountTap != null) {
+      final horizontal = widget.denseSplitTargets ? Space.s15 : Space.s2;
+      final vertical = widget.denseSplitTargets ? Space.s3 : Space.s15;
+      return ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: Layout.tapTargetMin),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            KPressable(
+              onTap: widget.onIconTap,
+              onLongPress: widget.onLongPress,
+              semanticLabel: widget.iconSemanticLabel ?? widget.semanticLabel,
+              enforceMinTapTarget: !widget.denseSplitTargets,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: horizontal,
+                  vertical: vertical,
+                ),
+                child: icon,
+              ),
+            ),
+            if (showsCount)
+              KPressable(
+                onTap: widget.onCountTap,
+                semanticLabel: widget.countSemanticLabel,
+                enforceMinTapTarget: !widget.denseSplitTargets,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    widget.gap,
+                    vertical,
+                    horizontal,
+                    vertical,
+                  ),
+                  child: count,
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        AnimatedBuilder(
-          animation: _pop,
-          builder: (context, child) =>
-              Transform.scale(scale: _pop.value, child: child),
-          child: Icon(
-            widget.active ? (widget.activeIcon ?? widget.icon) : widget.icon,
-            size: widget.iconSize,
-            color: tint,
-          ),
-        ),
-        if (widget.showZero || widget.count > 0) ...<Widget>[
-          SizedBox(width: widget.gap),
-          KRollingCount(
-            value: widget.count,
-            style: context.kt.count.copyWith(color: tint),
-          ),
-        ],
+        icon,
+        if (showsCount) ...<Widget>[SizedBox(width: widget.gap), count],
       ],
     );
 

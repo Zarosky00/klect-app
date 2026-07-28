@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/interactions/interactions.dart';
 import '../core/models/models.dart';
 import '../design/theme.dart';
+import '../features/pulse/engagement/engagement_sheet.dart';
 import '../features/pulse/widgets/pulse_composer.dart';
 import 'k_count_pill.dart';
 import 'k_pressable.dart';
@@ -114,6 +115,13 @@ class _KActionBarState extends ConsumerState<KActionBar> {
     );
   }
 
+  Future<void> _showEngagement(SocialEngagementTab tab) =>
+      SocialEngagementSheet.show(
+        context,
+        entity: widget.entity,
+        initialTab: tab,
+      );
+
   /// The X-style repost chooser: Repost / Quote / Undo repost.
   ///
   /// A bare repost is the idempotent `toggle_repost`; Quote opens the Pulse
@@ -176,7 +184,7 @@ class _KActionBarState extends ConsumerState<KActionBar> {
     final state = ref.watch(interactionProvider(widget.entity));
     final colors = context.kc;
 
-    final gap = widget.compact ? Space.s3 : Space.s5;
+    final gap = widget.compact ? Space.s15 : Space.s5;
 
     return Row(
       mainAxisAlignment: widget.alignment,
@@ -187,10 +195,13 @@ class _KActionBarState extends ConsumerState<KActionBar> {
           count: state.likeCount,
           active: state.liked,
           activeColor: colors.actionLike,
-          semanticLabel:
-              '${state.liked ? 'Unlike' : 'Like'}, '
-              '${state.likeCount}',
-          onTap: _controller.toggleLike,
+          iconSemanticLabel: state.liked ? 'Unlike' : 'Like',
+          countSemanticLabel: '${state.likeCount} likes, view accounts',
+          denseSplitTargets: widget.compact,
+          onIconTap: _controller.toggleLike,
+          onCountTap: state.likeCount > 0
+              ? () => unawaited(_showEngagement(SocialEngagementTab.like))
+              : null,
         ),
         SizedBox(width: gap),
         KCountPill(
@@ -211,10 +222,19 @@ class _KActionBarState extends ConsumerState<KActionBar> {
           count: state.repostCount,
           active: state.reposted,
           activeColor: colors.actionRepost,
-          semanticLabel:
-              '${state.reposted ? 'Undo repost' : 'Repost'} '
-              'or quote, ${state.repostCount}',
-          onTap: () => unawaited(_repostChooser()),
+          // The engagement RPC is authoritative and may know about quotes
+          // that an older cached card did not carry yet. Keep this count hit
+          // target visible even when the local seed says zero.
+          showZero: true,
+          iconSemanticLabel:
+              '${state.reposted ? 'Undo repost' : 'Repost'} or quote',
+          countSemanticLabel:
+              '${state.repostCount} reposts and ${state.quoteCount} quotes, '
+              'view activity',
+          denseSplitTargets: widget.compact,
+          onIconTap: () => unawaited(_repostChooser()),
+          onCountTap: () =>
+              unawaited(_showEngagement(SocialEngagementTab.repost)),
         ),
         SizedBox(width: gap),
         KCountPill(

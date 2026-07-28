@@ -203,6 +203,93 @@ class KlectApi {
     return <PulseEntry>[for (final row in rows) PulseEntry.fromJson(row)];
   }
 
+  /// Canonical opaque-cursor Pulse feed. Unlike the legacy timestamp cursor,
+  /// this keeps ranked For You ordering stable and includes bare repost rows.
+  Future<PulseEntryPage> pulseFeedV2({
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+    PulseMode mode = PulseMode.following,
+  }) async => PulseEntryPage.fromJson(
+    asMap(
+      await _rpc('pulse_feed_v2', <String, dynamic>{
+        'p_mode': mode.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
+  /// Public viewer-safe people/quotes behind an interaction count.
+  Future<SocialEngagementPage> socialEngagement({
+    required EntityType type,
+    required String id,
+    required SocialEngagementTab tab,
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+  }) async => SocialEngagementPage.fromJson(
+    asMap(
+      await _rpc('social_engagement_v1', <String, dynamic>{
+        'p_type': type.wire,
+        'p_id': id,
+        'p_tab': tab.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
+  /// One account's public Pulse identity.
+  Future<PulseEntryPage> profilePulseActivity({
+    required String userId,
+    ProfilePulseView view = ProfilePulseView.all,
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+  }) async => PulseEntryPage.fromJson(
+    asMap(
+      await _rpc('profile_pulse_activity_v1', <String, dynamic>{
+        'p_user': userId,
+        'p_view': view.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
+  /// One account's authored comments and replies across Surf and Pulse.
+  Future<ProfileDiscussionPage> profileDiscussionActivity({
+    required String userId,
+    ProfileSurface surface = ProfileSurface.all,
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+  }) async => ProfileDiscussionPage.fromJson(
+    asMap(
+      await _rpc('profile_discussion_activity_v1', <String, dynamic>{
+        'p_user': userId,
+        'p_surface': surface.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
+  /// The signed-in owner's private Likes/Saves history. The RPC deliberately
+  /// accepts no user id, preventing another account's history being queried.
+  Future<ProfileReactionPage> myProfileReactions({
+    required ProfileReactionAction action,
+    required ProfileSurface surface,
+    int limit = 25,
+    Map<String, dynamic>? cursor,
+  }) async => ProfileReactionPage.fromJson(
+    asMap(
+      await _rpc('my_profile_reactions_v1', <String, dynamic>{
+        'p_action': action.wire,
+        'p_surface': surface.wire,
+        'p_limit': limit,
+        'p_cursor': cursor,
+      }),
+    ),
+  );
+
   /// `get_post_thread(p_post, p_limit, p_before, p_sort)` — the X thread
   /// payload (0021): `{post, stats, comments[], has_more}` with batched
   /// viewer like/save/repost state per comment.
@@ -302,6 +389,12 @@ class KlectApi {
     } on KlectError catch (error) {
       throw _mapCreatePostError(error);
     }
+  }
+
+  /// Soft-deletes one of the viewer's own posts or quotes through the guarded
+  /// RPC. Returns only after server counters and visibility are reconciled.
+  Future<void> deletePost(String postId) async {
+    await _rpc('delete_post', <String, dynamic>{'p_post': postId});
   }
 
   /// Translates `create_post`'s stable snake_case error texts (see the 0018

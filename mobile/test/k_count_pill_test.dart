@@ -32,6 +32,34 @@ void main() {
   });
 
   group('KCountPill', () {
+    testWidgets('keeps icon mutation and count navigation independent', (
+      tester,
+    ) async {
+      var iconTaps = 0;
+      var countTaps = 0;
+      await pumpKlect(
+        tester,
+        KCountPill(
+          icon: Icons.repeat_rounded,
+          count: 12,
+          iconSemanticLabel: 'Repost or quote',
+          countSemanticLabel: '12 reposts, view activity',
+          onIconTap: () => iconTaps++,
+          onCountTap: () => countTaps++,
+        ),
+      );
+
+      await tester.tap(find.byIcon(Icons.repeat_rounded));
+      await tester.pump();
+      expect(iconTaps, 1);
+      expect(countTaps, 0);
+
+      await tester.tap(find.text('1').first);
+      await tester.pump();
+      expect(iconTaps, 1);
+      expect(countTaps, 1);
+    });
+
     testWidgets('shows the seeded count', (tester) async {
       await pumpKlect(
         tester,

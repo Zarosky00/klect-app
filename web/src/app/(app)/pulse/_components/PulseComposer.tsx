@@ -238,6 +238,7 @@ export function PulseComposer({ onPosted, quote = null, onClearQuote, className 
     try {
       const envelope = await createPost(supabase, {
         body: text,
+        kind: quote ? 'quote' : 'post',
         ...(target === null ? {} : { entityType: target.type, entityId: target.id }),
         ...(media.length === 0 ? {} : { media }),
       });
@@ -377,6 +378,7 @@ export function PulseComposer({ onPosted, quote = null, onClearQuote, className 
         {subject ? (
           <ComposerSubjectCard
             subject={subject}
+            quoted={quote !== null}
             onRemove={quote ? (onClearQuote ?? (() => {})) : () => setAttachment(null)}
           />
         ) : null}
@@ -435,12 +437,13 @@ export function PulseComposer({ onPosted, quote = null, onClearQuote, className 
 /** The card under the textarea: what this post will quote or share. */
 function ComposerSubjectCard({
   subject,
+  quoted,
   onRemove,
 }: {
   subject: ComposerSubject;
+  quoted: boolean;
   onRemove: () => void;
 }) {
-  const isQuote = subject.type === 'post';
   return (
     <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-1 p-2">
       {subject.coverPath ? (
@@ -459,7 +462,7 @@ function ComposerSubjectCard({
 
       <div className="min-w-0 flex-1">
         <p className="text-micro uppercase tracking-widest text-ink-3">
-          {isQuote
+          {quoted
             ? `Quoting ${subject.authorUsername ? `@${subject.authorUsername}` : 'a post'}`
             : ENTITY_LABEL[subject.type]}
         </p>
@@ -473,7 +476,7 @@ function ComposerSubjectCard({
 
       <IconButton
         icon="close"
-        label={isQuote ? 'Remove quote' : 'Remove attachment'}
+        label={quoted ? 'Remove quote' : 'Remove attachment'}
         size="sm"
         variant="ghost"
         onClick={onRemove}

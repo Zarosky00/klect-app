@@ -20,6 +20,7 @@ class PostModel {
     this.likeCount = 0,
     this.saveCount = 0,
     this.repostCount = 0,
+    this.quoteCount = 0,
     this.commentCount = 0,
     this.replyCount = 0,
     this.viewCount = 0,
@@ -44,6 +45,7 @@ class PostModel {
       likeCount: asInt(json['like_count']),
       saveCount: asInt(json['save_count']),
       repostCount: asInt(json['repost_count']),
+      quoteCount: asInt(json['quote_count']),
       commentCount: asInt(json['comment_count']),
       replyCount: asInt(json['reply_count']),
       viewCount: asInt(json['view_count']),
@@ -84,6 +86,9 @@ class PostModel {
 
   /// Trigger-maintained.
   final int repostCount;
+
+  /// Trigger-maintained quote count.
+  final int quoteCount;
 
   /// Trigger-maintained.
   final int commentCount;
@@ -135,6 +140,7 @@ class PulseTarget {
     this.coverHeight,
     this.childCount = 0,
     this.likeCount = 0,
+    this.quoteCount = 0,
     this.createdAt,
     this.author,
     this.parentType,
@@ -161,6 +167,7 @@ class PulseTarget {
       coverHeight: asIntOrNull(json['cover_height']),
       childCount: asInt(json['child_count']),
       likeCount: asInt(json['like_count']),
+      quoteCount: asInt(json['quote_count']),
       createdAt: asDateOrNull(json['created_at']),
       author: author.isEmpty ? null : Profile.fromJson(author),
       parentType: EntityType.tryParse(json['parent_type']),
@@ -213,6 +220,9 @@ class PulseTarget {
 
   /// Live like count at envelope time.
   final int likeCount;
+
+  /// Trigger-maintained quote count for quoteable targets.
+  final int quoteCount;
 
   /// When the target was created.
   final DateTime? createdAt;

@@ -50,6 +50,7 @@ export interface SocialSeed {
   likeCount?: number;
   saveCount?: number;
   repostCount?: number;
+  quoteCount?: number;
   followerCount?: number;
   commentCount?: number;
   viewCount?: number;
@@ -71,6 +72,7 @@ export interface SocialSnapshot {
   likeCount: number;
   saveCount: number;
   repostCount: number;
+  quoteCount: number;
   followerCount: number;
   commentCount: number;
   viewCount: number;
@@ -95,6 +97,7 @@ interface EntityRecord {
   commentCount: number;
   viewCount: number;
   childCount: number;
+  quoteCount: number;
 }
 
 export interface InteractionErrorContext {
@@ -222,6 +225,7 @@ export class InteractionStore {
     if (typeof seed.commentCount === 'number') record.commentCount = seed.commentCount;
     if (typeof seed.viewCount === 'number') record.viewCount = seed.viewCount;
     if (typeof seed.childCount === 'number') record.childCount = seed.childCount;
+    if (typeof seed.quoteCount === 'number') record.quoteCount = Math.max(0, seed.quoteCount);
 
     this.recompute(key);
     this.emit(key);
@@ -245,6 +249,7 @@ export class InteractionStore {
       likeCount: num(row['like_count']),
       saveCount: num(row['save_count']),
       repostCount: num(row['repost_count']),
+      quoteCount: num(row['quote_count']),
       followerCount: num(row['follower_count']),
       commentCount: num(row['comment_count']),
       viewCount: num(row['view_count']),
@@ -342,6 +347,7 @@ export class InteractionStore {
       commentCount: seed?.commentCount ?? 0,
       viewCount: seed?.viewCount ?? 0,
       childCount: seed?.childCount ?? 0,
+      quoteCount: seed?.quoteCount ?? 0,
     };
   }
 
@@ -358,6 +364,7 @@ export class InteractionStore {
         likeCount: 0,
         saveCount: 0,
         repostCount: 0,
+        quoteCount: 0,
         followerCount: 0,
         commentCount: 0,
         viewCount: 0,
@@ -379,6 +386,7 @@ export class InteractionStore {
       likeCount: displayedCount(like),
       saveCount: displayedCount(save),
       repostCount: displayedCount(repost),
+      quoteCount: record.quoteCount,
       followerCount: displayedCount(follow),
       commentCount: record.commentCount,
       viewCount: record.viewCount,
@@ -479,6 +487,7 @@ export function seedFromSurfCard(card: {
   like_count: number;
   save_count: number;
   repost_count: number;
+  quote_count?: number;
   comment_count: number;
   view_count: number;
   child_count: number;
@@ -490,6 +499,7 @@ export function seedFromSurfCard(card: {
     likeCount: card.like_count,
     saveCount: card.save_count,
     repostCount: card.repost_count,
+    quoteCount: card.quote_count,
     commentCount: card.comment_count,
     viewCount: card.view_count,
     childCount: card.child_count,

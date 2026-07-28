@@ -233,6 +233,13 @@ class CommentsController extends Notifier<CommentsState> {
     );
     final interactions = ref.read(interactionProvider(entity).notifier)
       ..bumpCommentCount(1);
+    ref
+        .read(socialActivityMutationProvider.notifier)
+        .record(
+          SocialActivityMutationKind.comment,
+          entity: entity,
+          active: true,
+        );
 
     try {
       final result = await ref
@@ -279,6 +286,13 @@ class CommentsController extends Notifier<CommentsState> {
       ],
       clearError: true,
     );
+    ref
+        .read(socialActivityMutationProvider.notifier)
+        .record(
+          SocialActivityMutationKind.delete,
+          entity: EntityRef.comment(commentId),
+          active: false,
+        );
     try {
       final count = await ref.read(klectApiProvider).deleteComment(commentId);
       if (_disposed) return;

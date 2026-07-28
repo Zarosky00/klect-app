@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { cn } from '@/lib/cn';
 import { type EntityType } from '@/lib/entities';
 import type { SocialSeed } from '@/lib/interactions';
+import type { EngagementTab } from '@/lib/types';
 import { useEntitySocial } from '@/providers/interactions-provider';
 import { useSession } from '@/providers/session-provider';
 import { useToast } from '@/providers/toast-provider';
@@ -25,6 +26,10 @@ const ReportDialog = dynamic(
 );
 const ShareMenu = dynamic(
   () => import('@/components/social/ShareMenu').then((module) => module.ShareMenu),
+  { ssr: false },
+);
+const EngagementDialog = dynamic(
+  () => import('@/components/social/EngagementDialog').then((module) => module.EngagementDialog),
   { ssr: false },
 );
 
@@ -83,6 +88,7 @@ export function ActionBar({
   const [reportRequested, setReportRequested] = useState(false);
   const [shareRequested, setShareRequested] = useState(false);
   const [choosing, setChoosing] = useState(false);
+  const [engagementTab, setEngagementTab] = useState<EngagementTab | null>(null);
 
   const openReport = useCallback(() => {
     setReportRequested(true);
@@ -133,6 +139,12 @@ export function ActionBar({
           onClick={() => {
             if (requireAuth()) social.like();
           }}
+          {...(social.likeCount > 0
+            ? {
+                onCountClick: () => setEngagementTab('like'),
+                countLabel: `${social.likeCount} likes, view accounts`,
+              }
+            : {})}
         />
 
         <CountPill
@@ -161,6 +173,8 @@ export function ActionBar({
               onClick={() => {
                 if (requireAuth()) setChoosing((open) => !open);
               }}
+              onCountClick={() => setEngagementTab('repost')}
+              countLabel={`${social.repostCount} reposts and ${social.quoteCount} quotes, view engagement`}
             />
             {choosing ? (
               <>
@@ -226,6 +240,8 @@ export function ActionBar({
             onClick={() => {
               if (requireAuth()) social.repost();
             }}
+            onCountClick={() => setEngagementTab('repost')}
+            countLabel={`${social.repostCount} reposts and ${social.quoteCount} quotes, view engagement`}
           />
         )}
 
@@ -294,6 +310,21 @@ export function ActionBar({
           type={type}
           id={id}
           title={title}
+        />
+      ) : null}
+
+      {engagementTab ? (
+        <EngagementDialog
+          open
+          onClose={() => setEngagementTab(null)}
+          type={type}
+          id={id}
+          initialTab={engagementTab}
+          initialSummary={{
+            like_count: social.likeCount,
+            repost_count: social.repostCount,
+            quote_count: social.quoteCount,
+          }}
         />
       ) : null}
     </>

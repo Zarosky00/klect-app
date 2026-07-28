@@ -6,17 +6,25 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Icon } from '@/components/ui/Icon';
 import { Skeleton, SkeletonRow } from '@/components/ui/Skeleton';
-import { getMatches, pulseFeed } from '@/lib/api';
+import { getCloseup, getMatches, pulseFeedV2 } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { isEntityType } from '@/lib/entities';
 import { routes } from '@/lib/routes';
 import {
+  closeupCover,
+  closeupDescription,
+  closeupTitle,
   PULSE_MODE_LABELS,
   PULSE_MODES,
   pulseEntryKey,
+  type CursorPage,
   type PulseEntry,
   type PulseMode,
+  type SocialCursor,
 } from '@/lib/types';
+import { emitSocialActivityMutation } from '@/lib/social-activity';
 import { useSession } from '@/providers/session-provider';
+import { useToast } from '@/providers/toast-provider';
 import { PulseCard } from './PulseCard';
 import { PulseComposer, type ComposerSubject } from './PulseComposer';
 import {
@@ -37,42 +45,21 @@ import {
  * collapsed filter drawer (W3): Type/Time chips, shared-taste, and
  * search-within-pulse.
  *
- * PAGINATION (migration 0021): `pulse_feed` returns up to `limit + 1`
- * envelopes — the extra row only signals another page exists and is never
- * rendered. Paging is composite-keyset: `(p_before, p_before_id)` = the
- * `(sort_at, cursor_id)` of the minimum row on screen, which stops the
- * same-timestamp skip an equality-only cursor had. Correct for both the
- * chronological Following pages and the score-ordered For-you pages (whose
- * contract is "keep paging with min(sort_at)/its cursor_id on screen").
+ * PAGINATION: `pulse_feed_v2` owns ordering and returns an opaque composite
+ * cursor. The client passes that cursor through unchanged, dedupes by stable
+ * envelope identity and trusts `has_more` rather than deriving page state.
  */
 
 const PAGE_SIZE = 25;
 
 export interface PulseStreamProps {
-  initialEntries: PulseEntry[];
+  initialPage: CursorPage<PulseEntry>;
 }
 
 /** The composite keyset for the next page. */
-interface PulseCursor {
-  before: string;
-  beforeId: string | null;
-}
+type PulseCursor = SocialCursor;
 
 /** The `(sort_at, cursor_id)` minimum of a page — the next-page cursor. */
-function minCursor(rows: PulseEntry[]): PulseCursor | null {
-  let best: PulseEntry | null = null;
-  for (const row of rows) {
-    if (
-      best === null ||
-      row.sort_at < best.sort_at ||
-      (row.sort_at === best.sort_at && (row.cursor_id ?? '') < (best.cursor_id ?? ''))
-    ) {
-      best = row;
-    }
-  }
-  return best === null ? null : { before: best.sort_at, beforeId: best.cursor_id ?? null };
-}
-
 const isTypeFilter = (value: string | null): value is PulseTypeFilter =>
   value !== null && (PULSE_TYPE_FILTERS as readonly string[]).includes(value);
 const isTimeFilter = (value: string | null): value is PulseTimeFilter =>
@@ -87,21 +74,20 @@ interface TabState {
   cursor: PulseCursor | null;
 }
 
-export function PulseStream({ initialEntries }: PulseStreamProps) {
+export function PulseStream({ initialPage }: PulseStreamProps) {
   const { supabase, user } = useSession();
+  const { toast } = useToast();
 
   const [mode, setMode] = useState<PulseMode>('foryou');
   const [tabs, setTabs] = useState<Record<PulseMode, TabState>>(() => {
-    // Extra-row contract: the server page asked for PAGE_SIZE and may hold
-    // PAGE_SIZE + 1 rows — render PAGE_SIZE, the surplus row just means more.
-    const rendered = initialEntries.slice(0, PAGE_SIZE);
+    const rendered = initialPage.items;
     return {
       foryou: {
         entries: rendered,
-        exhausted: initialEntries.length <= PAGE_SIZE,
+        exhausted: !initialPage.has_more,
         initialised: true,
         error: null,
-        cursor: minCursor(rendered),
+        cursor: initialPage.next_cursor,
       },
       following: { entries: [], exhausted: false, initialised: false, error: null, cursor: null },
     };
@@ -123,9 +109,10 @@ export function PulseStream({ initialEntries }: PulseStreamProps) {
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const seen = useRef<Record<PulseMode, Set<string>>>({
-    foryou: new Set(initialEntries.slice(0, PAGE_SIZE).map(pulseEntryKey)),
+    foryou: new Set(initialPage.items.map(pulseEntryKey)),
     following: new Set(),
   });
+  const quoteIntentHandled = useRef(false);
 
   const tab = tabs[mode];
 
@@ -141,20 +128,12 @@ export function PulseStream({ initialEntries }: PulseStreamProps) {
 
       try {
         const cursor = tabsRef.current[target].cursor;
-        const rows = await pulseFeed(supabase, {
+        const page = await pulseFeedV2(supabase, {
           limit: PAGE_SIZE,
           mode: target,
-          ...(cursor === null
-            ? {}
-            : {
-                before: cursor.before,
-                ...(cursor.beforeId === null ? {} : { beforeId: cursor.beforeId }),
-              }),
+          cursor,
         });
-
-        // Extra-row has_more: render PAGE_SIZE, the surplus row is a signal.
-        const hasMore = rows.length > PAGE_SIZE;
-        const rendered = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
+        const rendered = page.items;
 
         const known = seen.current[target];
         const fresh = rendered.filter((row) => {
@@ -169,12 +148,12 @@ export function PulseStream({ initialEntries }: PulseStreamProps) {
           [target]: {
             entries:
               fresh.length > 0 ? [...current[target].entries, ...fresh] : current[target].entries,
-            exhausted: !hasMore,
+            exhausted: !page.has_more,
             initialised: true,
             error: null,
             // Advance even when every row deduped away, so the next fetch digs
             // deeper instead of spinning on the same page.
-            cursor: minCursor(rendered) ?? current[target].cursor,
+            cursor: page.next_cursor ?? current[target].cursor,
           },
         }));
       } catch (thrown) {
@@ -303,6 +282,12 @@ export function PulseStream({ initialEntries }: PulseStreamProps) {
         ...current,
         [mode]: { ...current[mode], entries: [entry, ...current[mode].entries] },
       }));
+      emitSocialActivityMutation({
+        kind: entry.kind === 'quote' ? 'quote' : 'post',
+        type: 'post',
+        id: entry.post_id ?? entry.target_id ?? '',
+        actorId: user.id,
+      });
     },
     [mode, user],
   );
@@ -317,6 +302,64 @@ export function PulseStream({ initialEntries }: PulseStreamProps) {
       block: 'center',
     });
   }, []);
+
+  // Surf and closeup share menus deep-link here with an explicit quote target.
+  // Resolve it once through the visibility-aware closeup contract, then remove
+  // only the consumed parameters so refreshes never reopen a discarded draft.
+  useEffect(() => {
+    if (quoteIntentHandled.current || typeof window === 'undefined') return;
+
+    const url = new URL(window.location.href);
+    const quoteType = url.searchParams.get('quoteType');
+    const quoteId = url.searchParams.get('quoteId');
+    if (!quoteType && !quoteId) return;
+
+    quoteIntentHandled.current = true;
+    url.searchParams.delete('quoteType');
+    url.searchParams.delete('quoteId');
+    window.history.replaceState(null, '', url.toString());
+
+    if (!isEntityType(quoteType) || quoteType === 'comment' || !quoteId) {
+      toast({
+        title: 'Can’t quote this',
+        description: 'The original link is incomplete or no longer supported.',
+        tone: 'danger',
+      });
+      return;
+    }
+
+    void getCloseup(supabase, quoteType, quoteId)
+      .then((payload) => {
+        if (!payload || payload.entity_type === 'comment') {
+          toast({
+            title: 'Can’t quote this',
+            description: 'The original is unavailable or you no longer have access.',
+            tone: 'danger',
+          });
+          return;
+        }
+
+        const cover = closeupCover(payload);
+        const isPost = payload.entity_type === 'post';
+        onQuote({
+          type: payload.entity_type,
+          id: payload.entity_id,
+          title: isPost ? null : closeupTitle(payload),
+          subtitle: isPost ? null : closeupDescription(payload),
+          body: isPost ? payload.post.body : null,
+          authorUsername: payload.owner.username,
+          coverPath: cover.path,
+          coverBlurhash: cover.blurhash,
+        });
+      })
+      .catch(() => {
+        toast({
+          title: 'Couldn’t load the original',
+          description: 'Check your connection and try quoting it again.',
+          tone: 'danger',
+        });
+      });
+  }, [onQuote, supabase, toast]);
 
   const switchTab = useCallback((next: PulseMode) => {
     setMode(next);

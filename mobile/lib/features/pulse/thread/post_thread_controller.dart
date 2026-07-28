@@ -72,21 +72,18 @@ class PostThreadState {
     String? failedDraft,
     String? failedParentId,
     bool clearDraft = false,
-  }) =>
-      PostThreadState(
-        post: post ?? this.post,
-        comments: comments ?? this.comments,
-        sort: sort ?? this.sort,
-        loading: loading ?? this.loading,
-        loadingMore: loadingMore ?? this.loadingMore,
-        hasMore: hasMore ?? this.hasMore,
-        error: clearError ? null : (error ?? this.error),
-        commentError:
-            clearDraft ? null : (commentError ?? this.commentError),
-        failedDraft: clearDraft ? null : (failedDraft ?? this.failedDraft),
-        failedParentId:
-            clearDraft ? null : (failedParentId ?? this.failedParentId),
-      );
+  }) => PostThreadState(
+    post: post ?? this.post,
+    comments: comments ?? this.comments,
+    sort: sort ?? this.sort,
+    loading: loading ?? this.loading,
+    loadingMore: loadingMore ?? this.loadingMore,
+    hasMore: hasMore ?? this.hasMore,
+    error: clearError ? null : (error ?? this.error),
+    commentError: clearDraft ? null : (commentError ?? this.commentError),
+    failedDraft: clearDraft ? null : (failedDraft ?? this.failedDraft),
+    failedParentId: clearDraft ? null : (failedParentId ?? this.failedParentId),
+  );
 }
 
 /// The post thread — `get_post_thread` (0021) behind one controller.
@@ -167,7 +164,9 @@ class PostThreadController extends Notifier<PostThreadState> {
         : state.copyWith(loadingMore: true, clearError: true);
 
     try {
-      final thread = await ref.read(klectApiProvider).getPostThread(
+      final thread = await ref
+          .read(klectApiProvider)
+          .getPostThread(
             postId,
             limit: pageSize,
             before: reset ? null : _oldestLoaded(),
@@ -191,7 +190,8 @@ class PostThreadController extends Notifier<PostThreadState> {
       }
 
       final known = <String>{
-        if (!reset) for (final comment in state.comments) comment.id,
+        if (!reset)
+          for (final comment in state.comments) comment.id,
       };
       state = state.copyWith(
         post: post,
@@ -206,11 +206,7 @@ class PostThreadController extends Notifier<PostThreadState> {
       );
     } on KlectError catch (error) {
       if (_disposed) return;
-      state = state.copyWith(
-        loading: false,
-        loadingMore: false,
-        error: error,
-      );
+      state = state.copyWith(loading: false, loadingMore: false, error: error);
     } finally {
       _busy = false;
     }
@@ -247,9 +243,18 @@ class PostThreadController extends Notifier<PostThreadState> {
     );
     final interactions = ref.read(interactionProvider(_entity).notifier)
       ..bumpCommentCount(1);
+    ref
+        .read(socialActivityMutationProvider.notifier)
+        .record(
+          SocialActivityMutationKind.comment,
+          entity: _entity,
+          active: true,
+        );
 
     try {
-      final result = await ref.read(klectApiProvider).addComment(
+      final result = await ref
+          .read(klectApiProvider)
+          .addComment(
             type: EntityType.post,
             id: postId,
             body: trimmed,
@@ -287,13 +292,18 @@ class PostThreadController extends Notifier<PostThreadState> {
     state = state.copyWith(
       comments: <CommentModel>[
         for (final comment in previous)
-          if (comment.id != commentId && comment.parentId != commentId)
-            comment,
+          if (comment.id != commentId && comment.parentId != commentId) comment,
       ],
     );
+    ref
+        .read(socialActivityMutationProvider.notifier)
+        .record(
+          SocialActivityMutationKind.delete,
+          entity: EntityRef.comment(commentId),
+          active: false,
+        );
     try {
-      final count =
-          await ref.read(klectApiProvider).deleteComment(commentId);
+      final count = await ref.read(klectApiProvider).deleteComment(commentId);
       if (_disposed) return;
       ref.read(interactionProvider(_entity).notifier).setCommentCount(count);
     } on KlectError catch (error) {
@@ -309,6 +319,6 @@ class PostThreadController extends Notifier<PostThreadState> {
 /// The post thread, keyed by post id.
 final postThreadProvider = NotifierProvider.autoDispose
     .family<PostThreadController, PostThreadState, String>(
-  PostThreadController.new,
-  name: 'postThread',
-);
+      PostThreadController.new,
+      name: 'postThread',
+    );
