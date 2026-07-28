@@ -314,42 +314,48 @@ class _FollowOutcomePanel extends StatelessWidget {
       reverseCurve: KCurves.accelerate,
     );
 
-    final panel = Semantics(
-      liveRegion: true,
-      container: true,
-      label: content.semanticLabel,
-      child: ExcludeSemantics(
-        child: Container(
-          key: const ValueKey<String>('interaction-follow-panel'),
-          constraints: const BoxConstraints(maxWidth: Layout.readableMaxWidth),
-          padding: const EdgeInsets.symmetric(
-            horizontal: Space.s3,
-            vertical: Space.s2,
-          ),
-          decoration: BoxDecoration(
-            color: scheme.inverseSurface,
-            borderRadius: BorderRadius.circular(Radii.xl),
-            boxShadow: KlectTheme.shadow(Elevation.high),
-          ),
-          child: Row(
-            children: <Widget>[
-              KAvatar(
-                imageUrl: avatarUrl,
-                name: content.targetName,
-                size: Space.s10,
-              ),
-              const SizedBox(width: Space.s3),
-              Expanded(
-                child: Text(
-                  content.title,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.kt.bodyStrong.copyWith(
-                    color: scheme.onInverseSurface,
+    final panel = Material(
+      type: MaterialType.transparency,
+      child: Semantics(
+        liveRegion: true,
+        container: true,
+        label: content.semanticLabel,
+        child: ExcludeSemantics(
+          child: Container(
+            key: const ValueKey<String>('interaction-follow-panel'),
+            constraints: const BoxConstraints(
+              maxWidth: Layout.readableMaxWidth,
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: Space.s3,
+              vertical: Space.s2,
+            ),
+            decoration: BoxDecoration(
+              color: scheme.inverseSurface,
+              borderRadius: BorderRadius.circular(Radii.xl),
+              boxShadow: KlectTheme.shadow(Elevation.high),
+            ),
+            child: Row(
+              children: <Widget>[
+                KAvatar(
+                  imageUrl: avatarUrl,
+                  name: content.targetName,
+                  size: Space.s10,
+                ),
+                const SizedBox(width: Space.s3),
+                Expanded(
+                  child: Text(
+                    content.title,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.kt.bodyStrong.copyWith(
+                      color: scheme.onInverseSurface,
+                      decoration: TextDecoration.none,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -435,49 +441,56 @@ class _InteractionStatusPill extends StatelessWidget {
       reverseCurve: KCurves.accelerate,
     );
 
-    final pill = Semantics(
-      liveRegion: true,
-      container: true,
-      label: content.semanticLabel,
-      child: ExcludeSemantics(
-        child: Container(
-          key: const ValueKey<String>('interaction-feedback-pill'),
-          constraints: const BoxConstraints(maxWidth: Layout.readableMaxWidth),
-          padding: const EdgeInsets.symmetric(
-            horizontal: Space.s3,
-            vertical: Space.s2,
-          ),
-          decoration: BoxDecoration(
-            color: colors.surface3,
-            borderRadius: BorderRadius.circular(Radii.full),
-            border: Border.all(
-              color: accent.withValues(alpha: Opacities.disabled),
-              width: Strokes.thin,
+    final pill = Material(
+      type: MaterialType.transparency,
+      child: Semantics(
+        liveRegion: true,
+        container: true,
+        label: content.semanticLabel,
+        child: ExcludeSemantics(
+          child: Container(
+            key: const ValueKey<String>('interaction-feedback-pill'),
+            constraints: const BoxConstraints(
+              maxWidth: Layout.readableMaxWidth,
             ),
-            boxShadow: KlectTheme.shadow(Elevation.high),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Container(
-                width: Space.s6,
-                height: Space.s6,
-                decoration: BoxDecoration(
-                  color: subtle,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(content.icon, size: Space.s4, color: accent),
+            padding: const EdgeInsets.symmetric(
+              horizontal: Space.s3,
+              vertical: Space.s2,
+            ),
+            decoration: BoxDecoration(
+              color: colors.surface3,
+              borderRadius: BorderRadius.circular(Radii.full),
+              border: Border.all(
+                color: accent.withValues(alpha: Opacities.disabled),
+                width: Strokes.thin,
               ),
-              const SizedBox(width: Space.s2),
-              Flexible(
-                child: Text(
-                  content.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.kt.label,
+              boxShadow: KlectTheme.shadow(Elevation.high),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Container(
+                  width: Space.s6,
+                  height: Space.s6,
+                  decoration: BoxDecoration(
+                    color: subtle,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(content.icon, size: Space.s4, color: accent),
                 ),
-              ),
-            ],
+                const SizedBox(width: Space.s2),
+                Flexible(
+                  child: Text(
+                    content.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.kt.label.copyWith(
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

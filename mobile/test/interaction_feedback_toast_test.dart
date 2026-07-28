@@ -56,6 +56,19 @@ void main() {
     );
     expect(find.text('A'), findsOneWidget);
     expect(find.byIcon(Icons.check_rounded), findsNothing);
+    final message = tester.widget<Text>(
+      find.text(
+        'Following! Their new shelves and posts will appear in your Pulse.',
+      ),
+    );
+    expect(message.style?.decoration, TextDecoration.none);
+    expect(
+      find.ancestor(
+        of: find.byWidget(message),
+        matching: find.byType(Material),
+      ),
+      findsWidgets,
+    );
 
     final rect = tester.getRect(
       find.byKey(const ValueKey<String>('interaction-follow-panel')),

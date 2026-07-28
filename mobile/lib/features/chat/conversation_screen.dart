@@ -43,6 +43,13 @@ const int _jumpPageCap = 10;
 /// lazy list needs a frame per step to build rows near the new offset.
 const int _jumpScrollAttempts = 24;
 
+/// Keeps unfinished calling controls out of production conversations. The
+/// backend flag only turns true after Firebase delivery, TURN and native call
+/// integration have passed their device matrix.
+final _callFeatureEnabledProvider = FutureProvider.autoDispose<bool>((ref) {
+  return ref.watch(chatApiProvider).callFeatureEnabled();
+}, name: 'callFeatureEnabled');
+
 /// One conversation.
 ///
 /// Grouped bubbles, date separators, quoted replies, long-press reactions,
@@ -463,6 +470,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     final state = ref.watch(chatThreadProvider(widget.conversationId));
     final viewerId = ref.watch(currentUserIdProvider);
     final isGroup = state.conversation?.kind == ConversationKind.group;
+    final callsEnabled = ref.watch(_callFeatureEnabledProvider).value ?? false;
     // A group has no single "peer": every peer-shaped affordance (profile
     // push, call, block, report) is DM-only.
     final peer = isGroup ? null : state.otherMember(viewerId)?.profile;
@@ -486,7 +494,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
             state: state,
             peer: peer,
             isGroup: isGroup,
-            canCall: !isGroup,
+            canCall: !isGroup && callsEnabled,
             onCall: (kind) => unawaited(_startCall(kind, peer)),
             onSearch: _openSearch,
             onOverflow: () =>
