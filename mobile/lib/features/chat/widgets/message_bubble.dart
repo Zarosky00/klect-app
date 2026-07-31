@@ -109,6 +109,9 @@ class MessageBubble extends StatelessWidget {
     if (message.message.kind == MessageKind.system) {
       return SystemMessageRow(body: message.message.body ?? '');
     }
+    if (message.isTombstone) {
+      return _Tombstone(message: message);
+    }
 
     final colors = context.kc;
     final text = context.kt;
@@ -586,6 +589,48 @@ class SystemMessageRow extends StatelessWidget {
   );
 }
 
+class _Tombstone extends StatelessWidget {
+  const _Tombstone({required this.message});
+
+  final ChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final time = TimeOfDay.fromDateTime(message.createdAt).format(context);
+    return Semantics(
+      label: 'Message deleted, $time',
+      readOnly: true,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.s6,
+          vertical: Space.s2,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(
+              Icons.block_rounded,
+              size: Space.s4,
+              color: colors.textTertiary,
+            ),
+            const SizedBox(width: Space.s2),
+            Text(
+              'Message deleted',
+              style: context.kt.caption.copyWith(color: colors.textTertiary),
+            ),
+            const SizedBox(width: Space.s2),
+            Text(
+              time,
+              style: context.kt.count.copyWith(color: colors.textTertiary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ReplyQuote extends StatelessWidget {
   const _ReplyQuote({required this.parent, this.onTap});
 
@@ -595,16 +640,23 @@ class _ReplyQuote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    final preview = switch (parent.kind) {
-      MessageKind.image => 'Photo',
-      MessageKind.callEvent => parent.body ?? 'Call',
-      _ => parent.body ?? (parent.sharedEntityId != null ? 'Shared' : ''),
-    };
+    final unavailable = parent.isTombstone;
+    final preview = unavailable
+        ? 'Message unavailable'
+        : switch (parent.kind) {
+            MessageKind.image => 'Photo',
+            MessageKind.callEvent => parent.body ?? 'Call',
+            _ => parent.body ?? (parent.sharedEntityId != null ? 'Shared' : ''),
+          };
+    final interactive = !unavailable && onTap != null;
 
     return KPressable(
-      onTap: onTap,
+      enabled: interactive,
+      onTap: interactive ? onTap : null,
       enforceMinTapTarget: false,
-      semanticLabel: 'Replying to $preview',
+      semanticLabel: unavailable
+          ? 'Reply target unavailable, disabled'
+          : 'Replying to $preview',
       child: Container(
         padding: const EdgeInsets.only(left: Space.s2),
         decoration: BoxDecoration(
@@ -617,7 +669,7 @@ class _ReplyQuote extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(
-              parent.author?.name ?? 'Message',
+              unavailable ? 'Unavailable' : parent.author?.name ?? 'Message',
               style: context.kt.micro.copyWith(color: colors.accentDefault),
             ),
             Text(

@@ -1,5 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+/// One action selected from a system notification.
+class LocalNotificationAction {
+  /// Creates an action response.
+  const LocalNotificationAction({required this.id, this.payload});
+
+  /// Stable action id.
+  final String id;
+
+  /// Notification payload, if any.
+  final String? payload;
+}
 
 /// System-tray notifications for realtime arrivals while the app is
 /// **backgrounded but running** (stage 1 of the notifications plan).
@@ -18,28 +32,33 @@ class LocalNotifications {
   final void Function(String path) _onSelect;
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+  final StreamController<LocalNotificationAction> _actions =
+      StreamController<LocalNotificationAction>.broadcast();
   bool _ready = false;
+
+  /// Action selections from notifications whose buttons open the app UI.
+  Stream<LocalNotificationAction> get actions => _actions.stream;
 
   /// Everyday social traffic: likes, saves, reposts, comments, follows,
   /// messages. Mirrors push-fanout's `channel_id: 'social'`.
   static const AndroidNotificationChannel socialChannel =
       AndroidNotificationChannel(
-    'social',
-    'Activity',
-    description: 'Likes, saves, comments, follows and messages',
-    importance: Importance.high,
-  );
+        'social',
+        'Activity',
+        description: 'Likes, saves, comments, follows and messages',
+        importance: Importance.high,
+      );
 
   /// Incoming calls — maximum importance so the heads-up survives Do Not
   /// Disturb exemptions the user grants. Mirrors push-fanout's
   /// `channel_id: 'calls'`.
   static const AndroidNotificationChannel callsChannel =
       AndroidNotificationChannel(
-    'calls',
-    'Calls',
-    description: 'Incoming and missed calls',
-    importance: Importance.max,
-  );
+        'calls',
+        'Calls',
+        description: 'Incoming and missed calls',
+        importance: Importance.max,
+      );
 
   /// Whether this platform has a system tray we can post to.
   static bool get isSupported =>
@@ -62,13 +81,22 @@ class LocalNotifications {
         iOS: DarwinInitializationSettings(),
       ),
       onDidReceiveNotificationResponse: (response) {
+        final actionId = response.actionId;
+        if (actionId != null && actionId.isNotEmpty) {
+          _actions.add(
+            LocalNotificationAction(id: actionId, payload: response.payload),
+          );
+          return;
+        }
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) _onSelect(payload);
       },
     );
 
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (android != null) {
       await android.createNotificationChannel(socialChannel);
       await android.createNotificationChannel(callsChannel);
@@ -120,4 +148,56 @@ class LocalNotifications {
       payload: payload,
     );
   }
+
+  /// Posts the Android incoming-call surface with exactly Accept and Decline.
+  Future<void> showIncomingCall({
+    required int id,
+    required String callId,
+    required String callerName,
+    required bool isVideo,
+  }) async {
+    if (!isSupported) return;
+    await ensureReady();
+    await _plugin.show(
+      id: id,
+      title: callerName,
+      body: isVideo ? 'Incoming video call' : 'Incoming audio call',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          callsChannel.id,
+          callsChannel.name,
+          channelDescription: callsChannel.description,
+          importance: Importance.max,
+          priority: Priority.max,
+          category: AndroidNotificationCategory.call,
+          fullScreenIntent: true,
+          ongoing: true,
+          autoCancel: false,
+          actions: const <AndroidNotificationAction>[
+            AndroidNotificationAction(
+              'call_accept',
+              'Accept',
+              showsUserInterface: true,
+              cancelNotification: false,
+              semanticAction: SemanticAction.call,
+            ),
+            AndroidNotificationAction(
+              'call_decline',
+              'Decline',
+              showsUserInterface: true,
+              cancelNotification: false,
+            ),
+          ],
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentSound: true,
+        ),
+      ),
+      payload: callId,
+    );
+  }
+
+  /// Removes one delivered notification.
+  Future<void> cancel(int id) => _plugin.cancel(id: id);
 }

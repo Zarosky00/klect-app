@@ -50,6 +50,7 @@ class _RootShellState extends ConsumerState<RootShell> {
     // deep link.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_initLocalNotifications());
+      unawaited(ref.read(pushNotificationsProvider).ensureRegistered());
     });
   }
 

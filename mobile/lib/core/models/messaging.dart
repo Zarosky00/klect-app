@@ -30,12 +30,35 @@ enum GroupPermissionScope {
     GroupPermissionScope.everyone => 'Everyone',
   };
 
-  /// Whether a member with [role] is permitted.
-  bool allows(String? role) => switch (this) {
-    GroupPermissionScope.owner => role == 'owner',
-    GroupPermissionScope.admins => role == 'owner' || role == 'admin',
-    GroupPermissionScope.everyone => role != null,
+  /// Member_Role rank: `member` 0 < `admin` 1 < `owner` 2.
+  ///
+  /// A role the client does not recognise ranks as `member` — the least
+  /// privileged of the three, and the same fallback the role badge uses.
+  static int rankOf(String role) => switch (role) {
+    'owner' => 2,
+    'admin' => 1,
+    _ => 0,
   };
+
+  /// The lowest Member_Role rank this scope admits.
+  int get minimumRank => switch (this) {
+    GroupPermissionScope.owner => 2,
+    GroupPermissionScope.admins => 1,
+    GroupPermissionScope.everyone => 0,
+  };
+
+  /// Whether a member with [role] is permitted.
+  ///
+  /// Monotone in Member_Role rank by construction (13.10): the decision is a
+  /// single `>=` against [minimumRank], so a scope that permits `member`
+  /// cannot fail to permit `admin` or `owner`, and a scope that permits
+  /// `admin` cannot fail to permit `owner`. Written as three independent
+  /// clauses the ordering would only hold by coincidence; written as one
+  /// comparison it cannot be broken by editing a clause.
+  ///
+  /// A null [role] is an account holding no active membership row — the case
+  /// the RPCs refuse with `not_member` — so every scope refuses it.
+  bool allows(String? role) => role != null && rankOf(role) >= minimumRank;
 }
 
 /// Server-enforced permissions for a group conversation.
@@ -333,6 +356,7 @@ class MessageModel {
     this.author,
     this.isPending = false,
     this.failed = false,
+    this.hiddenForMe = false,
   });
 
   /// Parses a `messages` row.
@@ -408,9 +432,57 @@ class MessageModel {
   /// Client-only: the insert failed; offer a retry.
   final bool failed;
 
+  /// Client-only: the viewer hid this message for themselves.
+  ///
+  /// There is no column for this. Delete-for-me lives in
+  /// `public.message_hides`, one row per `(message, viewer)`, read through its
+  /// own-row RLS policy by `ChatApi.fetchHiddenMessageIds` and stamped onto the
+  /// loaded rows. `fromJson` deliberately never sets it, so a row parsed
+  /// straight off the wire is never accidentally hidden (12.5).
+  final bool hiddenForMe;
+
   /// True when this message shares a KLECT entity.
   bool get hasSharedEntity =>
       sharedEntityType != null && sharedEntityId != null;
+
+  /// True when this message was deleted for everyone.
+  ///
+  /// Derived from `deleted_at` alone: the row survives the delete with an empty
+  /// body and no attachments, so this is the one signal that says "render a
+  /// tombstone here" (11.1, 11.2).
+  bool get isTombstone => deletedAt != null;
+
+  /// The local mirror of the row `delete_message_for_everyone` leaves behind.
+  ///
+  /// `id`, `conversation_id`, `author_id`, `reply_to_id`, `kind` and
+  /// `created_at` are carried across untouched, the body becomes empty, the
+  /// attachment list becomes empty and `deleted_at` is stamped — the same shape
+  /// the RPC returns, so the optimistic tombstone and the stored one render
+  /// identically and thread order never moves (11.1, 11.3).
+  ///
+  /// An already-deleted message keeps its original `deleted_at`, matching the
+  /// RPC's repeat behaviour (11.9). Rolling back a failed delete restores the
+  /// captured original rather than un-deriving anything from here (11.12).
+  MessageModel tombstoned({DateTime? at}) {
+    final stamp = at ?? DateTime.now();
+    return MessageModel(
+      id: id,
+      conversationId: conversationId,
+      authorId: authorId,
+      body: '',
+      kind: kind,
+      sharedEntityType: sharedEntityType,
+      sharedEntityId: sharedEntityId,
+      replyToId: replyToId,
+      callId: callId,
+      editedAt: editedAt,
+      deletedAt: deletedAt ?? stamp,
+      createdAt: createdAt,
+      updatedAt: stamp,
+      author: author,
+      hiddenForMe: hiddenForMe,
+    );
+  }
 
   /// Copy with overrides.
   MessageModel copyWith({
@@ -418,6 +490,7 @@ class MessageModel {
     String? body,
     bool? isPending,
     bool? failed,
+    bool? hiddenForMe,
     DateTime? createdAt,
     Profile? author,
   }) => MessageModel(
@@ -438,6 +511,7 @@ class MessageModel {
     author: author ?? this.author,
     isPending: isPending ?? this.isPending,
     failed: failed ?? this.failed,
+    hiddenForMe: hiddenForMe ?? this.hiddenForMe,
   );
 }
 

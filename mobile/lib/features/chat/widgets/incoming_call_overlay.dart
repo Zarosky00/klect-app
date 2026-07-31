@@ -11,8 +11,10 @@ import '../../../design/motion.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
 import '../calls/call_controller.dart';
+import '../calls/call_notifications.dart';
 import '../calls/call_permissions.dart';
 import '../calls/incoming_call_controller.dart';
+import 'call_pill.dart';
 
 /// Wraps a subtree so an incoming call can appear over it.
 ///
@@ -21,9 +23,9 @@ import '../calls/incoming_call_controller.dart';
 /// the feature is complete on its own; wrapping the shell as well costs
 /// nothing (the banner only ever renders once, because
 /// [incomingCallProvider] holds a single call).
-class IncomingCallOverlay extends ConsumerWidget {
+class CallOverlayHost extends ConsumerWidget {
   /// Wraps [child].
-  const IncomingCallOverlay({required this.child, super.key});
+  const CallOverlayHost({required this.child, super.key});
 
   /// The subtree the banner floats over.
   final Widget child;
@@ -31,19 +33,66 @@ class IncomingCallOverlay extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final call = ref.watch(incomingCallProvider);
-    final phase = ref.watch(activeCallProvider.select((s) => s.phase));
+    final active = ref.watch(activeCallProvider);
+    final notifications = ref.watch(callNotificationsProvider)..ensureStarted();
 
-    return Stack(
-      children: <Widget>[
-        child,
-        if (call != null && phase == CallPhase.incoming)
-          Positioned(
-            top: MediaQuery.paddingOf(context).top + Space.s2,
-            left: Space.s3,
-            right: Space.s3,
-            child: _IncomingCallBanner(call: call),
+    ref.listen<CallModel?>(incomingCallProvider, (previous, next) {
+      if (next != null) {
+        unawaited(
+          notifications.presentIfBackgrounded(
+            next,
+            callerName: ref.read(activeCallProvider).peer?.name,
           ),
-      ],
+        );
+      } else if (previous != null) {
+        unawaited(notifications.cancelCall(previous.id));
+      }
+    });
+    ref.listen(activeCallProvider.select((state) => state.phase), (_, phase) {
+      final callId = ref.read(activeCallProvider).call?.id;
+      if (callId != null && phase != CallPhase.incoming) {
+        unawaited(notifications.cancelCall(callId));
+      }
+    });
+    ref.listen<String?>(callNotificationMessageProvider, (_, message) {
+      if (message == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        KToast.error(context, message);
+        ref.read(callNotificationMessageProvider.notifier).clear();
+      });
+    });
+
+    final router = GoRouter.of(context);
+
+    return AnimatedBuilder(
+      animation: router.routerDelegate,
+      builder: (context, _) {
+        final path = router.routerDelegate.currentConfiguration.uri.path;
+        final onCallRoute = path.split('/').contains('call');
+        return Stack(
+          children: <Widget>[
+            child,
+            if (active.isBusy && !onCallRoute)
+              Positioned(
+                left: Space.s4,
+                right: Space.s4,
+                bottom:
+                    MediaQuery.paddingOf(context).bottom +
+                    Layout.bottomBarHeight +
+                    Space.s2,
+                child: const CallPill(),
+              ),
+            if (call != null && active.phase == CallPhase.incoming)
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + Space.s2,
+                left: Space.s3,
+                right: Space.s3,
+                child: _IncomingCallBanner(call: call),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -114,10 +163,9 @@ class _IncomingCallBannerState extends ConsumerState<_IncomingCallBanner>
     final colors = context.kc;
     final text = context.kt;
     final peer = ref.watch(activeCallProvider.select((s) => s.peer));
-    final avatarUrl = ref.watch(klectApiProvider).publicUrl(
-          peer?.avatarPath,
-          bucket: StorageBucket.avatars,
-        );
+    final avatarUrl = ref
+        .watch(klectApiProvider)
+        .publicUrl(peer?.avatarPath, bucket: StorageBucket.avatars);
     final isVideo = widget.call.kind == CallKind.video;
 
     return Material(
@@ -242,16 +290,16 @@ class _RoundButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => KPressable(
-        enabled: onPressed != null,
-        onTap: onPressed,
-        enforceMinTapTarget: false,
-        semanticLabel: semanticLabel,
-        child: Container(
-          width: Layout.tapTargetMin,
-          height: Layout.tapTargetMin,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: background, shape: BoxShape.circle),
-          child: Icon(icon, size: Space.s5, color: foreground),
-        ),
-      );
+    enabled: onPressed != null,
+    onTap: onPressed,
+    enforceMinTapTarget: false,
+    semanticLabel: semanticLabel,
+    child: Container(
+      width: Layout.tapTargetMin,
+      height: Layout.tapTargetMin,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: background, shape: BoxShape.circle),
+      child: Icon(icon, size: Space.s5, color: foreground),
+    ),
+  );
 }

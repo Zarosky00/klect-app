@@ -32,6 +32,12 @@ mobile/android/app/release/
 **/service-account*.json
 firebase-service-account.json
 
+# Firebase app config — scoped to the app's package/bundle id by Google, but
+# still project-specific. Each dev/CI environment should fetch its own via
+# `firebase_get_sdk_config` (Firebase MCP) rather than share one committed copy.
+mobile/android/app/google-services.json
+mobile/ios/Runner/GoogleService-Info.plist
+
 # build output
 dist/
 coverage/
@@ -40,6 +46,10 @@ coverage/
 # release binaries — distributed as GitHub release assets, never in git
 web/public/downloads/
 *.apk
+.release-verify-*
+
+# Supabase CLI link/cache state is machine-local.
+supabase/.temp/
 
 # JVM crash dumps
 hs_err_pid*.log

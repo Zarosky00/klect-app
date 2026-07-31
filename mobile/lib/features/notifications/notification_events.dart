@@ -15,7 +15,7 @@ import '../../core/supabase.dart';
 ///
 ///  * the tab badge (`unreadNotificationCountProvider` is invalidated per
 ///    event),
-///  * the in-app `KBanner` / backgrounded local notification (see
+///  * the in-app `KNotificationBanner` / backgrounded local notification (see
 ///    `notification_surfaces.dart`),
 ///  * the Alerts list itself (`NotificationsController` folds events in
 ///    instead of subscribing its own channel).

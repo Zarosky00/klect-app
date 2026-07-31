@@ -53,6 +53,8 @@ const toCss = (hex) => {
 };
 
 const isColor = (v) => typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v);
+/** Dart double literal: integers keep a `.0` so the type is never ambiguous. */
+const dbl = (v) => (Number.isInteger(Number(v)) ? Number(v).toFixed(1) : String(Number(v)));
 const camel = (s) => s.replace(/[_\-\s]+(.)/g, (_, c) => c.toUpperCase()).replace(/^(\d)/, 's$1');
 const kebab = (s) => s.replace(/_/g, '-');
 
@@ -203,6 +205,34 @@ function buildDart() {
   for (const [k, v] of Object.entries(T.motion.stagger)) p(`  static const int ${camel(k)} = ${v};`);
   p('}');
   p();
+  p('/// How long a transient surface stays before it dismisses itself.');
+  p('/// A dwell period is not an animation, so the 480ms animation ceiling');
+  p('/// from `docs/DESIGN_SYSTEM.md` does not apply here.');
+  p('abstract final class Dwell {');
+  for (const [k, v] of Object.entries(T.motion.dwell)) {
+    if (k === 'note') continue;
+    p(`  static const Duration ${camel(k)} = Duration(milliseconds: ${v});`);
+  }
+  p('}');
+  p();
+  p('/// Finger-driven commit thresholds. Distances are logical pixels,');
+  p('/// velocities logical pixels per second, fractions are of the dragged extent.');
+  p('abstract final class Drags {');
+  for (const [k, v] of Object.entries(T.motion.drag)) {
+    if (k === 'note') continue;
+    p(`  static const double ${camel(k)} = ${dbl(v)};`);
+  }
+  p('}');
+  p();
+  p('/// How long an async placeholder may wait before it gives up.');
+  p('/// Network budget, not motion.');
+  p('abstract final class Timeouts {');
+  for (const [k, v] of Object.entries(T.motion.timeout)) {
+    if (k === 'note') continue;
+    p(`  static const Duration ${camel(k)} = Duration(milliseconds: ${v});`);
+  }
+  p('}');
+  p();
 
   /* ---- layout ---- */
   p('abstract final class Breakpoints {');
@@ -216,6 +246,7 @@ function buildDart() {
   p(`  static const double tapTargetMin = ${T.layout.tapTargetMin.toFixed(1)};`);
   p(`  static const double bottomBarHeight = ${T.layout.bottomBarHeight.toFixed(1)};`);
   p(`  static const double topBarHeight = ${T.layout.topBarHeight.toFixed(1)};`);
+  p(`  static const double callPillHeight = ${T.layout.callPillHeight.toFixed(1)};`);
   p('  /// Masonry column count for a given viewport width. Mobile and web');
   p('  /// resolve this identically so a shared link looks like the same product.');
   p('  static int masonryColumns(double width) {');
@@ -313,6 +344,20 @@ function buildCss() {
   p('  /* motion */');
   for (const [k, v] of Object.entries(T.motion.duration)) p(`  --k-dur-${kebab(k)}: ${v}ms;`);
   for (const [k, v] of Object.entries(T.motion.curve)) p(`  --k-ease-${kebab(k)}: cubic-bezier(${v.join(', ')});`);
+  p('  /* dwell + timeout: self-dismiss and network budgets, not animation */');
+  for (const [k, v] of Object.entries(T.motion.dwell)) {
+    if (k === 'note') continue;
+    p(`  --k-dwell-${kebab(k)}: ${v}ms;`);
+  }
+  for (const [k, v] of Object.entries(T.motion.timeout)) {
+    if (k === 'note') continue;
+    p(`  --k-timeout-${kebab(k)}: ${v}ms;`);
+  }
+  p('  /* drag thresholds: unitless — px, px/s and fractions, per token name */');
+  for (const [k, v] of Object.entries(T.motion.drag)) {
+    if (k === 'note') continue;
+    p(`  --k-drag-${kebab(k)}: ${v};`);
+  }
   p('  /* layout */');
   p(`  --k-masonry-gutter: ${T.layout.masonryGutter}px;`);
   p(`  --k-content-max: ${T.layout.contentMaxWidth}px;`);
@@ -320,6 +365,7 @@ function buildCss() {
   p(`  --k-tap-min: ${T.layout.tapTargetMin}px;`);
   p(`  --k-bottombar-h: ${T.layout.bottomBarHeight}px;`);
   p(`  --k-topbar-h: ${T.layout.topBarHeight}px;`);
+  p(`  --k-callpill-h: ${T.layout.callPillHeight}px;`);
   p('  /* opacity + blur */');
   for (const [k, v] of Object.entries(T.opacity)) p(`  --k-opacity-${kebab(k)}: ${v};`);
   for (const [k, v] of Object.entries(T.blur)) p(`  --k-blur-${kebab(k)}: ${v}px;`);
@@ -363,6 +409,15 @@ function buildTs() {
   L.push(`export const spring = ${JSON.stringify(T.motion.spring, null, 2)} as const;`);
   L.push('');
   L.push(`export const stagger = ${JSON.stringify(T.motion.stagger, null, 2)} as const;`);
+  L.push('');
+  L.push('/** Self-dismiss periods in ms. Not animation — the 480ms cap does not apply. */');
+  L.push(`export const dwell = ${JSON.stringify(T.motion.dwell, null, 2)} as const;`);
+  L.push('');
+  L.push('/** Finger-driven commit thresholds: px, px/s and fractions of the dragged extent. */');
+  L.push(`export const drag = ${JSON.stringify(T.motion.drag, null, 2)} as const;`);
+  L.push('');
+  L.push('/** Async placeholder budgets in ms. */');
+  L.push(`export const timeout = ${JSON.stringify(T.motion.timeout, null, 2)} as const;`);
   L.push('');
   const layout = { ...T.layout };
   delete layout.note;

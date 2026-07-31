@@ -23,16 +23,32 @@ abstract final class KReportSheet {
     required EntityType type,
     required String entityId,
     String? subjectLabel,
-  }) =>
-      _show(context, type: type, entityId: entityId, subjectLabel: subjectLabel);
+  }) => _show(
+    context,
+    type: type,
+    entityId: entityId,
+    subjectLabel: subjectLabel,
+  );
 
   /// Opens the reason picker for a person.
   static Future<void> showForUser(
     BuildContext context, {
     required String userId,
     String? subjectLabel,
-  }) =>
-      _show(context, userId: userId, subjectLabel: subjectLabel);
+  }) => _show(context, userId: userId, subjectLabel: subjectLabel);
+
+  /// Opens the reason picker for a group conversation.
+  static Future<void> showForGroup(
+    BuildContext context, {
+    required String conversationId,
+    required String reportedUserId,
+    String? subjectLabel,
+  }) => _show(
+    context,
+    userId: reportedUserId,
+    subjectLabel: subjectLabel,
+    detailsPrefix: 'Group conversation: $conversationId',
+  );
 
   static Future<void> _show(
     BuildContext context, {
@@ -40,24 +56,31 @@ abstract final class KReportSheet {
     String? entityId,
     String? userId,
     String? subjectLabel,
-  }) =>
-      KSheet.show<void>(
-        context: context,
-        title: subjectLabel == null ? 'Report' : 'Report $subjectLabel',
-        builder: (sheetContext) => _KReportBody(
-          type: type,
-          entityId: entityId,
-          userId: userId,
-        ),
-      );
+    String? detailsPrefix,
+  }) => KSheet.show<void>(
+    context: context,
+    title: subjectLabel == null ? 'Report' : 'Report $subjectLabel',
+    builder: (sheetContext) => _KReportBody(
+      type: type,
+      entityId: entityId,
+      userId: userId,
+      detailsPrefix: detailsPrefix,
+    ),
+  );
 }
 
 class _KReportBody extends ConsumerStatefulWidget {
-  const _KReportBody({this.type, this.entityId, this.userId});
+  const _KReportBody({
+    this.type,
+    this.entityId,
+    this.userId,
+    this.detailsPrefix,
+  });
 
   final EntityType? type;
   final String? entityId;
   final String? userId;
+  final String? detailsPrefix;
 
   @override
   ConsumerState<_KReportBody> createState() => _KReportBodyState();
@@ -83,12 +106,19 @@ class _KReportBodyState extends ConsumerState<_KReportBody> {
       _error = null;
     });
     try {
-      final result = await ref.read(klectApiProvider).submitReport(
+      final enteredDetails = _details.text.trim();
+      final details = <String>[
+        ?widget.detailsPrefix,
+        if (enteredDetails.isNotEmpty) enteredDetails,
+      ].join('\n');
+      final result = await ref
+          .read(klectApiProvider)
+          .submitReport(
             reason: reason,
             type: widget.type,
             entityId: widget.entityId,
             userId: widget.userId,
-            details: _details.text.trim().isEmpty ? null : _details.text.trim(),
+            details: details.isEmpty ? null : details,
           );
       if (!mounted) return;
       Navigator.of(context).pop();

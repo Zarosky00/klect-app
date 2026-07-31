@@ -83,6 +83,13 @@ klect/
 6. **Design tokens change → run `node packages/tokens/build.mjs`** and commit the regenerated Dart + CSS together.
 7. **Before you finish: update `docs/PROJECT_STATE.md`** — the Status Board table, the Session Log, and Next Actions.
 
+## Rules specific to Kiro
+
+These apply in addition to everything above, specifically when the agent is Kiro:
+
+1. **Never delete anything without asking first.** This covers files, directories, database tables/rows, migrations, Supabase projects/branches, git branches/tags, GitHub repos, and Vercel projects/deployments. Always state what will be deleted and wait for explicit confirmation before running the delete.
+2. This applies regardless of how reversible the action seems (e.g. files recoverable via git) — ask first, every time.
+
 ## Supabase target
 
 | | |

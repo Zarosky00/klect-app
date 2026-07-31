@@ -48,17 +48,17 @@ abstract final class CallPermissions {
       title: needsCamera ? 'Camera and microphone' : 'Microphone access',
       message: outgoing
           ? (needsCamera
-              ? 'KLECT needs your camera and microphone to place a video call. '
-                  'Nothing is recorded — the stream goes straight to the '
-                  'person you are calling.'
-              : 'KLECT needs your microphone to place a call. Nothing is '
-                  'recorded — the audio goes straight to the person you are '
-                  'calling.')
+                ? 'KLECT needs your camera and microphone to place a video call. '
+                      'Nothing is recorded — the stream goes straight to the '
+                      'person you are calling.'
+                : 'KLECT needs your microphone to place a call. Nothing is '
+                      'recorded — the audio goes straight to the person you are '
+                      'calling.')
           : (needsCamera
-              ? 'To answer with video, KLECT needs your camera and '
-                  'microphone. Nothing is recorded.'
-              : 'To answer, KLECT needs your microphone. Nothing is '
-                  'recorded.'),
+                ? 'To answer with video, KLECT needs your camera and '
+                      'microphone. Nothing is recorded.'
+                : 'To answer, KLECT needs your microphone. Nothing is '
+                      'recorded.'),
       confirmLabel: 'Continue',
       cancelLabel: 'Not now',
     );
@@ -73,25 +73,13 @@ abstract final class CallPermissions {
     final permanentlyDenied = statuses.values.any(
       (status) => status.isPermanentlyDenied || status.isRestricted,
     );
-    final allGranted =
-        statuses.values.every((status) => status.isGranted || status.isLimited);
+    final allGranted = statuses.values.every(
+      (status) => status.isGranted || status.isLimited,
+    );
 
     if (allGranted) return CallPermissionResult.granted;
 
-    if (permanentlyDenied && context.mounted) {
-      final open = await KConfirmDialog.show(
-        context,
-        title: 'Permission is off',
-        message: needsCamera
-            ? 'Camera or microphone access is turned off for KLECT. Turn it '
-                'back on in Settings to make calls.'
-            : 'Microphone access is turned off for KLECT. Turn it back on in '
-                'Settings to make calls.',
-        confirmLabel: 'Open settings',
-      );
-      if (open) await openAppSettings();
-      return CallPermissionResult.permanentlyDenied;
-    }
+    if (permanentlyDenied) return CallPermissionResult.permanentlyDenied;
 
     return CallPermissionResult.denied;
   }
@@ -101,4 +89,7 @@ abstract final class CallPermissions {
     if (needsCamera && !await Permission.camera.isGranted) return false;
     return true;
   }
+
+  /// Opens the platform settings page from the thread's single recovery action.
+  static Future<bool> openSettings() => openAppSettings();
 }

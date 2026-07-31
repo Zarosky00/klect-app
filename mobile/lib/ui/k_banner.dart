@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,141 @@ import 'k_avatar.dart';
 import 'k_blurhash_image.dart';
 import 'k_pressable.dart';
 
+/// One action offered inside a [NotificationBannerData] — follow back, accept a
+/// call, decline a call.
+///
+/// [onActivate] owns the work; the banner leaves once it completes, showing
+/// [confirmedLabel] in place of [label] first where one is supplied. A failure
+/// keeps the banner up and restarts its dwell period, so the user can retry.
+@immutable
+class NotificationBannerAction {
+  /// Creates an action.
+  const NotificationBannerAction({
+    required this.label,
+    required this.semanticLabel,
+    required this.onActivate,
+    this.confirmedLabel,
+  });
+
+  /// Rendered copy — "Follow back", "Accept", "Decline".
+  final String label;
+
+  /// What a screen reader announces.
+  final String semanticLabel;
+
+  /// The work. The banner leaves when it completes.
+  final Future<void> Function() onActivate;
+
+  /// Replaces [label] once [onActivate] succeeds — "Following".
+  final String? confirmedLabel;
+}
+
+/// Everything the banner needs, resolved *before* the overlay is inserted.
+///
+/// Replaces the loose parameter list the old `KBanner.show` carried: the
+/// presenter does the resolving (actor, copy, glyph, thumbnail) and the banner
+/// does nothing but render and animate, so nothing inside the overlay can go
+/// looking for data mid-flight.
+@immutable
+class NotificationBannerData {
+  /// Creates a view model.
+  const NotificationBannerData({
+    required this.notificationId,
+    required this.title,
+    required this.message,
+    required this.glyph,
+    required this.glyphTint,
+    this.avatarUrl,
+    this.avatarLabel,
+    this.thumbUrl,
+    this.thumbBlurhash,
+    this.actions = const <NotificationBannerAction>[],
+    this.onTap,
+  });
+
+  /// The `notifications` row id, used by the presenter for dedupe.
+  final String notificationId;
+
+  /// One line, ellipsised beyond it.
+  final String title;
+
+  /// At most two lines, ellipsised beyond them.
+  final String message;
+
+  /// The category glyph badged onto the avatar.
+  final IconData glyph;
+
+  /// The category's action colour, or the accent fallback.
+  final Color glyphTint;
+
+  /// Absolute avatar URL; absent or unloadable falls back to [avatarLabel].
+  final String? avatarUrl;
+
+  /// Actor label the initials placeholder is built from.
+  final String? avatarLabel;
+
+  /// Square entity thumbnail.
+  final String? thumbUrl;
+
+  /// Blurhash rendered until [thumbUrl] decodes.
+  final String? thumbBlurhash;
+
+  /// Follow-back / accept / decline, rendered under the message line.
+  final List<NotificationBannerAction> actions;
+
+  /// Deep-links to the thing the notification is about.
+  final VoidCallback? onTap;
+
+  /// True where a thumbnail area should be reserved at all.
+  bool get hasThumb => thumbUrl != null || thumbBlurhash != null;
+}
+
+/// Rendered card width for an [availableWidth], derived rather than assumed.
+///
+/// The card is clamped to [Layout.readableMaxWidth] and falls back to the
+/// available width minus a [Space.s3] gutter on each side below that
+/// (Requirement 1.9). Never negative, however narrow the viewport gets.
+double notificationBannerCardWidth(double availableWidth) {
+  const gutters = Space.s3 * 2;
+  final fitted = math.min(Layout.readableMaxWidth, availableWidth - gutters);
+  return fitted < 0 ? 0 : fitted;
+}
+
+/// Where the card sits, measured from the top of the overlay.
+///
+/// Below the status-bar/notch inset by one [Space.s2] (Requirement 1.9).
+double notificationBannerTopOffset(double statusBarInset) =>
+    statusBarInset + Space.s2;
+
+/// The finger-driven translation for a run of vertical drag [deltas].
+///
+/// A 1:1 follow clamped to `[-Drags.bannerLimit, 0]`: the banner never travels
+/// further up than the token drag limit and never below its rest position
+/// (Requirement 2.2).
+double notificationBannerDragTranslation(Iterable<double> deltas) {
+  var offset = 0.0;
+  for (final delta in deltas) {
+    offset = (offset + delta).clamp(-Drags.bannerLimit, 0.0);
+  }
+  return offset;
+}
+
+/// Whether a released drag commits to a dismissal.
+///
+/// True on an upward release velocity of at least [Drags.flingVelocityMin] or
+/// an upward translation of at least [Drags.commitFraction] of the *measured*
+/// [cardHeight]; false otherwise, in which case the banner returns to rest and
+/// restarts its dwell from full (Requirements 2.3, 2.4).
+bool notificationBannerDragCommits({
+  required double translation,
+  required double velocity,
+  required double cardHeight,
+}) {
+  if (velocity <= -Drags.flingVelocityMin) return true;
+  if (cardHeight <= 0) return false;
+  return -translation >= cardHeight * Drags.commitFraction;
+}
+
 /// A transient top-edge banner for things that happen *while you are looking
 /// elsewhere* — a like landing, a message arriving.
 ///
@@ -17,112 +153,84 @@ import 'k_pressable.dart';
 /// layout) but anchored to the top edge under the status bar, dressed as
 /// floating glass chrome: avatar + verb + entity thumb. Tap deep-links to the
 /// thing itself; swipe up or the ✕ dismisses; otherwise it leaves by itself
-/// after [dwell].
-abstract final class KBanner {
-  /// How long the banner stays. Dwell time, not motion — deliberately not a
-  /// motion token.
-  static const Duration dwell = Duration(seconds: 5);
-
+/// after [Dwell.banner].
+///
+/// Exactly one entry is ever mounted. A notification arriving while an entry is
+/// up — including while it is animating in or out — is *dropped*, never queued:
+/// the Alert Center already has it (Requirements 2.8, 2.9).
+abstract final class KNotificationBanner {
   static OverlayEntry? _current;
-  static Timer? _timer;
-  static final GlobalKey<_KBannerHostState> _hostKey =
-      GlobalKey<_KBannerHostState>();
+  static final GlobalKey<_KNotificationBannerHostState> _hostKey =
+      GlobalKey<_KNotificationBannerHostState>();
 
-  /// Shows a banner. Replaces any banner already on screen.
-  static void show(
-    BuildContext context, {
-    required String title,
-    required String message,
-    String? avatarUrl,
-    String? avatarName,
-    IconData? icon,
-    Color? iconTint,
-    String? thumbUrl,
-    String? thumbBlurhash,
-    VoidCallback? onTap,
-    Duration duration = dwell,
-  }) {
+  /// True while an entry is mounted, enter or exit animation included.
+  static bool get isMounted => _current != null;
+
+  /// Shows [data].
+  ///
+  /// Returns false — and renders nothing — when an entry is already mounted or
+  /// an exit animation is still in flight, or when no root overlay is reachable
+  /// from [context].
+  static bool show(BuildContext context, NotificationBannerData data) {
+    if (_current != null) return false;
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
-
-    _removeNow();
+    if (overlay == null) return false;
 
     final entry = OverlayEntry(
-      builder: (overlayContext) => _KBannerHost(
+      builder: (_) => _KNotificationBannerHost(
         key: _hostKey,
-        title: title,
-        message: message,
-        avatarUrl: avatarUrl,
-        avatarName: avatarName,
-        icon: icon,
-        iconTint: iconTint,
-        thumbUrl: thumbUrl,
-        thumbBlurhash: thumbBlurhash,
-        onTap: onTap == null
-            ? null
-            : () {
-                onTap();
-                _removeNow();
-              },
+        data: data,
         onDismiss: dismiss,
       ),
     );
     _current = entry;
     overlay.insert(entry);
-    _timer = Timer(duration, dismiss);
+    return true;
   }
 
-  /// Animates the current banner out, if any.
+  /// Animates the current banner out, if any, then removes the entry.
   static void dismiss() {
-    _timer?.cancel();
-    _timer = null;
     final host = _hostKey.currentState;
     if (host == null) {
       _removeNow();
       return;
     }
+    // A second dismiss while the exit is running would remove the entry
+    // mid-animation; the in-flight leave already owns the removal.
+    if (host._leaving) return;
     unawaited(host._leave().then((_) => _removeNow()));
   }
 
   static void _removeNow() {
-    _timer?.cancel();
-    _timer = null;
     _current?.remove();
+    _current = null;
+  }
+
+  /// Test-only: forgets the tracked entry so one test's overlay cannot leak
+  /// into the next.
+  @visibleForTesting
+  static void debugClear() {
+    if (_current?.mounted ?? false) _current!.remove();
     _current = null;
   }
 }
 
-class _KBannerHost extends StatefulWidget {
-  const _KBannerHost({
-    required this.title,
-    required this.message,
-    required this.avatarUrl,
-    required this.avatarName,
-    required this.icon,
-    required this.iconTint,
-    required this.thumbUrl,
-    required this.thumbBlurhash,
-    required this.onTap,
+class _KNotificationBannerHost extends StatefulWidget {
+  const _KNotificationBannerHost({
+    required this.data,
     required this.onDismiss,
     super.key,
   });
 
-  final String title;
-  final String message;
-  final String? avatarUrl;
-  final String? avatarName;
-  final IconData? icon;
-  final Color? iconTint;
-  final String? thumbUrl;
-  final String? thumbBlurhash;
-  final VoidCallback? onTap;
+  final NotificationBannerData data;
   final VoidCallback onDismiss;
 
   @override
-  State<_KBannerHost> createState() => _KBannerHostState();
+  State<_KNotificationBannerHost> createState() =>
+      _KNotificationBannerHostState();
 }
 
-class _KBannerHostState extends State<_KBannerHost>
+class _KNotificationBannerHostState extends State<_KNotificationBannerHost>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
@@ -130,26 +238,69 @@ class _KBannerHostState extends State<_KBannerHost>
     reverseDuration: KDurations.fast,
   );
 
+  /// Measures the rendered card, so the 40 % commit threshold is taken from
+  /// what is on screen rather than from a guessed height.
+  final GlobalKey _cardKey = GlobalKey();
+
   /// Finger-driven vertical offset while dragging; only ever ≤ 0.
   double _dragOffset = 0;
+  bool _dragging = false;
   bool _leaving = false;
+  bool _entered = false;
+  Timer? _dwellTimer;
+  int? _busyAction;
+  final Set<int> _confirmed = <int>{};
 
   @override
-  void initState() {
-    super.initState();
-    _controller.forward();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reduced motion removes the travel, not the confirmation: both directions
+    // collapse to a 90ms opacity fade (Requirement 2.7).
+    final reduced = KMotion.reduced(context);
+    _controller
+      ..duration = reduced ? KDurations.instant : KDurations.medium
+      ..reverseDuration = reduced ? KDurations.instant : KDurations.fast;
+    if (!_entered) {
+      _entered = true;
+      unawaited(_enter());
+    }
   }
 
   @override
   void dispose() {
+    _dwellTimer?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  /// Enters, then starts the dwell — the 5 s is measured from the moment the
+  /// banner is fully on screen (Requirement 2.5).
+  Future<void> _enter() async {
+    try {
+      await _controller.forward();
+    } on TickerCanceled {
+      return;
+    }
+    if (!mounted) return;
+    _restartDwell();
+  }
+
+  void _restartDwell() {
+    _dwellTimer?.cancel();
+    if (_leaving) return;
+    _dwellTimer = Timer(Dwell.banner, widget.onDismiss);
+  }
+
+  void _suspendDwell() {
+    _dwellTimer?.cancel();
+    _dwellTimer = null;
   }
 
   /// Runs the exit motion; the caller removes the entry afterwards.
   Future<void> _leave() async {
     if (_leaving) return;
     _leaving = true;
+    _suspendDwell();
     try {
       await _controller.reverse();
     } on TickerCanceled {
@@ -157,30 +308,130 @@ class _KBannerHostState extends State<_KBannerHost>
     }
   }
 
+  double get _cardHeight {
+    final size = _cardKey.currentContext?.size;
+    return size?.height ?? 0;
+  }
+
+  void _onDragStart(DragStartDetails details) {
+    if (_leaving) return;
+    // The dwell is suspended for the whole drag (Requirement 2.2).
+    _suspendDwell();
+    setState(() => _dragging = true);
+  }
+
   void _onDragUpdate(DragUpdateDetails details) {
+    if (_leaving) return;
     setState(() {
-      _dragOffset = (_dragOffset + details.delta.dy).clamp(-96.0, 0.0);
+      _dragOffset = notificationBannerDragTranslation(
+        <double>[_dragOffset, details.delta.dy],
+      );
     });
   }
 
   void _onDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    if (velocity < -200 || _dragOffset < -Space.s6) {
+    if (_leaving) return;
+    final commits = notificationBannerDragCommits(
+      translation: _dragOffset,
+      velocity: details.primaryVelocity ?? 0,
+      cardHeight: _cardHeight,
+    );
+    if (commits) {
+      setState(() => _dragging = false);
       widget.onDismiss();
-    } else {
-      setState(() => _dragOffset = 0);
+      return;
     }
+    setState(() {
+      _dragging = false;
+      _dragOffset = 0;
+    });
+    // Returning to rest earns a full dwell again (Requirement 2.4).
+    _restartDwell();
   }
+
+  void _onTap() {
+    // One activation, one effect: a card tap while an action is in flight would
+    // navigate on top of the work the action is doing.
+    if (_leaving || _busyAction != null) return;
+    final onTap = widget.data.onTap;
+    if (onTap == null) return;
+    triggerInteractionTapFeedback(context);
+    onTap();
+    widget.onDismiss();
+  }
+
+  Future<void> _activate(int index, NotificationBannerAction action) async {
+    if (_leaving || _busyAction != null) return;
+    _suspendDwell();
+    setState(() => _busyAction = index);
+    try {
+      await action.onActivate();
+    } on Object {
+      // Keep the banner up so the action can be retried.
+      if (!mounted) return;
+      setState(() => _busyAction = null);
+      _restartDwell();
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _busyAction = null;
+      if (action.confirmedLabel != null) _confirmed.add(index);
+    });
+    widget.onDismiss();
+  }
+
+  /// Splits digit runs onto the tabular-figure style so a count never changes
+  /// glyph width as it changes value (Requirement 1.7).
+  List<InlineSpan> _tabularSpans(String text, TextStyle base) {
+    final tabular = base.copyWith(
+      fontFeatures: context.kt.count.fontFeatures,
+    );
+    final spans = <InlineSpan>[];
+    final buffer = StringBuffer();
+    var bufferIsDigits = false;
+    void flush() {
+      if (buffer.isEmpty) return;
+      spans.add(
+        TextSpan(
+          text: buffer.toString(),
+          style: bufferIsDigits ? tabular : base,
+        ),
+      );
+      buffer.clear();
+    }
+
+    for (final rune in text.characters) {
+      final isDigit = rune.length == 1 &&
+          rune.codeUnitAt(0) >= 0x30 &&
+          rune.codeUnitAt(0) <= 0x39;
+      if (isDigit != bufferIsDigits) {
+        flush();
+        bufferIsDigits = isDigit;
+      }
+      buffer.write(rune);
+    }
+    flush();
+    return spans;
+  }
+
+  Widget _line(String text, TextStyle style, int maxLines) => Text.rich(
+        TextSpan(children: _tabularSpans(text, style)),
+        style: style,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      );
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
+    final data = widget.data;
     final reduced = KMotion.reduced(context);
 
     final curved = CurvedAnimation(
       parent: _controller,
       curve: reduced ? Curves_.linear : Curves_.emphasized,
-      reverseCurve: Curves_.accelerate,
+      reverseCurve: reduced ? Curves_.linear : Curves_.accelerate,
     );
 
     final card = ClipRRect(
@@ -203,82 +454,93 @@ class _KBannerHostState extends State<_KBannerHost>
             ),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
+              // 1 — actor avatar, category glyph badged on it.
               Stack(
                 clipBehavior: Clip.none,
                 children: <Widget>[
                   KAvatar(
-                    imageUrl: widget.avatarUrl,
-                    name: widget.avatarName ?? widget.title,
+                    imageUrl: data.avatarUrl,
+                    name: data.avatarLabel ?? data.title,
                     size: Space.s10,
                   ),
-                  if (widget.icon != null)
-                    Positioned(
-                      right: -Space.s1,
-                      bottom: -Space.s1,
-                      child: Container(
-                        padding: const EdgeInsets.all(Space.s05),
-                        decoration: BoxDecoration(
-                          color: colors.surface3,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          widget.icon,
-                          size: Space.s3,
-                          color: widget.iconTint ?? colors.textSecondary,
-                        ),
+                  Positioned(
+                    right: -Space.s1,
+                    bottom: -Space.s1,
+                    child: Container(
+                      padding: const EdgeInsets.all(Space.s05),
+                      decoration: BoxDecoration(
+                        color: colors.surface3,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        data.glyph,
+                        size: Space.s3,
+                        color: data.glyphTint,
                       ),
                     ),
+                  ),
                 ],
               ),
               const SizedBox(width: Space.s3),
+              // 2 — title, message, actions.
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      widget.title,
-                      style: context.kt.bodyStrong,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    _line(data.title, context.kt.bodyStrong, 1),
                     const SizedBox(height: Space.s05),
-                    Text(
-                      widget.message,
-                      style: context.kt.callout.copyWith(
+                    _line(
+                      data.message,
+                      context.kt.callout.copyWith(
                         color: colors.textSecondary,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      2,
                     ),
+                    if (data.actions.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: Space.s2),
+                      Wrap(
+                        spacing: Space.s2,
+                        runSpacing: Space.s1,
+                        children: <Widget>[
+                          for (final (index, action)
+                              in data.actions.indexed)
+                            _BannerActionButton(
+                              action: action,
+                              confirmed: _confirmed.contains(index),
+                              enabled: !_leaving && _busyAction == null,
+                              onActivate: () =>
+                                  unawaited(_activate(index, action)),
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
-              if (widget.thumbUrl != null ||
-                  widget.thumbBlurhash != null) ...<Widget>[
+              // 3 — optional square entity thumb.
+              if (data.hasThumb) ...<Widget>[
                 const SizedBox(width: Space.s3),
                 SizedBox(
                   width: Space.s10,
                   height: Space.s10,
                   child: KBlurhashImage(
-                    url: widget.thumbUrl,
-                    blurhash: widget.thumbBlurhash,
+                    url: data.thumbUrl,
+                    blurhash: data.thumbBlurhash,
                     borderRadius: BorderRadius.circular(Radii.sm),
                   ),
                 ),
               ],
+              // 4 — dismiss.
               const SizedBox(width: Space.s1),
               KPressable(
-                enforceMinTapTarget: false,
                 semanticLabel: 'Dismiss',
-                onTap: widget.onDismiss,
-                child: Padding(
-                  padding: const EdgeInsets.all(Space.s2),
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: Space.s4,
-                    color: colors.textTertiary,
-                  ),
+                onTap: _leaving ? null : widget.onDismiss,
+                child: Icon(
+                  Icons.close_rounded,
+                  size: Space.s4,
+                  color: colors.textTertiary,
                 ),
               ),
             ],
@@ -289,15 +551,12 @@ class _KBannerHostState extends State<_KBannerHost>
 
     final interactive = GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: widget.onTap == null
-          ? null
-          : () {
-              triggerInteractionTapFeedback(context);
-              widget.onTap!();
-            },
+      onTap: data.onTap == null ? null : _onTap,
+      onVerticalDragStart: _onDragStart,
       onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
       child: DecoratedBox(
+        key: _cardKey,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(Radii.lg),
           boxShadow: KlectTheme.shadow(Elevation.mid),
@@ -306,35 +565,86 @@ class _KBannerHostState extends State<_KBannerHost>
       ),
     );
 
+    final animated = FadeTransition(
+      opacity: curved,
+      child: reduced
+          ? interactive
+          : SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, -1),
+                end: Offset.zero,
+              ).animate(curved),
+              child: interactive,
+            ),
+    );
+
     return Positioned(
       // Under the status bar / notch, riding the top edge.
-      top: MediaQuery.viewPaddingOf(context).top + Space.s2,
-      left: Space.s3,
-      right: Space.s3,
+      top: notificationBannerTopOffset(MediaQuery.viewPaddingOf(context).top),
+      left: 0,
+      right: 0,
       child: Semantics(
         liveRegion: true,
-        label: '${widget.title} ${widget.message}',
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: Layout.readableMaxWidth,
-            ),
-            child: Transform.translate(
-              offset: Offset(0, _dragOffset),
-              child: FadeTransition(
-                opacity: curved,
-                child: reduced
-                    ? interactive
-                    : SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, -0.6),
-                          end: Offset.zero,
-                        ).animate(curved),
-                        child: interactive,
-                      ),
+        label: '${data.title} ${data.message}',
+        child: LayoutBuilder(
+          builder: (context, constraints) => Center(
+            child: SizedBox(
+              width: notificationBannerCardWidth(constraints.maxWidth),
+              // Zero while the finger is down so the follow is exactly 1:1;
+              // a settle back to rest once it lifts (Requirement 2.4).
+              child: AnimatedContainer(
+                duration: _dragging
+                    ? Duration.zero
+                    : KMotion.duration(context, KDurations.base),
+                curve: Curves_.emphasized,
+                transform: Matrix4.translationValues(0, _dragOffset, 0),
+                child: animated,
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BannerActionButton extends StatelessWidget {
+  const _BannerActionButton({
+    required this.action,
+    required this.confirmed,
+    required this.enabled,
+    required this.onActivate,
+  });
+
+  final NotificationBannerAction action;
+  final bool confirmed;
+  final bool enabled;
+  final VoidCallback onActivate;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final label = confirmed ? (action.confirmedLabel ?? action.label) : action.label;
+    return KPressable(
+      semanticLabel: action.semanticLabel,
+      enabled: enabled && !confirmed,
+      onTap: onActivate,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.s3,
+          vertical: Space.s1,
+        ),
+        decoration: BoxDecoration(
+          color: confirmed ? colors.surface3 : colors.accentDefault,
+          borderRadius: BorderRadius.circular(Radii.full),
+        ),
+        child: Text(
+          label,
+          style: context.kt.micro.copyWith(
+            color: confirmed ? colors.textSecondary : colors.textOnAccent,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ),
     );

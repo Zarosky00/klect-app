@@ -190,8 +190,23 @@ class ChatMessage {
   DateTime get createdAt =>
       message.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
 
-  /// Soft-deleted messages are removed from the thread rather than tombstoned.
+  /// Whether the row carries a `deleted_at` stamp.
   bool get isDeleted => message.deletedAt != null;
+
+  /// Whether the thread renders a tombstone in place of this bubble.
+  ///
+  /// Deleted-for-everyone messages stay in the thread — same id, same position,
+  /// same timestamp — with an empty body and no attachments, so the read path
+  /// no longer filters them out and this getter is what the bubble branches on
+  /// (11.2, 11.3, 11.13).
+  bool get isTombstone => message.isTombstone;
+
+  /// Whether the viewer hid this message for themselves.
+  ///
+  /// Client-only state, stamped from the viewer's own `message_hides` rows.
+  /// A hidden message stays hidden rather than becoming a tombstone when its
+  /// author later deletes it for everyone (12.6).
+  bool get hiddenForMe => message.hiddenForMe;
 
   /// Whether the sender edited it after the fact.
   bool get isEdited => message.editedAt != null;
@@ -229,14 +244,20 @@ class ChatMessage {
       reactions.any((r) => r.emoji == emoji && r.userId == viewerId);
 
   /// Copy with overrides.
+  ///
+  /// [hiddenForMe] is applied to the wrapped row, so stamping the viewer's
+  /// hidden set onto a page never needs to reach through to [MessageModel].
   ChatMessage copyWith({
     MessageModel? message,
     List<MessageReaction>? reactions,
     MessageModel? replyTo,
     bool? pending,
     bool? failed,
+    bool? hiddenForMe,
   }) => ChatMessage(
-    message: message ?? this.message,
+    message: hiddenForMe == null
+        ? (message ?? this.message)
+        : (message ?? this.message).copyWith(hiddenForMe: hiddenForMe),
     reactions: reactions ?? this.reactions,
     replyTo: replyTo ?? this.replyTo,
     pending: pending ?? this.pending,

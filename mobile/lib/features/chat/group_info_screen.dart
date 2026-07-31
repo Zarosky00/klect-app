@@ -23,7 +23,81 @@ import 'widgets/group_avatar_editor.dart';
 import 'widgets/member_picker.dart';
 
 /// The hard ceiling on active rows: the owner plus 64 members.
-const int _maxActiveMembers = 65;
+///
+/// This is the server's number — `add_group_members` counts active rows and
+/// raises `group_full` past 65 — so add-member capacity is this minus the
+/// active member count and never more. The member *list* renders any group
+/// size the server can hold (13.2, 13.4); it is only the add affordance that
+/// is bounded, because offering an add the RPC would refuse is a bug.
+const int _maxActiveMembers = 256;
+
+/// Which role changes one viewer may offer for one target member.
+///
+/// This mirrors `set_group_member_role` in
+/// `20260728120000_notifications_calls_messages_overhaul.sql` clause for
+/// clause, so the sheet can never offer a change the RPC refuses (13.5, 13.6):
+///
+/// - `p_role = 'owner'` needs caller role `owner` → [canTransferOwnership].
+/// - `p_role in ('admin','member')` needs `is_conversation_admin` — the owner
+///   *or* an admin → [canPromoteToAdmin] and [canDemoteToMember].
+/// - a target whose role is `owner` raises `not_owner` → every flag is false.
+@immutable
+class GroupRoleAffordances {
+  /// Resolves the affordances for one (viewer, target) pair.
+  ///
+  /// [viewerRole] is null when the viewer holds no active membership row, which
+  /// the RPC refuses with `not_member`; that yields no affordances at all.
+  const GroupRoleAffordances({
+    required this.viewerRole,
+    required this.targetRole,
+    required this.isSelf,
+  });
+
+  /// The viewer's `conversation_members.role`, or null when they are not in
+  /// the group.
+  final String? viewerRole;
+
+  /// The target member's `conversation_members.role`.
+  final String targetRole;
+
+  /// Whether the target row is the viewer's own.
+  final bool isSelf;
+
+  /// Any role the client does not recognise reads as `member` — the least
+  /// privileged of the three, and the same fallback `_MemberRow` badges with.
+  static String _rank(String? role) =>
+      role == 'owner' || role == 'admin' ? role! : 'member';
+
+  bool get _viewerIsOwner => viewerRole == 'owner';
+
+  bool get _viewerIsAdmin => _viewerIsOwner || viewerRole == 'admin';
+
+  /// The owner is never a target, and nobody manages their own row here —
+  /// stepping down is a transfer and leaving lives at the bottom of the screen.
+  bool get _targetIsManageable => !isSelf && _rank(targetRole) != 'owner';
+
+  /// Promotion of a `member` to `admin`, open to admins as well as the owner.
+  bool get canPromoteToAdmin =>
+      _viewerIsAdmin && _targetIsManageable && _rank(targetRole) == 'member';
+
+  /// Demotion of an `admin` to `member`, open to admins as well as the owner.
+  bool get canDemoteToMember =>
+      _viewerIsAdmin && _targetIsManageable && _rank(targetRole) == 'admin';
+
+  /// Ownership transfer stays owner-only.
+  bool get canTransferOwnership => _viewerIsOwner && _targetIsManageable;
+
+  /// Removal follows `remove_group_member`: admin or owner, never the owner.
+  bool get canRemove => _viewerIsAdmin && _targetIsManageable;
+
+  /// Whether any management action is available, and therefore whether the
+  /// member row should carry a manage affordance at all.
+  bool get any =>
+      canPromoteToAdmin ||
+      canDemoteToMember ||
+      canTransferOwnership ||
+      canRemove;
+}
 
 /// A group's home: title, description, and the member list with roles.
 ///
@@ -57,12 +131,12 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   /// both live there), and reports the outcome as a toast.
   Future<bool> _run(Future<void> Function() action, {String? success}) async {
     try {
-      await action();
-    } on KlectError catch (error) {
-      if (mounted) KToast.error(context, groupErrorCopy(error));
+      await action().timeout(const Duration(seconds: 10));
+      await _thread.refresh().timeout(const Duration(seconds: 2));
+    } on Object catch (error) {
+      if (mounted) KToast.error(context, chatErrorCopy(error));
       return false;
     }
-    await _thread.refresh();
     if (mounted && success != null) KToast.success(context, success);
     return true;
   }
@@ -137,12 +211,22 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
-  Future<void> _addMembers(List<ConversationMember> active) async {
-    final capacity = _maxActiveMembers - active.length;
+  /// Opens the picker with capacity set to the ceiling minus the active member
+  /// count, counting pending join requests because the server counts every row
+  /// whose `left_at` is null — a capacity that ignored them would offer an add
+  /// that `add_group_members` refuses with `group_full`.
+  Future<void> _addMembers(
+    List<ConversationMember> accepted,
+    List<ConversationMember> pending,
+  ) async {
+    final capacity = _maxActiveMembers - accepted.length - pending.length;
     final picked = await MemberPickerSheet.show(
       context,
       title: 'Add people',
-      excludeIds: <String>{for (final member in active) member.userId},
+      excludeIds: <String>{
+        for (final member in accepted) member.userId,
+        for (final member in pending) member.userId,
+      },
       maxSelectable: capacity < 0 ? 0 : capacity,
     );
     if (picked == null || picked.isEmpty || !mounted) return;
@@ -427,11 +511,13 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
   Future<void> _memberActions(
     ConversationMember member, {
-    required bool viewerIsOwner,
-    required bool viewerIsAdmin,
+    required GroupRoleAffordances affordances,
   }) async {
     final profile = member.profile;
-    if (profile == null) return;
+    // The row only carries a manage control when [GroupRoleAffordances.any] is
+    // true, so this guard is unreachable through the UI; it stands so that no
+    // future caller can open a sheet whose only content is "View profile".
+    if (profile == null || !affordances.any) return;
     await KSheet.show<void>(
       context: context,
       title: profile.name,
@@ -447,7 +533,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               context.push(KlectLinks.profilePath(profile.username));
             },
           ),
-          if (viewerIsOwner && member.role == 'member')
+          if (affordances.canPromoteToAdmin)
             _InfoRow(
               icon: Icons.shield_outlined,
               label: 'Make admin',
@@ -456,7 +542,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 unawaited(_setRole(member, 'admin'));
               },
             ),
-          if (viewerIsOwner && member.role == 'admin')
+          if (affordances.canDemoteToMember)
             _InfoRow(
               icon: Icons.remove_moderator_outlined,
               label: 'Remove as admin',
@@ -465,7 +551,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 unawaited(_setRole(member, 'member'));
               },
             ),
-          if (viewerIsOwner)
+          if (affordances.canTransferOwnership)
             _InfoRow(
               icon: Icons.swap_horiz_rounded,
               label: 'Transfer ownership',
@@ -474,7 +560,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 unawaited(_setRole(member, 'owner'));
               },
             ),
-          if (viewerIsAdmin && member.role != 'owner')
+          if (affordances.canRemove)
             _InfoRow(
               icon: Icons.person_remove_outlined,
               label: 'Remove from group',
@@ -497,13 +583,18 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final viewerId = ref.watch(currentUserIdProvider);
     final conversation = state.conversation;
 
+    // 13.1: the body is never blank. Until the conversation row is in hand the
+    // screen renders a loading indicator, and it keeps rendering one when the
+    // fetch resolved with neither a row nor an error — only a real failure
+    // trades the indicator for the retryable error state.
     if (conversation == null) {
+      final error = state.error;
       return KScaffold(
         appBar: const KFixedAppBar(title: 'Group info', showBack: true),
-        body: state.loading
+        body: error == null
             ? const KSkeletonList(rows: 6, showMedia: false)
             : KErrorState(
-                error: state.error,
+                error: error,
                 onRetry: () => unawaited(_thread.refresh()),
               ),
       );
@@ -527,9 +618,21 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       for (final member in state.members)
         if (member.isActive && member.requestState == 'pending') member,
     ]..sort(_byRoleThenTenure);
+    // Every row the server counts towards the ceiling, pending ones included.
+    final activeRows = accepted.length + pending.length;
     final viewer = _memberOf(accepted, viewerId);
+    String? groupOwnerId;
+    for (final member in accepted) {
+      if (member.role == 'owner') {
+        groupOwnerId = member.userId;
+        break;
+      }
+    }
+    groupOwnerId ??= conversation.createdBy;
+    // Ownership transfer, join approval, the three policy scopes and deletion
+    // stay owner-only (13.6); role management is resolved per row by
+    // [GroupRoleAffordances], which admits admins too (13.5).
     final viewerIsOwner = viewer?.role == 'owner';
-    final viewerIsAdmin = viewerIsOwner || viewer?.role == 'admin';
     final canEditInfo = conversation.groupPolicy.editInfo.allows(viewer?.role);
     final canAddMembers = conversation.groupPolicy.addMembers.allows(
       viewer?.role,
@@ -581,24 +684,42 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             style: context.kt.label.copyWith(color: context.kc.textSecondary),
           ),
           const SizedBox(height: Space.s1),
-          _InfoRow(
-            icon: Icons.notifications_outlined,
-            label: 'Notifications',
-            detail: switch (viewer?.notificationLevel) {
-              'mentions' => 'Mentions only',
-              'none' => 'Muted',
-              _ => 'All messages',
-            },
-            onTap: viewer == null
-                ? null
-                : () => unawaited(_notificationSettings(viewer)),
-          ),
+          // 13.8: an account holding no membership row has no notification
+          // level to set, so the row is absent rather than present and inert.
+          // An inert row still swallows the tap and still occupies a slot in
+          // the assistive-technology focus order, which reads as an affordance
+          // that is there but broken.
+          if (viewer case final viewerMember?)
+            _InfoRow(
+              icon: Icons.notifications_outlined,
+              label: 'Notifications',
+              detail: switch (viewerMember.notificationLevel) {
+                'mentions' => 'Mentions only',
+                'none' => 'Muted',
+                _ => 'All messages',
+              },
+              onTap: () => unawaited(_notificationSettings(viewerMember)),
+            ),
           _InfoRow(
             icon: Icons.photo_library_outlined,
             label: 'Shared media',
             detail: 'Photos from this conversation',
             onTap: () => _openSharedMedia(conversation),
           ),
+          if (groupOwnerId != null)
+            _InfoRow(
+              icon: Icons.flag_outlined,
+              label: 'Report group',
+              destructive: true,
+              onTap: () => unawaited(
+                KReportSheet.showForGroup(
+                  context,
+                  conversationId: conversation.id,
+                  reportedUserId: groupOwnerId!,
+                  subjectLabel: conversation.displayTitle,
+                ),
+              ),
+            ),
           if (canAddMembers)
             _InfoRow(
               icon: Icons.link_rounded,
@@ -659,8 +780,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           const SizedBox(height: Space.s6),
           _MembersHeader(
             count: accepted.length,
-            onAdd: canAddMembers && accepted.length < _maxActiveMembers
-                ? () => unawaited(_addMembers(accepted))
+            onAdd: canAddMembers && activeRows < _maxActiveMembers
+                ? () => unawaited(_addMembers(accepted, pending))
                 : null,
           ),
           if (accepted.length > 5) ...<Widget>[
@@ -677,21 +798,16 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             _MemberRow(
               member: member,
               isSelf: member.userId == viewerId,
-              // Only rows the viewer can actually act on get the sheet: the
-              // owner manages everyone else; admins manage everyone but the
-              // owner; nobody manages themselves (leaving lives below).
-              onActions:
-                  member.userId != viewerId &&
-                      (viewerIsOwner ||
-                          (viewerIsAdmin && member.role != 'owner'))
-                  ? () => unawaited(
-                      _memberActions(
-                        member,
-                        viewerIsOwner: viewerIsOwner,
-                        viewerIsAdmin: viewerIsAdmin,
-                      ),
-                    )
-                  : null,
+              // Only rows the viewer can actually act on get the sheet, and
+              // the same rule decides what the sheet contains — so no row can
+              // open onto an empty sheet or an action the RPC would refuse.
+              affordances: GroupRoleAffordances(
+                viewerRole: viewer?.role,
+                targetRole: member.role,
+                isSelf: member.userId == viewerId,
+              ),
+              onActions: (GroupRoleAffordances affordances) =>
+                  unawaited(_memberActions(member, affordances: affordances)),
             ),
           const SizedBox(height: Space.s6),
           Divider(height: Strokes.hairline, color: context.kc.borderSubtle),
@@ -903,6 +1019,10 @@ class _Header extends ConsumerWidget {
 
   final Conversation conversation;
   final int memberCount;
+
+  /// Non-null only for a viewer whose Member_Role satisfies the `edit_info`
+  /// scope. Null means the avatar renders as a plain image with no gesture
+  /// wrapper at all (13.8).
   final VoidCallback? onAvatarTap;
 
   @override
@@ -912,21 +1032,26 @@ class _Header extends ConsumerWidget {
         .watch(klectApiProvider)
         .publicUrl(conversation.avatarPath, bucket: StorageBucket.avatars);
     final description = conversation.description;
+    final avatar = GroupAvatar(
+      imageUrl: avatarUrl,
+      name: conversation.displayTitle,
+      size: Space.s20,
+    );
 
     return Column(
       children: <Widget>[
-        KPressable(
-          semanticLabel: onAvatarTap == null ? null : 'Change group photo',
-          onTap: onAvatarTap,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: <Widget>[
-              GroupAvatar(
-                imageUrl: avatarUrl,
-                name: conversation.displayTitle,
-                size: Space.s20,
-              ),
-              if (onAvatarTap != null)
+        // 13.8: the whole edit affordance — the press target and its badge —
+        // exists only when the viewer's role satisfies `edit_info`. A
+        // `KPressable` with a null `onTap` still hit-tests opaque, so it would
+        // silently swallow taps over the avatar; the fix is not to build it.
+        if (onAvatarTap case final onAvatarTap?)
+          KPressable(
+            semanticLabel: 'Change group photo',
+            onTap: onAvatarTap,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                avatar,
                 Positioned(
                   right: -Space.s1,
                   bottom: -Space.s1,
@@ -949,9 +1074,11 @@ class _Header extends ConsumerWidget {
                     ),
                   ),
                 ),
-            ],
-          ),
-        ),
+              ],
+            ),
+          )
+        else
+          avatar,
         const SizedBox(height: Space.s4),
         Text(
           conversation.displayTitle,
@@ -992,7 +1119,10 @@ class _MembersHeader extends StatelessWidget {
             style: context.kt.label.copyWith(color: context.kc.textSecondary),
           ),
         ),
-        if (onAdd != null)
+        // 13.8: withheld by absence, never by a disabled button. A disabled
+        // button still reads as "Add" to a screen reader and still occupies a
+        // focus stop, which promises something the RPC would refuse.
+        if (onAdd case final onAdd?)
           KButton(
             label: 'Add',
             icon: Icons.person_add_alt_rounded,
@@ -1009,24 +1139,34 @@ class _MemberRow extends StatelessWidget {
   const _MemberRow({
     required this.member,
     required this.isSelf,
-    this.onActions,
+    required this.affordances,
+    required this.onActions,
   });
 
   final ConversationMember member;
   final bool isSelf;
-  final VoidCallback? onActions;
 
-  static String? _roleLabel(String role) => switch (role) {
+  /// What this viewer may do to this member — decides both whether the manage
+  /// control exists and what the sheet behind it offers.
+  final GroupRoleAffordances affordances;
+
+  final void Function(GroupRoleAffordances affordances) onActions;
+
+  /// Every member carries exactly one badge, so the list reads as a roster
+  /// rather than a list with two decorated rows (13.2). An unknown wire role
+  /// lands on `Member`, the least privileged label, which is also how the
+  /// server treats it.
+  static String _roleLabel(String role) => switch (role) {
     'owner' => 'Owner',
     'admin' => 'Admin',
-    _ => null,
+    _ => 'Member',
   };
 
   @override
   Widget build(BuildContext context) {
     final profile = member.profile;
     if (profile == null) return const SizedBox.shrink();
-    final roleLabel = _roleLabel(member.role);
+    final role = member.role;
 
     return PersonRow(
       profile: profile,
@@ -1036,13 +1176,19 @@ class _MemberRow extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (roleLabel != null) KChip(label: roleLabel, dense: true),
-          if (onActions != null) ...<Widget>[
+          KChip(
+            label: _roleLabel(role),
+            dense: true,
+            // The two roles that carry authority take the accent; a plain
+            // member reads as metadata.
+            selected: role == 'owner' || role == 'admin',
+          ),
+          if (affordances.any) ...<Widget>[
             const SizedBox(width: Space.s2),
             KIconButton(
               icon: Icons.more_horiz_rounded,
               semanticLabel: 'Manage ${profile.name}',
-              onPressed: onActions,
+              onPressed: () => onActions(affordances),
             ),
           ],
         ],
@@ -1051,6 +1197,13 @@ class _MemberRow extends StatelessWidget {
   }
 }
 
+/// One tappable settings line.
+///
+/// [onTap] is deliberately non-nullable (13.8). A row is either an affordance
+/// the viewer's role satisfies — in which case it acts — or it is not built at
+/// all. There is no third state: an inert row would still absorb its own hit
+/// test and would still be announced, so the type system is what keeps a
+/// caller from reaching for one.
 class _InfoRow extends StatelessWidget {
   const _InfoRow({
     required this.icon,
@@ -1062,7 +1215,7 @@ class _InfoRow extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback? onTap;
+  final VoidCallback onTap;
   final bool destructive;
   final String? detail;
 
@@ -1097,12 +1250,11 @@ class _InfoRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (onTap != null)
-              Icon(
-                Icons.chevron_right_rounded,
-                size: Space.s5,
-                color: colors.textTertiary,
-              ),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: Space.s5,
+              color: colors.textTertiary,
+            ),
           ],
         ),
       ),
@@ -1140,7 +1292,8 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
   late final TextEditingController _description = TextEditingController(
     text: widget.description,
   );
-  bool _titleMissing = false;
+  String? _titleError;
+  String? _descriptionError;
 
   @override
   void dispose() {
@@ -1151,13 +1304,23 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
 
   void _save() {
     final title = _title.text.trim();
-    if (title.isEmpty) {
-      setState(() => _titleMissing = true);
+    final description = _description.text.trim();
+    final titleLength = title.characters.length;
+    final descriptionLength = description.characters.length;
+    if (titleLength < 1 || titleLength > 60 || descriptionLength > 500) {
+      setState(() {
+        _titleError = titleLength < 1
+            ? 'A group title is required.'
+            : titleLength > 60
+            ? 'Group titles can have at most 60 characters.'
+            : null;
+        _descriptionError = descriptionLength > 500
+            ? 'Descriptions can have at most 500 characters.'
+            : null;
+      });
       return;
     }
-    Navigator.of(
-      context,
-    ).pop((title: title, description: _description.text.trim()));
+    Navigator.of(context).pop((title: title, description: description));
   }
 
   @override
@@ -1173,11 +1336,11 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
           KTextField(
             controller: _title,
             label: 'Group name',
-            maxLength: 80,
+            maxLength: 60,
             textCapitalization: TextCapitalization.sentences,
-            errorText: _titleMissing ? 'Give the group a name first.' : null,
+            errorText: _titleError,
             onChanged: (_) {
-              if (_titleMissing) setState(() => _titleMissing = false);
+              if (_titleError != null) setState(() => _titleError = null);
             },
           ),
           const SizedBox(height: Space.s4),
@@ -1187,7 +1350,14 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
             hint: 'Optional — what belongs in here',
             maxLines: 3,
             minLines: 2,
+            maxLength: 500,
+            errorText: _descriptionError,
             textCapitalization: TextCapitalization.sentences,
+            onChanged: (_) {
+              if (_descriptionError != null) {
+                setState(() => _descriptionError = null);
+              }
+            },
           ),
           const SizedBox(height: Space.s5),
           KButton(label: 'Save', expand: true, onPressed: _save),

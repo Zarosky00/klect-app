@@ -2,6 +2,9 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Firebase Cloud Messaging (push notifications). Reads google-services.json
+    // in this directory. See docs/OPERATIONS.md §2 for the server-side wiring.
+    id("com.google.gms.google-services")
 }
 
 val klectKeystorePath = System.getenv("KLECT_KEYSTORE_PATH")

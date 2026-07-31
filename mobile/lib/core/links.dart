@@ -54,4 +54,7 @@ abstract final class KlectLinks {
   /// The immersive route for an entity — the double-tap destination.
   static String immersivePath(EntityType type, String id) =>
       '/immersive/${type.wire}/$id';
+
+  /// The Call_Screen route for one call row.
+  static String callPath(String callId) => '/call/$callId';
 }

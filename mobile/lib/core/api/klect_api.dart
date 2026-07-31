@@ -1190,6 +1190,11 @@ class KlectApi {
   }
 
   /// A page of messages, newest first (reverse the list to render a thread).
+  ///
+  /// Deleted messages are **included**: `delete_message_for_everyone` keeps the
+  /// row with an empty body and no attachments, and the thread renders a
+  /// tombstone in its place. Filtering them out here would make the tombstone
+  /// vanish on restart and on every older-history page (11.13).
   Future<List<MessageModel>> fetchMessages(
     String conversationId, {
     int limit = 50,
@@ -1198,8 +1203,7 @@ class KlectApi {
     var query = _client
         .from('messages')
         .select('*, author:profiles!author_id(*)')
-        .eq('conversation_id', conversationId)
-        .isFilter('deleted_at', null);
+        .eq('conversation_id', conversationId);
     final cutoff = isoOrNull(before);
     if (cutoff != null) query = query.lt('created_at', cutoff);
     final rows = await _guard(
@@ -1282,11 +1286,30 @@ class KlectApi {
     return row == null ? null : CallModel.fromJson(row);
   }
 
-  /// Moves a call through its lifecycle. Pass [durationSeconds] when ending.
+  /// Declines a ringing call with a stable reason such as `declined` or
+  /// `busy`. The server owns validation and notification fanout.
+  Future<void> declineCall(
+    String callId, {
+    String reason = 'declined',
+  }) async {
+    await _rpc('decline_call', <String, dynamic>{
+      'p_call': callId,
+      'p_reason': reason,
+    });
+  }
+
+  /// Moves a call through its lifecycle.
+  ///
+  /// [clientElapsedSeconds] is the caller's own view of how long the call was
+  /// connected, in whole seconds. It is a **diagnostic only** (Requirement
+  /// 7.8): `end_call` keeps `duration_seconds` server-computed from
+  /// `calls.started_at` and merges this value into `calls.diagnostics`, clamped
+  /// to `[0, 86400]`. Repeating `end_call` for a terminal row is a server-side
+  /// no-op, so a retry cannot change the stored outcome (7.11).
   Future<void> updateCallStatus(
     String callId,
     CallStatus status, {
-    int? durationSeconds,
+    int? clientElapsedSeconds,
     String? endReason,
   }) async {
     switch (status) {
@@ -1296,13 +1319,14 @@ class KlectApi {
         await joinCall(callId);
         return;
       case CallStatus.declined:
-        await _rpc('decline_call', <String, dynamic>{'p_call': callId});
+        await declineCall(callId, reason: endReason ?? status.wire);
         return;
       case CallStatus.ended || CallStatus.missed || CallStatus.failed:
         await _rpc('end_call', <String, dynamic>{
           'p_call': callId,
           'p_reason': endReason ?? status.wire,
           'p_outcome': status.wire,
+          'p_client_elapsed_seconds': clientElapsedSeconds,
         });
         return;
     }
@@ -1505,6 +1529,33 @@ class KlectApi {
   // Every one of these re-checks `is_staff()` / `is_admin()` server-side, so a
   // leaked route exposes nothing. The client gates the UI on `user_roles`
   // purely so staff-only affordances do not appear for everyone else.
+
+  // ──────────────────────────────────────────────────────────── push tokens ──
+
+  /// `register_push_token(p_token, p_platform, p_device_id, p_app_version)`.
+  ///
+  /// Upserts the current FCM device token for the signed-in user. Safe to
+  /// call on every app start / sign-in / token-refresh — it is idempotent on
+  /// `(user_id, token)`.
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+    String? deviceId,
+    String? appVersion,
+  }) async {
+    await _rpc('register_push_token', <String, dynamic>{
+      'p_token': token,
+      'p_platform': platform,
+      'p_device_id': deviceId,
+      'p_app_version': appVersion,
+    });
+  }
+
+  /// `unregister_push_token(p_token)` — disables a token, e.g. on sign-out so
+  /// a signed-out device stops receiving another account's push.
+  Future<void> unregisterPushToken(String token) async {
+    await _rpc('unregister_push_token', <String, dynamic>{'p_token': token});
+  }
 
   /// The viewer's staff roles, empty for normal accounts.
   Future<List<String>> fetchMyRoles() async {

@@ -679,38 +679,40 @@ class _CoverPager extends ConsumerWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        PageView.builder(
-          controller: controller,
-          itemCount: pages,
-          onPageChanged: onIndexChanged,
-          itemBuilder: (context, index) {
-            final photo = media.isEmpty ? null : media[index];
-            final url = api.publicUrl(photo?.path);
-            return KPressable(
-              enforceMinTapTarget: false,
-              semanticLabel: 'Open $title fullscreen',
-              onTap: () => onOpen(index),
-              onLongPress: () => unawaited(
-                KPeekMenu.show(
-                  context,
-                  entity: entity,
-                  title: title,
-                  imageUrl: url,
-                  blurhash: photo?.blurhash,
-                  aspectRatio: photo?.aspect,
+        KHorizontalDragClaimRegion(
+          child: PageView.builder(
+            controller: controller,
+            itemCount: pages,
+            onPageChanged: onIndexChanged,
+            itemBuilder: (context, index) {
+              final photo = media.isEmpty ? null : media[index];
+              final url = api.publicUrl(photo?.path);
+              return KPressable(
+                enforceMinTapTarget: false,
+                semanticLabel: 'Open $title fullscreen',
+                onTap: () => onOpen(index),
+                onLongPress: () => unawaited(
+                  KPeekMenu.show(
+                    context,
+                    entity: entity,
+                    title: title,
+                    imageUrl: url,
+                    blurhash: photo?.blurhash,
+                    aspectRatio: photo?.aspect,
+                  ),
                 ),
-              ),
-              child: KBlurhashImage(
-                url: url,
-                blurhash: photo?.blurhash,
-                semanticLabel: photo?.altText ?? title,
-                borderRadius: BorderRadius.zero,
-                heroTag: index == 0
-                    ? surfCoverHeroTag(entity.type, entity.id)
-                    : null,
-              ),
-            );
-          },
+                child: KBlurhashImage(
+                  url: url,
+                  blurhash: photo?.blurhash,
+                  semanticLabel: photo?.altText ?? title,
+                  borderRadius: BorderRadius.zero,
+                  heroTag: index == 0
+                      ? surfCoverHeroTag(entity.type, entity.id)
+                      : null,
+                ),
+              );
+            },
+          ),
         ),
         Positioned(
           top: 0,

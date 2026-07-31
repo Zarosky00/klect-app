@@ -199,13 +199,31 @@ class _ProfileBody extends ConsumerWidget {
               onChanged: onModeChanged,
             ),
           ),
-          _ProfileModeContent(
-            key: ValueKey<ProfileMode>(visibleTab),
-            profile: profile,
-            mode: visibleTab,
-            isMe: isMe,
+          SliverFillRemaining(
+            hasScrollBody: true,
+            child: KTabPager(
+              tabs: <KTabPagerTab>[
+                for (final tab in _tabs)
+                  KTabPagerTab(id: tab.name, label: tab.label),
+              ],
+              selectedIndex: _tabs.indexOf(visibleTab),
+              onSelected: (index) => onModeChanged(_tabs[index]),
+              showRail: false,
+              builder: (context, index) => CustomScrollView(
+                key: PageStorageKey<String>(
+                  'profile-${profile.id}-${_tabs[index].name}',
+                ),
+                slivers: <Widget>[
+                  _ProfileModeContent(
+                    profile: profile,
+                    mode: _tabs[index],
+                    isMe: isMe,
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: Space.s20)),
+                ],
+              ),
+            ),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: Space.s20)),
         ],
       ),
     );
@@ -771,7 +789,6 @@ class _ProfileModeContent extends ConsumerWidget {
     required this.profile,
     required this.mode,
     required this.isMe,
-    super.key,
   });
 
   final Profile profile;

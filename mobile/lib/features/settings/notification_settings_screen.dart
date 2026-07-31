@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/models/models.dart';
 import '../../design/theme.dart';
 import '../../ui/ui.dart';
+import '../notifications/notification_category.dart';
 import '../notifications/notification_preferences.dart';
-import '../notifications/notifications_screen.dart' show notificationStyle;
+import '../profile/fill_viewport.dart';
 import 'settings_widgets.dart';
 
 /// Which alerts you want to see.
 ///
-/// KLECT keeps no per-type notification columns server-side, so these switches
-/// are device preferences: they filter the Alerts tab and the tab badge. They
-/// are stated as such rather than implying the server will stop sending.
+/// These are account preferences, not device preferences: they live in
+/// `user_preferences.notifications`, so signing in elsewhere renders the same
+/// switches and the push fanout honours the same flags.
+///
+/// One switch per [NotificationCategory], in the Glossary order the enum itself
+/// declares, so the rail chips, the preference keys and these rows can never
+/// disagree about order or naming. The list renders only from a resolved
+/// [NotificationPreferenceSet], never from an optimistic default, so no switch
+/// accepts input before the account's own state is on screen (Requirement 5.7).
 class NotificationSettingsScreen extends ConsumerWidget {
   /// Creates the screen.
   const NotificationSettingsScreen({super.key});
@@ -20,103 +26,82 @@ class NotificationSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
-    final muted = ref.watch(notificationPreferencesProvider);
+    final preferences = ref.watch(notificationPreferencesProvider);
     final controller = ref.read(notificationPreferencesProvider.notifier);
 
     return KScaffold(
       appBar: const KFixedAppBar(title: 'Notifications', showBack: true),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          Space.s5,
-          Space.s4,
-          Space.s5,
-          Space.s12,
+      body: preferences.when(
+        loading: () => const FillViewport(
+          child: KSkeletonList(rows: 6, showMedia: false),
         ),
-        children: <Widget>[
-          Text(
-            'These control what shows up in Alerts on this device. Nothing is '
-            'deleted — switching a type back on brings its history with it.',
-            style: context.kt.body.copyWith(color: colors.textSecondary),
+        error: (_, _) => FillViewport(
+          child: KErrorState(
+            message: 'Your notification settings could not be loaded.',
+            onRetry: () => ref.invalidate(notificationPreferencesProvider),
           ),
-          SettingsSection(
-            header: 'Your work',
-            children: <Widget>[
-              for (final type in <NotificationType>[
-                NotificationType.like,
-                NotificationType.save,
-                NotificationType.repost,
-              ])
-                _TypeToggle(type: type, muted: muted, controller: controller),
-            ],
+        ),
+        data: (resolved) => ListView(
+          padding: const EdgeInsets.fromLTRB(
+            Space.s5,
+            Space.s4,
+            Space.s5,
+            Space.s12,
           ),
-          SettingsSection(
-            header: 'Conversation',
-            children: <Widget>[
-              for (final type in <NotificationType>[
-                NotificationType.comment,
-                NotificationType.reply,
-                NotificationType.mention,
-                NotificationType.message,
-                NotificationType.call,
-              ])
-                _TypeToggle(type: type, muted: muted, controller: controller),
-            ],
-          ),
-          SettingsSection(
-            header: 'People',
-            children: <Widget>[
-              for (final type in <NotificationType>[
-                NotificationType.follow,
-                NotificationType.match,
-              ])
-                _TypeToggle(type: type, muted: muted, controller: controller),
-            ],
-          ),
-          SettingsSection(
-            header: 'KLECT',
-            children: <Widget>[
-              _TypeToggle(
-                type: NotificationType.system,
-                muted: muted,
-                controller: controller,
+          children: <Widget>[
+            Text(
+              'These control what reaches you on every device you sign in on. '
+              'Nothing is deleted — switching a category back on brings its '
+              'history with it.',
+              style: context.kt.body.copyWith(color: colors.textSecondary),
+            ),
+            SettingsSection(
+              header: 'Categories',
+              children: <Widget>[
+                for (final category in NotificationCategory.values)
+                  _CategoryToggle(
+                    category: category,
+                    preferences: resolved,
+                    controller: controller,
+                  ),
+              ],
+            ),
+            if (resolved.hasDisabled) ...<Widget>[
+              const SizedBox(height: Space.s6),
+              KButton(
+                label: 'Turn everything back on',
+                variant: KButtonVariant.secondary,
+                expand: true,
+                onPressed: controller.enableAll,
               ),
             ],
-          ),
-          if (muted.isNotEmpty) ...<Widget>[
-            const SizedBox(height: Space.s6),
-            KButton(
-              label: 'Turn everything back on',
-              variant: KButtonVariant.secondary,
-              expand: true,
-              onPressed: controller.enableAll,
-            ),
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
-class _TypeToggle extends StatelessWidget {
-  const _TypeToggle({
-    required this.type,
-    required this.muted,
+class _CategoryToggle extends StatelessWidget {
+  const _CategoryToggle({
+    required this.category,
+    required this.preferences,
     required this.controller,
   });
 
-  final NotificationType type;
-  final Set<NotificationType> muted;
-  final NotificationPreferences controller;
+  final NotificationCategory category;
+  final NotificationPreferenceSet preferences;
+  final NotificationPreferencesService controller;
 
   @override
   Widget build(BuildContext context) {
-    final copy = notificationTypeCopy[type];
+    final copy = notificationCategoryCopy[category];
     return SettingsToggleRow(
-      icon: notificationStyle(context.kc, type).icon,
-      title: copy?.title ?? type.wire,
+      icon: category.style(context.kc).glyph,
+      title: copy?.title ?? category.label,
       subtitle: copy?.subtitle,
-      value: !muted.contains(type),
-      onChanged: (enabled) => controller.setEnabled(type, enabled),
+      value: preferences.isEnabled(category),
+      onChanged: (enabled) => controller.setEnabled(category, enabled),
     );
   }
 }

@@ -7,6 +7,7 @@ import '../../../core/api/api_error.dart';
 import '../../../core/models/models.dart';
 import '../../../core/supabase.dart';
 import '../chat_api.dart';
+import 'call_availability.dart';
 import 'call_controller.dart';
 
 /// Watches for calls ringing *at* the viewer.
@@ -69,8 +70,16 @@ class IncomingCallController extends Notifier<CallModel?> {
 
   void _offer(CallModel call) {
     if (_disposed) return;
-    // A call already on screen wins; we never stack two ring UIs.
-    if (ref.read(activeCallProvider).isBusy) return;
+    // No call affordance at all while the gate is disabled or unresolved: the
+    // row is simply ignored and the engine stays at idle (Requirement 10.8).
+    if (!ref.read(callAvailabilityProvider)) return;
+    // A call already on screen wins. The newly arriving row is explicitly
+    // declined as busy so the caller and Alert Center receive a terminal
+    // outcome, while the held call's phase and media stay untouched.
+    if (ref.read(activeCallProvider).isBusy) {
+      unawaited(_api.declineCall(call.id, reason: 'busy'));
+      return;
+    }
     if (state != null) return;
     state = call;
     unawaited(ref.read(activeCallProvider.notifier).present(call));
@@ -83,6 +92,6 @@ class IncomingCallController extends Notifier<CallModel?> {
 /// The call ringing at the viewer right now, or null.
 final incomingCallProvider =
     NotifierProvider<IncomingCallController, CallModel?>(
-  IncomingCallController.new,
-  name: 'incomingCall',
-);
+      IncomingCallController.new,
+      name: 'incomingCall',
+    );

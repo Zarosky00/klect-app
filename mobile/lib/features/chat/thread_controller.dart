@@ -39,6 +39,14 @@ class ChatThreadController extends Notifier<ChatThreadState> {
   /// The conversation this controller owns.
   final String conversationId;
 
+  /// How long a delete-for-everyone may hang before the thread gives up and
+  /// puts the original bubble back.
+  ///
+  /// A request budget rather than a motion duration — the Token_Set describes
+  /// animation, so this deliberately is not one of its entries
+  /// (Requirement 11.12).
+  static const Duration deleteTimeout = Duration(seconds: 10);
+
   RealtimeChannel? _thread;
   RealtimeChannel? _presence;
   Timer? _typingSweeper;
@@ -48,6 +56,8 @@ class ChatThreadController extends Notifier<ChatThreadState> {
   final Map<String, TypingUser> _typing = <String, TypingUser>{};
   final Map<String, Uint8List> _localPreviews = <String, Uint8List>{};
   final Map<String, _PendingSend> _pending = <String, _PendingSend>{};
+  final Set<String> _hidden = <String>{};
+  DateTime? _historyCursor;
 
   ChatApi get _api => ref.read(chatApiProvider);
 
@@ -59,6 +69,8 @@ class ChatThreadController extends Notifier<ChatThreadState> {
     // reaches here, so the flag must be cleared or the thread would refuse to
     // update itself.
     _disposed = false;
+    _hidden.clear();
+    _historyCursor = null;
     ref.onDispose(_teardown);
     unawaited(_load());
     _listen();
@@ -85,17 +97,29 @@ class ChatThreadController extends Notifier<ChatThreadState> {
         _api.fetchMessages(conversationId, limit: _pageSize),
         _api.fetchMembers(conversationId),
         _api.fetchConversation(conversationId),
+        _api.fetchHiddenMessageIds(conversationId),
       ]);
       if (_disposed) return;
-      final messages = results[0]! as List<ChatMessage>;
+      final page = results[0]! as List<ChatMessage>;
+      _hidden
+        ..clear()
+        ..addAll(results[3]! as Set<String>);
+      _historyCursor = page.isEmpty ? null : page.last.createdAt;
+      final messages = <ChatMessage>[
+        for (final message in page)
+          if (!_hidden.contains(message.id)) message,
+      ];
       state = state.copyWith(
         messages: messages,
         members: results[1]! as List<ConversationMember>,
         conversation: results[2] as Conversation?,
         loading: false,
-        hasMore: messages.length >= _pageSize,
+        hasMore: page.length >= _pageSize,
         clearError: true,
       );
+      if (messages.isEmpty && page.length >= _pageSize) {
+        await _fillVisiblePage();
+      }
       unawaited(markRead());
     } catch (error) {
       if (_disposed) return;
@@ -111,29 +135,41 @@ class ChatThreadController extends Notifier<ChatThreadState> {
 
   /// Pages backwards through history.
   Future<void> loadMore() async {
-    if (state.loadingMore || !state.hasMore || state.messages.isEmpty) return;
+    if (state.loadingMore || !state.hasMore) return;
     state = state.copyWith(loadingMore: true);
+    await _fillVisiblePage();
+  }
+
+  Future<void> _fillVisiblePage() async {
     try {
-      final older = await _api.fetchMessages(
-        conversationId,
-        limit: _pageSize,
-        before: state.messages.last.createdAt,
-      );
-      if (_disposed) return;
-      final known = <String>{for (final m in state.messages) m.id};
-      final merged = <ChatMessage>[
-        ...state.messages,
-        for (final message in older)
-          if (!known.contains(message.id)) message,
-      ];
+      var merged = <ChatMessage>[...state.messages];
+      var hasMore = state.hasMore;
+      for (var attempt = 0; attempt < 10 && hasMore; attempt++) {
+        final older = await _api.fetchMessages(
+          conversationId,
+          limit: _pageSize,
+          before: _historyCursor,
+        );
+        if (_disposed) return;
+        if (older.isEmpty) {
+          hasMore = false;
+          break;
+        }
+        _historyCursor = older.last.createdAt;
+        hasMore = older.length >= _pageSize;
+        final known = <String>{for (final message in merged) message.id};
+        final visible = <ChatMessage>[
+          for (final message in older)
+            if (!_hidden.contains(message.id) && !known.contains(message.id))
+              message,
+        ];
+        merged = <ChatMessage>[...merged, ...visible];
+        if (visible.isNotEmpty) break;
+      }
       state = state.copyWith(
         messages: merged,
         loadingMore: false,
-        // A short page means the end of history. A full page that added
-        // nothing new means the cursor cannot advance — stop either way, or
-        // the scroll listener would refetch the same page forever.
-        hasMore: older.length >= _pageSize &&
-            merged.length > state.messages.length,
+        hasMore: hasMore,
       );
     } catch (error) {
       if (_disposed) return;
@@ -203,6 +239,7 @@ class ChatThreadController extends Notifier<ChatThreadState> {
   void _onMessageInsert(Map<String, dynamic> row) {
     final id = asString(row['id']);
     if (id.isEmpty) return;
+    if (_hidden.contains(id)) return;
     if (_indexOf(id) != -1) {
       // Our own optimistic bubble, or a duplicate delivery.
       return;
@@ -212,8 +249,12 @@ class ChatThreadController extends Notifier<ChatThreadState> {
 
   Future<void> _hydrateInserted(String id) async {
     try {
+      if (_hidden.contains(id)) return;
       final message = await _api.fetchMessage(id);
-      if (_disposed || message == null || message.isDeleted) return;
+      // A message deleted between the insert and this fetch still belongs in
+      // the thread: it renders as a tombstone rather than never appearing, so
+      // the thread reads the same before and after a restart (11.13).
+      if (_disposed || message == null) return;
       if (_indexOf(id) != -1) return;
       final next = <ChatMessage>[message, ...state.messages]
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -226,15 +267,21 @@ class ChatThreadController extends Notifier<ChatThreadState> {
 
   void _onMessageUpdate(Map<String, dynamic> row) {
     final id = asString(row['id']);
+    if (_hidden.contains(id)) return;
     final index = _indexOf(id);
     if (index == -1) return;
-    if (asDateOrNull(row['deleted_at']) != null) {
-      _removeMessage(id);
-      return;
-    }
     final existing = state.messages[index];
+    // A delete-for-everyone arrives here as an ordinary update, and that is
+    // exactly how it is treated: the row is replaced where it already sits,
+    // carrying the `created_at` the delete never wrote, so the tombstone holds
+    // the deleted message's position in thread order and its original
+    // timestamp with no refresh (11.3, 11.6).
     final updated = MessageModel.fromJson(row).copyWith(
       author: existing.message.author,
+      // The payload knows nothing about the viewer's own hidden set, and a
+      // message the viewer hid stays hidden rather than turning into a
+      // tombstone (12.6).
+      hiddenForMe: existing.hiddenForMe,
     );
     _replaceMessage(
       index,
@@ -275,8 +322,7 @@ class ChatThreadController extends Notifier<ChatThreadState> {
 
   void _onMembership(Map<String, dynamic> row) {
     final userId = asString(row['user_id']);
-    final index =
-        state.members.indexWhere((member) => member.userId == userId);
+    final index = state.members.indexWhere((member) => member.userId == userId);
     if (index == -1) {
       // Somebody new joined the group while the thread was open. The payload
       // has no profile, so refetch the member list instead of guessing.
@@ -593,22 +639,89 @@ class ChatThreadController extends Notifier<ChatThreadState> {
     }
   }
 
-  /// Soft-deletes the viewer's own message.
-  Future<void> delete(String messageId) async {
+  /// Turns the viewer's own message into a tombstone for every participant.
+  ///
+  /// Optimistic and in place: the tombstone is painted at the message's own
+  /// index before the RPC is issued, so nothing is removed from the thread and
+  /// neither the position nor the original timestamp moves (11.3).
+  ///
+  /// Returns `null` once the delete has committed. On any failure, or after
+  /// [deleteTimeout] with no answer, the exact [ChatMessage] captured
+  /// beforehand is put back — the same body and the same whole attachment set,
+  /// object for object — the stored row is left untouched, and the failure is
+  /// **returned** rather than pushed onto `state.error`, so the caller surfaces
+  /// exactly one error indication and can carry the retry on it (11.12).
+  Future<KlectError?> deleteForEveryone(String messageId) async {
     final index = _indexOf(messageId);
-    if (index == -1) return;
+    if (index == -1) return null;
     final before = state.messages[index];
-    _removeMessage(messageId);
+    _replaceMessage(
+      index,
+      before.copyWith(
+        message: before.message.tombstoned(),
+        pending: false,
+        failed: false,
+      ),
+    );
     try {
-      await _api.deleteMessage(messageId);
+      final stored = await _api
+          .deleteMessageForEveryone(messageId)
+          .timeout(deleteTimeout);
+      if (_disposed) return null;
+      final now = _indexOf(messageId);
+      if (now == -1) return null;
+      final current = state.messages[now];
+      // The RPC answers with the bare `messages` row: no author profile and no
+      // embedded parent. Only the deletion state is taken from it; the rest of
+      // the loaded shape stays where it is.
+      _replaceMessage(
+        now,
+        current.copyWith(
+          message: stored.message.copyWith(
+            author: current.message.author,
+            hiddenForMe: current.hiddenForMe,
+          ),
+          pending: false,
+          failed: false,
+        ),
+      );
+      return null;
     } catch (error) {
-      if (_disposed) return;
+      if (_disposed) return null;
+      final now = _indexOf(messageId);
+      if (now != -1) _replaceMessage(now, before);
+      return KlectError.from(error);
+    }
+  }
+
+  /// Hides one message only for the signed-in viewer.
+  ///
+  /// The rendered row disappears synchronously, well inside the 500 ms budget.
+  /// A failed stored-message RPC restores the exact row at its original order;
+  /// a pending/failed local send has no server row and is simply discarded.
+  Future<KlectError?> hideForMe(String messageId) async {
+    final index = _indexOf(messageId);
+    if (index == -1) return null;
+    final before = state.messages[index];
+    _hidden.add(messageId);
+    _removeMessage(messageId);
+
+    if (before.pending || before.failed) {
+      _pending.remove(messageId);
+      _localPreviews.remove(messageId);
+      return null;
+    }
+
+    try {
+      await _api.hideMessageForMe(messageId).timeout(deleteTimeout);
+      return null;
+    } catch (error) {
+      if (_disposed) return null;
+      _hidden.remove(messageId);
       final restored = <ChatMessage>[...state.messages, before]
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      state = state.copyWith(
-        messages: restored,
-        error: KlectError.from(error),
-      );
+      state = state.copyWith(messages: restored);
+      return KlectError.from(error);
     }
   }
 
@@ -621,7 +734,11 @@ class ChatThreadController extends Notifier<ChatThreadState> {
     final index = _indexOf(messageId);
     if (index == -1) return;
     final before = state.messages[index];
-    final mine = MessageReaction(messageId: messageId, userId: me, emoji: emoji);
+    final mine = MessageReaction(
+      messageId: messageId,
+      userId: me,
+      emoji: emoji,
+    );
     final had = before.reactions.contains(mine);
 
     _replaceMessage(
@@ -720,22 +837,23 @@ class _PendingSend {
 /// the screen.
 final chatThreadProvider = NotifierProvider.autoDispose
     .family<ChatThreadController, ChatThreadState, String>(
-  ChatThreadController.new,
-  name: 'chatThread',
-);
+      ChatThreadController.new,
+      name: 'chatThread',
+    );
 
 /// The rich card for a shared collection / subcollection / item, cached per
 /// `(type, id)` so a thread full of the same share fetches once.
 final sharedEntityPreviewProvider = FutureProvider.autoDispose
     .family<SharedEntityPreview?, ({EntityType type, String id})>(
-  (ref, key) => ref.watch(chatApiProvider).fetchEntityPreview(key.type, key.id),
-  name: 'sharedEntityPreview',
-);
+      (ref, key) =>
+          ref.watch(chatApiProvider).fetchEntityPreview(key.type, key.id),
+      name: 'sharedEntityPreview',
+    );
 
 /// A signed URL for one `chat` bucket object. The bucket is private, so every
 /// attachment goes through here.
-final chatAttachmentUrlProvider =
-    FutureProvider.autoDispose.family<String, String>(
-  (ref, storagePath) => ref.watch(chatApiProvider).signedUrl(storagePath),
-  name: 'chatAttachmentUrl',
-);
+final chatAttachmentUrlProvider = FutureProvider.autoDispose
+    .family<String, String>(
+      (ref, storagePath) => ref.watch(chatApiProvider).signedUrl(storagePath),
+      name: 'chatAttachmentUrl',
+    );

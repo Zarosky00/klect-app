@@ -32,6 +32,24 @@ type NotificationRow = {
 
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 
+// Intent action the Android client filters on to build the CallStyle notification with its
+// accept / decline actions instead of merely opening the launcher activity (Requirement 9.6).
+const CALL_CLICK_ACTION = "KLECT_CALL";
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+// The call id a `call` notification points at, so the client can accept/decline without a lookup.
+function callIdFor(n: NotificationRow): string | null {
+  if (n.type !== "call") return null;
+  if (n.entity_type && n.entity_type !== "call") return null;
+  return n.entity_id ?? null;
+}
+
 // ── copy shown in the notification tray, per notification_type ──
 function compose(n: NotificationRow, actor: string) {
   switch (n.type) {
@@ -45,6 +63,7 @@ function compose(n: NotificationRow, actor: string) {
     case "message": return { title: actor, body: n.body ?? "sent you a message" };
     case "call":    return { title: actor, body: "is calling you" };
     case "match":   return { title: "New match", body: `You and ${actor} collect the same things` };
+    case "recommendation": return { title: "Picked for you", body: n.body ?? "A collection we think you'll like" };
     case "moderation": return { title: "Klect", body: n.body ?? "An update about your content" };
     default:        return { title: "Klect", body: n.body ?? "You have a new notification" };
   }
@@ -127,6 +146,22 @@ Deno.serve(async (req: Request) => {
       { auth: { persistSession: false } },
     );
 
+    // ── Gate 1: per-category preference (Requirements 5.6, 9.10) ──
+    // The category taxonomy lives in one SQL function so the client gate and this delivery gate
+    // cannot drift. A disabled category returns 200 so the webhook never enters a retry loop.
+    const { data: category, error: categoryError } = await supabase
+      .rpc("notification_category", { p_type: n.type });
+    if (categoryError) console.error("notification_category failed", categoryError);
+    if (typeof category === "string") {
+      const { data: prefs } = await supabase
+        .from("user_preferences").select("notifications")
+        .eq("user_id", n.user_id).maybeSingle();
+      const flags = (prefs?.notifications ?? {}) as Record<string, unknown>;
+      if (flags[category] === false) {
+        return json({ sent: 0, reason: "category-disabled" });
+      }
+    }
+
     const { data: tokens } = await supabase
       .from("push_tokens")
       .select("token, platform")
@@ -163,6 +198,11 @@ Deno.serve(async (req: Request) => {
     const link = linkFor(n);
     const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
 
+    const isCall = n.type === "call";
+    const callId = callIdFor(n);
+    const data: Record<string, string> = { link, type: n.type, notification_id: n.id };
+    if (callId) data.call_id = callId;
+
     const dead: string[] = [];
     let sent = 0;
 
@@ -174,11 +214,17 @@ Deno.serve(async (req: Request) => {
           message: {
             token: t.token,
             notification: { title, body },
-            data: { link, type: n.type, notification_id: n.id },
-            android: { priority: n.type === "call" ? "HIGH" : "NORMAL", notification: { channel_id: n.type === "call" ? "calls" : "social" } },
+            data,
+            android: {
+              priority: isCall ? "HIGH" : "NORMAL",
+              notification: {
+                channel_id: isCall ? "calls" : "social",
+                ...(isCall ? { click_action: CALL_CLICK_ACTION } : {}),
+              },
+            },
             apns: {
-              headers: { "apns-priority": n.type === "call" ? "10" : "5" },
-              payload: { aps: { sound: n.type === "call" ? "ringtone.caf" : "default", "thread-id": n.conversation_id ?? n.type } },
+              headers: { "apns-priority": isCall ? "10" : "5" },
+              payload: { aps: { sound: isCall ? "ringtone.caf" : "default", "thread-id": n.conversation_id ?? n.type } },
             },
           },
         }),

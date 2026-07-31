@@ -41,7 +41,10 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
   /// design value — a memory/jank trade-off.
   static const double _cacheViewports = 1.5;
 
-  final ScrollController _scroll = ScrollController();
+  final Map<SurfFilter, ScrollController> _scrolls =
+      <SurfFilter, ScrollController>{
+        for (final filter in SurfFilter.values) filter: ScrollController(),
+      };
   final ValueNotifier<bool> _revealed = ValueNotifier<bool>(true);
 
   Timer? _idleTimer;
@@ -51,13 +54,15 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
   void dispose() {
     _idleTimer?.cancel();
     _revealed.dispose();
-    _scroll.dispose();
+    for (final scroll in _scrolls.values) {
+      scroll.dispose();
+    }
     super.dispose();
   }
 
   SurfFilter get _filter => ref.read(surfFilterProvider);
 
-  bool _onScroll(ScrollNotification notification) {
+  bool _onScroll(ScrollNotification notification, SurfFilter filter) {
     if (notification is ScrollStartNotification ||
         notification is ScrollUpdateNotification) {
       _idleTimer?.cancel();
@@ -75,23 +80,24 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
       if (metrics.hasContentDimensions &&
           metrics.maxScrollExtent - metrics.pixels <
               metrics.viewportDimension) {
-        unawaited(ref.read(surfFeedProvider(_filter).notifier).loadMore());
+        unawaited(ref.read(surfFeedProvider(filter).notifier).loadMore());
       }
     }
     return false;
   }
 
-  Future<void> _refresh() async {
-    await ref.read(surfFeedProvider(_filter).notifier).refresh();
+  Future<void> _refresh([SurfFilter? requestedFilter]) async {
+    final filter = requestedFilter ?? _filter;
+    await ref.read(surfFeedProvider(filter).notifier).refresh();
     if (!mounted) return;
-    if (_scroll.hasClients) _scroll.jumpTo(0);
+    final scroll = _scrolls[filter]!;
+    if (scroll.hasClients) scroll.jumpTo(0);
     _revealed.value = true;
   }
 
   void _selectFilter(SurfFilter filter) {
     if (filter == _filter) return;
     ref.read(surfFilterProvider.notifier).select(filter);
-    if (_scroll.hasClients) _scroll.jumpTo(0);
     _revealed.value = true;
   }
 
@@ -108,62 +114,86 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
   @override
   Widget build(BuildContext context) {
     final filter = ref.watch(surfFilterProvider);
-    final feed = ref.watch(surfFeedProvider(filter));
-
-    ref.listen<SurfFeedState>(surfFeedProvider(filter), (previous, next) {
-      if (next.cards.length != (previous?.cards.length ?? 0)) {
-        _pageStamp = DateTime.now();
-      }
-    });
-
+    final feeds = <SurfFilter, SurfFeedState>{
+      for (final candidate in SurfFilter.values)
+        candidate: ref.watch(surfFeedProvider(candidate)),
+    };
+    for (final candidate in SurfFilter.values) {
+      ref.listen<SurfFeedState>(surfFeedProvider(candidate), (previous, next) {
+        if (next.cards.length != (previous?.cards.length ?? 0)) {
+          _pageStamp = DateTime.now();
+        }
+      });
+    }
     final media = MediaQuery.of(context);
     final columns = Layout.masonryColumns(media.size.width);
     const gutter = Layout.masonryGutter;
-    final columnWidth =
-        (media.size.width - gutter * (columns + 1)) / columns;
+    final columnWidth = (media.size.width - gutter * (columns + 1)) / columns;
     final decodeWidth = (columnWidth * media.devicePixelRatio).round();
 
     return KScaffold(
       onRefresh: _refresh,
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _onScroll,
-        child: CustomScrollView(
-          controller: _scroll,
-          scrollCacheExtent:
-              const ScrollCacheExtent.viewport(_cacheViewports),
-          slivers: <Widget>[
-            KAppBar(
-              title: 'Surf',
-              subtitle: 'Collections, shelves and things',
-              // Room for the serif title to collapse into the toolbar with the
-              // filter row pinned underneath it.
-              expandedHeight: Space.s24 + Space.s12,
-              actions: <Widget>[
-                KIconButton(
-                  icon: Icons.auto_awesome_outlined,
-                  semanticLabel: 'Collectors like you',
-                  onPressed: () => context.push(Routes.matches),
-                ),
-                KIconButton(
-                  icon: Icons.search_rounded,
-                  semanticLabel: 'Search',
-                  onPressed: () => context.push(Routes.search),
-                ),
-                const MessagesAction(),
-              ],
-              bottom: _FilterBar(
-                selected: filter,
-                onSelect: _selectFilter,
-              ),
-            ),
-            ..._bodySlivers(context, feed, columns, decodeWidth),
-            // The shell's tab bar floats over the body (`extendBody`), so the
-            // last row of tiles needs to clear it.
-            const SliverToBoxAdapter(
-              child: SizedBox(height: Layout.bottomBarHeight + Space.s8),
-            ),
-          ],
+      body: KTabPager(
+        tabs: <KTabPagerTab>[
+          for (final candidate in SurfFilter.values)
+            KTabPagerTab(id: candidate.name, label: candidate.label),
+        ],
+        selectedIndex: filter.index,
+        onSelected: (index) => _selectFilter(SurfFilter.values[index]),
+        showRail: false,
+        builder: (context, index) => _page(
+          context,
+          SurfFilter.values[index],
+          feeds[SurfFilter.values[index]]!,
+          columns,
+          decodeWidth,
         ),
+      ),
+    );
+  }
+
+  Widget _page(
+    BuildContext context,
+    SurfFilter filter,
+    SurfFeedState feed,
+    int columns,
+    int decodeWidth,
+  ) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) => _onScroll(notification, filter),
+      child: CustomScrollView(
+        key: PageStorageKey<String>('surf-${filter.name}'),
+        controller: _scrolls[filter],
+        scrollCacheExtent: const ScrollCacheExtent.viewport(_cacheViewports),
+        slivers: <Widget>[
+          KAppBar(
+            title: 'Surf',
+            subtitle: 'Collections, shelves and things',
+            // Room for the serif title to collapse into the toolbar with the
+            // filter row pinned underneath it.
+            expandedHeight: Space.s24 + Space.s12,
+            actions: <Widget>[
+              KIconButton(
+                icon: Icons.auto_awesome_outlined,
+                semanticLabel: 'Collectors like you',
+                onPressed: () => context.push(Routes.matches),
+              ),
+              KIconButton(
+                icon: Icons.search_rounded,
+                semanticLabel: 'Search',
+                onPressed: () => context.push(Routes.search),
+              ),
+              const MessagesAction(),
+            ],
+            bottom: _FilterBar(selected: filter, onSelect: _selectFilter),
+          ),
+          ..._bodySlivers(context, feed, columns, decodeWidth),
+          // The shell's tab bar floats over the body (`extendBody`), so the
+          // last row of tiles needs to clear it.
+          const SliverToBoxAdapter(
+            child: SizedBox(height: Layout.bottomBarHeight + Space.s8),
+          ),
+        ],
       ),
     );
   }
@@ -185,8 +215,9 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
           hasScrollBody: false,
           child: KErrorState(
             error: feed.error,
-            onRetry: () =>
-                unawaited(ref.read(surfFeedProvider(feed.filter).notifier).retry()),
+            onRetry: () => unawaited(
+              ref.read(surfFeedProvider(feed.filter).notifier).retry(),
+            ),
           ),
         ),
       ];
@@ -223,39 +254,42 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
     ];
   }
 
-  Widget _emptyState(BuildContext context, SurfFilter filter) => switch (filter) {
+  Widget _emptyState(BuildContext context, SurfFilter filter) =>
+      switch (filter) {
         SurfFilter.following => KEmptyState(
-            title: 'Nothing from your circle yet',
-            message: 'Follow a few collectors and their shelves will surface '
-                'here first.',
-            icon: Icons.people_outline_rounded,
-            actionLabel: 'Find collectors like you',
-            onAction: () => context.push(Routes.matches),
-            secondaryActionLabel: 'Browse everything',
-            onSecondaryAction: () => _selectFilter(SurfFilter.all),
-          ),
+          title: 'Nothing from your circle yet',
+          message:
+              'Follow a few collectors and their shelves will surface '
+              'here first.',
+          icon: Icons.people_outline_rounded,
+          actionLabel: 'Find collectors like you',
+          onAction: () => context.push(Routes.matches),
+          secondaryActionLabel: 'Browse everything',
+          onSecondaryAction: () => _selectFilter(SurfFilter.all),
+        ),
         SurfFilter.items => KEmptyState(
-            title: 'No things yet',
-            message: 'Add your first item and the grid fills itself.',
-            icon: Icons.inventory_2_outlined,
-            actionLabel: 'Add an item',
-            onAction: () => context.push('/create/item'),
-          ),
+          title: 'No things yet',
+          message: 'Add your first item and the grid fills itself.',
+          icon: Icons.inventory_2_outlined,
+          actionLabel: 'Add an item',
+          onAction: () => context.push('/create/item'),
+        ),
         SurfFilter.collections => KEmptyState(
-            title: 'No shelves yet',
-            message: 'Start a collection and give your things a home.',
-            icon: Icons.collections_bookmark_outlined,
-            actionLabel: 'Start a collection',
-            onAction: () => context.push('/create/collection'),
-          ),
+          title: 'No shelves yet',
+          message: 'Start a collection and give your things a home.',
+          icon: Icons.collections_bookmark_outlined,
+          actionLabel: 'Start a collection',
+          onAction: () => context.push('/create/collection'),
+        ),
         SurfFilter.all => KEmptyState(
-            title: 'The grid is empty',
-            message: 'Nothing is public yet. Be the first — start a '
-                'collection and put something on it.',
-            icon: Icons.grid_view_rounded,
-            actionLabel: 'Start a collection',
-            onAction: () => context.push('/create/collection'),
-          ),
+          title: 'The grid is empty',
+          message:
+              'Nothing is public yet. Be the first — start a '
+              'collection and put something on it.',
+          icon: Icons.grid_view_rounded,
+          actionLabel: 'Start a collection',
+          onAction: () => context.push('/create/collection'),
+        ),
       };
 
   Widget _footer(SurfFeedState feed) {
@@ -265,8 +299,9 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
         padding: const EdgeInsets.symmetric(horizontal: Space.s4),
         child: KInlineError(
           message: error.message,
-          onRetry: () =>
-              unawaited(ref.read(surfFeedProvider(feed.filter).notifier).retry()),
+          onRetry: () => unawaited(
+            ref.read(surfFeedProvider(feed.filter).notifier).retry(),
+          ),
         ),
       );
     }
@@ -302,23 +337,23 @@ class _FilterBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        height: Space.s12,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(
-            horizontal: Space.s4,
-            vertical: Space.s2,
+    height: Space.s12,
+    child: ListView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.s4,
+        vertical: Space.s2,
+      ),
+      children: <Widget>[
+        for (final filter in SurfFilter.values) ...<Widget>[
+          KChip(
+            label: filter.label,
+            selected: filter == selected,
+            onTap: () => onSelect(filter),
           ),
-          children: <Widget>[
-            for (final filter in SurfFilter.values) ...<Widget>[
-              KChip(
-                label: filter.label,
-                selected: filter == selected,
-                onTap: () => onSelect(filter),
-              ),
-              const SizedBox(width: Space.s2),
-            ],
-          ],
-        ),
-      );
+          const SizedBox(width: Space.s2),
+        ],
+      ],
+    ),
+  );
 }

@@ -29,6 +29,13 @@ jobs:
           flutter-version: 3.44.8
           channel: stable
           cache: true
+      - name: Configure Firebase Android app
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON"
+          printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
       - run: flutter pub get
       - run: flutter analyze
       # Flutter rasterization differs slightly across host operating systems.

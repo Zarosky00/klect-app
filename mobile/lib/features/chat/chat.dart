@@ -4,7 +4,7 @@
 ///  * `StartDm.open(context, ref, userId: …)` — the only correct way to begin
 ///    a conversation. It calls `start_dm`, which enforces the recipient's
 ///    `allow_messages_from`, and turns a refusal into human copy.
-///  * `IncomingCallOverlay` — wrap the tab shell with it and a call rings
+///  * `CallOverlayHost` — wrap the tab shell with it and a call rings
 ///    wherever the user is.
 ///  * `unreadMessageCountProvider` — the inbox badge.
 ///  * `MessagesAction` — the badged app-bar entry point to the inbox.
@@ -18,6 +18,7 @@ export 'calls/incoming_call_controller.dart';
 export 'chat_api.dart';
 export 'chat_models.dart';
 export 'conversation_screen.dart';
+export 'error_copy.dart';
 export 'group_errors.dart';
 export 'group_info_screen.dart';
 export 'inbox_controller.dart';
