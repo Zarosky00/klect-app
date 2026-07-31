@@ -17,6 +17,20 @@ String releaseJson({String tag = 'v1.3.0', String body = 'Bug fixes.'}) =>
       'tag_name': tag,
       'body': body,
       'html_url': 'https://github.com/Zarosky00/klect-app/releases/tag/$tag',
+      'assets': <Object?>[
+        <String, Object?>{
+          'name': 'klect.apk',
+          'state': 'uploaded',
+          'browser_download_url':
+              'https://github.com/Zarosky00/klect-app/releases/download/'
+              '$tag/klect.apk',
+          'digest':
+              'sha256:'
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          'size': 1024,
+        },
+      ],
     });
 
 void main() {
@@ -92,6 +106,9 @@ void main() {
       expect(update, isNotNull);
       expect(update!.version, '1.3.0');
       expect(update.notes, 'Shiny.');
+      expect(update.downloadUrl, endsWith('/v1.3.0/klect.apk'));
+      expect(update.sha256, List.filled(64, 'a').join());
+      expect(update.sizeBytes, 1024);
       expect(networkCalls, 1);
     });
 
@@ -171,6 +188,18 @@ void main() {
             http.Response(jsonEncode(<String, Object?>{'body': 'hi'}), 200),
       );
       expect(await checker(tagless).check(), isNull);
+
+      final assetless = MockClient(
+        (request) async => http.Response(
+          jsonEncode(<String, Object?>{
+            'tag_name': 'v1.3.0',
+            'body': 'No installable build.',
+            'assets': <Object?>[],
+          }),
+          200,
+        ),
+      );
+      expect(await checker(assetless).check(), isNull);
     });
 
     test(
@@ -261,7 +290,7 @@ void main() {
 
       expect(find.text('Klect 9.9.9'), findsOneWidget);
       expect(find.text('Notes for v9.9.9.'), findsOneWidget);
-      expect(find.text('Update now'), findsOneWidget);
+      expect(find.text('Update in KLECT'), findsOneWidget);
       expect(find.text('Skip this version'), findsOneWidget);
     });
 

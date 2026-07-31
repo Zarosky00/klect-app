@@ -42,12 +42,11 @@ dependencies:
   uuid: ^4.6.0
   collection: ^1.19.1
 
-  # In-app update check for sideloaded Android builds: `http` polls the
-  # public GitHub releases endpoint, `url_launcher` hands the APK URL to the
-  # browser (Android's installer takes over from the download — deliberately
-  # no REQUEST_INSTALL_PACKAGES/FileProvider plumbing). Both were already in
-  # the dependency tree transitively.
+  # Sideloaded Android updates: `http` polls GitHub and streams the APK into
+  # KLECT's private cache; `crypto` verifies GitHub's release digest before
+  # the native Android package installer is opened.
   http: ^1.6.0
+  crypto: ^3.0.7
   url_launcher: ^6.3.2
 
   # Notifications stage 1: system-tray notifications for realtime arrivals

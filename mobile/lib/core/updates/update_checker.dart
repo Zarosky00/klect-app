@@ -12,7 +12,13 @@ import '../storage/key_value_store.dart';
 @immutable
 class AvailableUpdate {
   /// Creates an update descriptor.
-  const AvailableUpdate({required this.version, required this.notes});
+  const AvailableUpdate({
+    required this.version,
+    required this.notes,
+    required this.downloadUrl,
+    this.sha256,
+    this.sizeBytes,
+  });
 
   /// Normalised semantic version of the release — no leading `v`, no build
   /// metadata.
@@ -21,10 +27,22 @@ class AvailableUpdate {
   /// Release notes (the release `body`), shown as plain text.
   final String notes;
 
+  /// Direct HTTPS URL for the release's `klect.apk` asset.
+  final String downloadUrl;
+
+  /// GitHub's SHA-256 digest for the APK, when the release provides one.
+  final String? sha256;
+
+  /// Expected APK size from GitHub release metadata.
+  final int? sizeBytes;
+
   /// Round-trips through the on-device cache.
   Map<String, Object?> toJson() => <String, Object?>{
     'version': version,
     'notes': notes,
+    'downloadUrl': downloadUrl,
+    'sha256': sha256,
+    'sizeBytes': sizeBytes,
   };
 
   /// Parses a cached update; null when the shape is wrong.
@@ -33,9 +51,18 @@ class AvailableUpdate {
     final version = json['version'];
     if (version is! String || version.isEmpty) return null;
     final notes = json['notes'];
+    final downloadUrl = json['downloadUrl'];
+    final sha256 = json['sha256'];
+    final sizeBytes = json['sizeBytes'];
     return AvailableUpdate(
       version: version,
       notes: notes is String ? notes : '',
+      // Caches written before the in-app downloader used the stable asset URL.
+      downloadUrl: downloadUrl is String && downloadUrl.startsWith('https://')
+          ? downloadUrl
+          : UpdateChecker.apkUrl,
+      sha256: sha256 is String ? sha256 : null,
+      sizeBytes: sizeBytes is int ? sizeBytes : null,
     );
   }
 
@@ -44,10 +71,14 @@ class AvailableUpdate {
       identical(this, other) ||
       other is AvailableUpdate &&
           other.version == version &&
-          other.notes == notes;
+          other.notes == notes &&
+          other.downloadUrl == downloadUrl &&
+          other.sha256 == sha256 &&
+          other.sizeBytes == sizeBytes;
 
   @override
-  int get hashCode => Object.hash(version, notes);
+  int get hashCode =>
+      Object.hash(version, notes, downloadUrl, sha256, sizeBytes);
 }
 
 /// What an explicit, user-requested update check found.
@@ -79,8 +110,8 @@ class ManualUpdateResult {
 ///
 /// Everything about this is deliberately quiet: offline, rate-limited,
 /// unparsable, repo-gone — every failure resolves to "no update", never to a
-/// surfaced error. The APK itself downloads via the browser and Android's
-/// installer takes over; the app never touches the package installer APIs.
+/// surfaced error. The APK itself downloads inside Klect and is handed to
+/// Android's trusted package installer for explicit user approval.
 class UpdateChecker {
   /// Creates a checker over the durable store.
   ///
@@ -272,9 +303,38 @@ class UpdateChecker {
       final version = normalize(tag);
       if (version == null) return null;
       final body = decoded['body'];
+
+      final assets = decoded['assets'];
+      if (assets is! List) return null;
+      Map<Object?, Object?>? apk;
+      for (final asset in assets) {
+        if (asset is Map<Object?, Object?> &&
+            asset['name'] == 'klect.apk' &&
+            asset['state'] == 'uploaded') {
+          apk = asset;
+          break;
+        }
+      }
+      if (apk == null) return null;
+
+      final rawUrl = apk['browser_download_url'];
+      if (rawUrl is! String) return null;
+      final downloadUri = Uri.tryParse(rawUrl);
+      if (downloadUri == null || downloadUri.scheme != 'https') return null;
+
+      String? digest;
+      final rawDigest = apk['digest'];
+      if (rawDigest is String &&
+          RegExp(r'^sha256:[0-9a-fA-F]{64}$').hasMatch(rawDigest)) {
+        digest = rawDigest.substring('sha256:'.length).toLowerCase();
+      }
+      final rawSize = apk['size'];
       return AvailableUpdate(
         version: version,
         notes: body is String ? body.trim() : '',
+        downloadUrl: downloadUri.toString(),
+        sha256: digest,
+        sizeBytes: rawSize is int && rawSize > 0 ? rawSize : null,
       );
     } on Exception {
       // Offline, DNS, TLS, timeout, malformed JSON — silent by contract.
