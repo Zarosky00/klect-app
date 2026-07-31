@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-28 · Session: v1.6.3 Pulse engagement and unified profile activity
+> Last updated: 2026-07-31 · Session: chat/calls/notifications Kiro spec required work complete
 
 ---
 
@@ -9,13 +9,13 @@
 
 | # | Area | State | Notes |
 |---|---|---|---|
-| 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 37 tables, 91 RLS policies, 14 realtime tables, 4 storage buckets and 28 applied migrations. `social_activity_profile` adds explicit quote intent/counters and canonical paged Pulse, engagement, profile-discussion and private-reaction contracts. |
+| 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 38 tables, 93 RLS policies, 14 realtime tables, 4 storage buckets and 37 applied migrations. The live chat/calls/notifications contract now includes synced notification preferences, private message hides, call diagnostics/reasons, 256-member group enforcement, 60/500-character identity validation and identity system messages. `pg_net` is enabled and `notifications_push_fanout_webhook` fires push delivery from an `after insert` trigger. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
-| 3 | Backend API contract | ✅ **DONE** | `pulse_feed_v2`, `social_engagement_v1`, `profile_pulse_activity_v1`, `profile_discussion_activity_v1`, `my_profile_reactions_v1` and owner-only `delete_post` are live alongside the existing canonical Pulse/comment/messaging/group/call contracts. Calls remain feature-gated off. |
-| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.3 SHIPPED** | Complete plain-repost/quote originals, account-level Likes/Reposts/Quotes sheets, Surf/Pulse/Activity profile modes, unified replies and private reaction splits ship in `v1.6.3+13`. Analyze is clean; 126 tests pass. |
+| 3 | Backend API contract | ✅ **DONE** | `pulse_feed_v2`, `social_engagement_v1`, `profile_pulse_activity_v1`, `profile_discussion_activity_v1`, `my_profile_reactions_v1` and owner-only `delete_post` are live alongside the completed notification/message/group/call RPC contract. Calls remain feature-gated off. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.3 SHIPPED** · 🟡 next worktree build verified, not tagged | The required `chat-calls-notifications-overhaul` work is complete: Alert Center filtering, call lifecycle/surfaces, message deletion, group enforcement/reporting and shared swipeable tabs. Flutter analysis is clean, all 268 tests pass, and the release web build passes. The work remains uncommitted and calls remain feature-gated pending production TURN/device validation. |
 | 5 | Next.js web + admin (`web/`) | ✅ **v1.6.3 DEPLOYED** | Matching Pulse cards, engagement dialog, URL-restored profile modes and owner controls are live on Vercel deployment `dpl_FpFUXGmyTQ9k2c3MUAv5AJVrMsUR`. Group management remains Android-first. |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / v1.6.3 phone QA pending** | Supabase rollback/live smoke and pagination checks, Flutter analyze + 126/126 tests, two GitHub clean build runs, stable release build, web typecheck/15 tests/lint/build and production smoke all pass. The USB phone disconnected before the v1.6.3 in-place install; two-account/offline/accessibility matrices remain. |
-| 7 | Chat upgrade (`CHAT_PLAN.md`) | 🟡 **ADVANCED GROUP CONTROLS SHIPPED** | Keyboard-safe replies, retry, inbox filters, group identity/avatar crop, invite rotate/revoke/join, join approval, enforced edit/add/send policies, member search, notifications, shared media and owner deletion are live. Group reporting and truly server-paginated inbox filters remain. |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / physical QA pending** | 2026-07-31: `flutter analyze` has 0 issues, full Flutter suite is 268/268, the focused feature suite is 145/145, and `flutter build web --release` passes with its Wasm dry run. The Bash wrapper cannot start because WSL is unregistered, so the same mobile commands were run directly. Two-account/call relay/background/locked and physical accessibility matrices remain. |
+| 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **KIRO REQUIRED WORK COMPLETE** | All 49 required implementation tasks in `chat-calls-notifications-overhaul/tasks.md` are complete. The 73 remaining `*` entries are explicitly optional property/widget/SQL proof tasks. Group reporting, send-scope lockout, tombstones/delete-for-me, call pill/system actions and sibling-tab paging now ship in the worktree. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
 
@@ -169,10 +169,11 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 - publishable key `sb_publishable_nwJjxG8yJ01lTjrv6pXQww_mQ9MNq5t`
 - The service-role key is **not** in this repo and must never be. Server-only work uses edge functions.
 
-**Migrations applied** (28, in order) — see [`../supabase/README.md`](../supabase/README.md) for the
-table of what each one does. `0001`–`0021` build, harden and extend the original product; the seven
-timestamped v1.6–v1.6.3 migrations add canonical social threads/activity, group
-preferences/controls, reliable call state and preference-policy optimization.
+**Migrations applied** (37, in order) — see [`../supabase/README.md`](../supabase/README.md) for the
+table of what each one does. `0001`–`0021` build, harden and extend the original product; the
+timestamped migrations add canonical social threads/activity, group preferences/controls, reliable
+call state, push fan-out verification, synced notification preferences, message hiding, strict group
+capacity/identity enforcement and the covering message-hide foreign-key index.
 
 **Demo data already in the database** — the surf feed returns a full, realistic grid:
 
@@ -267,11 +268,12 @@ re-check query traffic before adding or dropping an index.
 2. **iOS release builds** require macOS/Xcode. Android release builds work locally and in GitHub CI.
 3. **Calls:** transactional Postgres state, recipient-validated signalling, token lifecycle tables,
    diagnostics and protected TURN credential issuance are deployed, but `reliable_calls` remains
-   server-disabled. Firebase delivery, Cloudflare TURN secrets, Android Core-Telecom/CallStyle and
-   two-real-phone relay/background/locked testing are still required for `v1.7.0`.
-4. **v1.6 stretch UI:** group reporting, truly server-paginated inbox filters and per-chat wallpaper
-   remain. Invite/join approval/policy/member search/shared-media/notification/delete controls ship
-   in v1.6.1.
+   server-disabled. **Firebase delivery is now done** (2026-07-30 — see `OPERATIONS.md` §2), so the
+   remaining blockers for `v1.7.0` are Cloudflare TURN secrets, Android Core-Telecom integration, and
+   two-real-phone relay/background/locked testing. Without TURN, WebRTC fails across most mobile
+   carrier NATs, so this stays off until a relay is configured.
+4. **v1.6 stretch UI:** group reporting is now implemented. Truly server-paginated inbox filters and
+   per-chat wallpaper remain outside the completed Kiro spec.
 5. **Pulse visual QA:** v1.6.2 rich target cards were verified on an attached Android 15 RMX3771
    in For You, Following and Profile Posts. Two-account follow-toast behavior and the complete
    physical gesture/keyboard/offline matrix remain manual.
@@ -279,6 +281,20 @@ re-check query traffic before adding or dropping an index.
 ---
 
 ## Session log
+
+### 2026-07-31 — chat, calls and notifications Kiro completion
+- Completed all 49 required tasks; 73 `*` property/widget/SQL proof tasks remain optional by the
+  spec's faster-MVP rule.
+- Finished Alert Center filtering/error retention/live announcements, bounded call lifecycle and
+  reconnects, permissions and call surfaces, message tombstones/delete-for-me, group validation and
+  enforcement/reporting, and the shared pager on Messages, Pulse, Surf and Profile.
+- Verification: Flutter analysis 0 issues; 268/268 full tests and 145/145 focused tests pass;
+  release web build and Wasm dry run pass. `scripts/verify.sh mobile` itself is unavailable because
+  Windows reports WSL `REGDB_E_CLASSNOTREG`; its mobile commands passed directly in PowerShell.
+- Applied and contract-checked `notifications_calls_messages_overhaul`, `group_spec_consistency` and
+  `message_hides_fk_index` on live `new_klect`. The schema is now 38 tables / 93 policies / 37
+  migrations; completion RPCs deny anonymous execution. Advisors report 0 ERROR, with only expected
+  unused-index INFO for the brand-new message-hide indexes.
 
 ### 2026-07-26 — initial build
 - Explored env; found prior `Klecto` project (v1 schema) and used it as a blueprint, not a base.
@@ -502,19 +518,87 @@ re-check query traffic before adding or dropping an index.
 
 ---
 
+### 2026-07-30 — FCM device push wired and verified end to end
+
+Push notifications moved from "built but inert" to **live and verified**. Nothing about the
+delivery contract changed; the missing pieces were the Firebase project and the trigger.
+
+- **Discovered an existing Firebase project `klect-b776a`** on the connected account
+  (`2023cse29.gpv@gmail.com`), created earlier the same day and completely empty — no apps
+  registered. Reused it rather than creating a duplicate. The unrelated `disha-501012` project on
+  the same account was left alone.
+- Registered Android app `1:412736900783:android:98a901f20c45ca83d6ce5a` for `com.klect.klect`,
+  attached the permanent release cert SHA-256 `460d934b…f11b334f`, and wrote the generated
+  `google-services.json` into `mobile/android/app/`. Added the `com.google.gms.google-services`
+  Gradle plugin to `settings.gradle.kts` + `app/build.gradle.kts`.
+- **Gitignored `google-services.json` and `GoogleService-Info.plist`.** The bundled API key is
+  package-scoped by Google rather than a true secret, but it is environment-specific — each
+  dev/CI environment should fetch its own via `firebase_get_sdk_config`.
+- Mobile client: added `firebase_core` + `firebase_messaging`, new
+  `core/notifications/push_notifications.dart` (`PushNotifications`), and `KlectApi`
+  `registerPushToken`/`unregisterPushToken` wrappers over the RPCs that already existed from
+  `reliable_call_state`. Registration fires from `RootShell.initState` and on `onTokenRefresh`;
+  `AuthController.signOut` unregisters so a signed-out phone stops receiving the prior account's
+  push. `Firebase.initializeApp` failure is caught, so a config-less build degrades to "no push"
+  instead of crashing.
+- Set `FCM_SERVICE_ACCOUNT` and `PUSH_WEBHOOK_SECRET` on `new_klect`. Passing the multi-line
+  service-account JSON inline fails with `Invalid secret pair: PRIVATE`; `--env-file` works.
+- **Built the Database Webhook as two migrations instead of dashboard clicks**, so it is
+  version-controlled like the rest of the schema: `enable_pg_net_and_vault_secret` turns on
+  `pg_net`, and `notifications_push_fanout_webhook` adds `public.notify_push_fanout()` plus an
+  `after insert` trigger on `public.notifications`. The shared secret is read at call time from
+  **Vault** (`push_webhook_secret`) rather than written into the trigger body, which would have
+  left it in plaintext in migration history permanently. A missing secret makes the trigger skip
+  silently — a notification is never lost because push is misconfigured.
+- **Verified, not assumed:** 401 without the secret header; `{"sent":0,"pruned":1}` against a
+  deliberately invalid token, which can only happen if the RSA key imported and the Google OAuth2
+  exchange succeeded; and a real notification insert recorded `200 {"sent":0,"reason":"no-devices"}`
+  in `net._http_response`, proving the trigger→`pg_net`→function path. Mobile `flutter analyze`
+  is clean, 126/126 tests pass, and `flutter build apk` succeeds.
+- Two gotchas worth remembering: **`execute_sql` via the Supabase MCP rolls back writes**, so a
+  test row inserted that way silently does not exist (use `apply_migration`); and
+  `firebase_messaging` requires **Android SDK Platform 34** installed alongside 36.
+- Deleted the local `firebase-service-account.json` and the temporary webhook-secret file after
+  the secrets were stored server-side. Neither is recoverable from this repo by design.
+
+**Real-device delivery proven the same session.** Built a stable-signed `1.6.4+14` release APK
+(98.5 MB, cert `460d934b…f11b334f`, `com.klect.klect`, min 24 / target 36) and installed it in
+place over `1.6.3+13` on the attached RMX3771 with app data intact. A genuine 142-char FCM token
+registered into `push_tokens`; a real notification insert produced `200 {"sent":1,"pruned":0}` in
+`net._http_response`; and the phone rendered it as `tag=FCM-Notification:…`, `channel=social`,
+title "Silas Okonkwo", body "started following you". The FCM-prefixed tag comes from the Firebase
+SDK, so this is real push and not the stage-1 local-notification path. Both `social` (importance 4)
+and `calls` (importance 5) channels are registered on the device.
+
+**Test-method trap worth remembering:** the first attempt used `adb shell am force-stop`, which
+puts the app in Android's *stopped state* — the OS then withholds FCM entirely until a manual
+relaunch. FCM reported `sent:1` while the tray stayed empty, which reads as a broken integration
+but is not; the queued message arrived on relaunch (hence two notifications appearing later). Use
+`am kill` or simple backgrounding instead. Recorded in `OPERATIONS.md` §2.
+
+**Version bookkeeping:** `pubspec.yaml` and `lib/core/app_version.dart` were bumped to `1.6.4` in
+lockstep as the update checker requires. Nothing is committed, pushed or tagged — cutting the
+GitHub `v1.6.4` release is a deliberate separate step.
+
+---
+
 ## Next actions
 
 1. Reconnect the Android phone, install stable `v1.6.3` in place, then run the two-account Pulse
    matrix: four-photo original → plain repost → quote → Likes/Reposts/Quotes account lists; profile
    Surf/Pulse/Activity filters; Surf/Pulse replies and deep links; private/blocked/unavailable
    targets; owner delete/undo; offline replay; large text and reduced motion.
-2. Finish the remaining stretch UI: server-paginated inbox filters, group reporting and per-chat
-   wallpaper. Keep web group-management parity as a separate scoped release.
-3. Configure Firebase device push and Cloudflare TURN secrets, implement Android
-   Core-Telecom/CallStyle, then run the required two-device Wi-Fi/carrier/background/terminated/
-   locked/permission-denied/forced-relay matrix before enabling `reliable_calls` or tagging v1.7.
-4. Walk through manual sections A–H of `CHECKLIST.md` (63 items — gestures, optimistic social
+2. Finish the remaining stretch UI: server-paginated inbox filters and per-chat wallpaper. Keep web
+   group-management parity as a separate scoped release.
+3. Commit the FCM work, open a PR and cut GitHub release `v1.6.4` with `klect.apk` — the working
+   tree is currently ahead of the last tag and the device-verified build exists only locally.
+   Consider also asserting `kAppVersion` == `pubspec` version in a test so the two cannot drift.
+4. Configure Cloudflare TURN secrets and implement Android Core-Telecom/CallStyle, then run the
+   required two-device Wi-Fi/carrier/background/terminated/locked/permission-denied/forced-relay
+   matrix before enabling `reliable_calls` or tagging v1.7. (Firebase push, the third prerequisite,
+   is done as of 2026-07-30.)
+5. Walk through manual sections A–H of `CHECKLIST.md` (63 items — gestures, optimistic social
    mechanics, messaging/groups, moderation, two-account RLS and craft). Automated gates are green.
-5. Triage the current production `npm audit --omit=dev` result (3 high, 0 critical; `next`,
+6. Triage the current production `npm audit --omit=dev` result (3 high, 0 critical; `next`,
    transitive `postcss` and `sharp`). The registry's proposed fix is an invalid Next.js downgrade,
    so do not apply `npm audit fix --force`; upgrade through a tested supported Next release.

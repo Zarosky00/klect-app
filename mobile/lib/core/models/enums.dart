@@ -214,6 +214,9 @@ enum NotificationType {
   /// An incoming or missed call.
   call('call'),
 
+  /// A collection, shelf or item recommended to you.
+  recommendation('recommendation'),
+
   /// A new taste match.
   match('match'),
 

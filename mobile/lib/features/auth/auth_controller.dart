@@ -8,6 +8,7 @@ import '../../core/interactions/interactions.dart';
 import '../../core/models/models.dart';
 import '../../core/offline/action_queue.dart';
 import '../../core/supabase.dart';
+import '../notifications/notification_surfaces.dart';
 
 /// What an auth form is doing right now.
 @immutable
@@ -109,6 +110,7 @@ class AuthController extends Notifier<AuthStatus> {
   /// Signs out and drops per-account client state so nothing leaks into the
   /// next session.
   Future<void> signOut() async {
+    await ref.read(pushNotificationsProvider).unregister();
     ref.read(interactionSeedStoreProvider).clear();
     await ref.read(offlineQueueProvider).clear();
     await _client.auth.signOut();

@@ -367,6 +367,29 @@ abstract final class Stagger {
   static const int max = 8;
 }
 
+/// How long a transient surface stays before it dismisses itself.
+/// A dwell period is not an animation, so the 480ms animation ceiling
+/// from `docs/DESIGN_SYSTEM.md` does not apply here.
+abstract final class Dwell {
+  static const Duration banner = Duration(milliseconds: 5000);
+}
+
+/// Finger-driven commit thresholds. Distances are logical pixels,
+/// velocities logical pixels per second, fractions are of the dragged extent.
+abstract final class Drags {
+  static const double bannerLimit = 96.0;
+  static const double commitFraction = 0.4;
+  static const double pageCommitFraction = 0.25;
+  static const double flingVelocityMin = 400.0;
+  static const double overscrollMax = 32.0;
+}
+
+/// How long an async placeholder may wait before it gives up.
+/// Network budget, not motion.
+abstract final class Timeouts {
+  static const Duration thumbnail = Duration(milliseconds: 2000);
+}
+
 abstract final class Breakpoints {
   static const double xs = 0.0;
   static const double sm = 480.0;
@@ -383,6 +406,7 @@ abstract final class Layout {
   static const double tapTargetMin = 44.0;
   static const double bottomBarHeight = 60.0;
   static const double topBarHeight = 52.0;
+  static const double callPillHeight = 48.0;
   /// Masonry column count for a given viewport width. Mobile and web
   /// resolve this identically so a shared link looks like the same product.
   static int masonryColumns(double width) {

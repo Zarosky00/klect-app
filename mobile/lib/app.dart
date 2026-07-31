@@ -7,6 +7,7 @@ import 'core/offline/action_queue.dart';
 import 'core/settings/app_settings.dart';
 import 'core/supabase.dart';
 import 'design/theme.dart';
+import 'features/chat/calls/call_availability.dart';
 import 'features/chat/widgets/incoming_call_overlay.dart';
 import 'router.dart';
 import 'ui/ui.dart';
@@ -32,6 +33,9 @@ class _KlectAppState extends ConsumerState<KlectApp>
     // Anything queued while offline (or before the app was killed) replays now.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(ref.read(offlineQueueProvider).flush());
+      // Session start reads call availability once (Requirement 10.6); touching
+      // the provider is what kicks that read off.
+      ref.read(callAvailabilityProvider);
     });
   }
 
@@ -45,6 +49,8 @@ class _KlectAppState extends ConsumerState<KlectApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(ref.read(offlineQueueProvider).flush());
+      // Re-reads only when the previous success is at least 5 minutes old.
+      unawaited(ref.read(callAvailabilityProvider.notifier).refreshIfStale());
     }
   }
 
@@ -101,7 +107,7 @@ class _KlectAppState extends ConsumerState<KlectApp>
             boldText: settings.highContrast || media.boldText,
           ),
           child: KInteractionFeedbackHost(
-            child: IncomingCallOverlay(child: child ?? const SizedBox.shrink()),
+            child: CallOverlayHost(child: child ?? const SizedBox.shrink()),
           ),
         );
       },

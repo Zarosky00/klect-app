@@ -5,7 +5,7 @@ publish_to: 'none'
 # ⚠ The x.y.z part MUST move in lockstep with `kAppVersion` in
 # lib/core/app_version.dart AND the GitHub release tag (vX.Y.Z) on
 # Zarosky00/klect-app — the in-app update checker compares the two.
-version: 1.6.3+13
+version: 1.6.4+14
 
 environment:
   sdk: ^3.12.2
@@ -51,11 +51,16 @@ dependencies:
   url_launcher: ^6.3.2
 
   # Notifications stage 1: system-tray notifications for realtime arrivals
-  # while the app is backgrounded-but-running. Real FCM push stays gated on a
-  # Firebase project (see supabase/functions/push-fanout) — no firebase
-  # packages here. Requires core-library desugaring on Android
-  # (android/app/build.gradle.kts).
+  # while the app is backgrounded-but-running. Requires core-library
+  # desugaring on Android (android/app/build.gradle.kts).
   flutter_local_notifications: ^22.2.0
+
+  # Notifications stage 2: real FCM push when the app is backgrounded/killed.
+  # Firebase project `klect-b776a` is registered (android/app/google-services.json,
+  # not committed — see .gitignore). Wired to public.register_push_token /
+  # unregister_push_token; server fanout is docs/OPERATIONS.md §2.
+  firebase_core: ^4.3.0
+  firebase_messaging: ^16.0.4
 
 dev_dependencies:
   flutter_test:

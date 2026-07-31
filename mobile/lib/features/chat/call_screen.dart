@@ -44,6 +44,7 @@ class _CallScreenState extends ConsumerState<CallScreen>
     with WidgetsBindingObserver {
   Timer? _dismissTimer;
   bool _controlsVisible = true;
+  String? _phaseAnnouncement;
 
   @override
   void initState() {
@@ -104,21 +105,24 @@ class _CallScreenState extends ConsumerState<CallScreen>
 
     ref.listen(activeCallProvider.select((s) => s.phase), (_, phase) {
       if (phase == CallPhase.ended) _scheduleDismiss();
+      if (!mounted) return;
+      setState(() {
+        _controlsVisible = true;
+        _phaseAnnouncement = _phaseLabel(phase);
+      });
     });
 
     return KScaffold(
       backgroundColor: colors.bgSunken,
       safeTop: false,
       safeBottom: false,
-      canPop: !state.isBusy,
-      onPopInvoked: (didPop, _) {
-        // Backing out of a live call must not silently orphan it.
-        if (didPop || !state.isBusy) return;
-        unawaited(ref.read(activeCallProvider.notifier).hangUp());
-      },
+      // System back leaves the call running; only the explicit end control
+      // hangs up. The shell exposes the retained session through CallPill.
+      canPop: true,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () {
+          if (!state.isVideo || state.phase != CallPhase.active) return;
           triggerInteractionTapFeedback(context);
           setState(() => _controlsVisible = !_controlsVisible);
         },
@@ -127,39 +131,47 @@ class _CallScreenState extends ConsumerState<CallScreen>
           children: <Widget>[
             _Stage(state: state),
             _Scrim(visible: state.isVideo && state.hasRemoteVideo),
+            Semantics(
+              liveRegion: true,
+              label: _phaseAnnouncement,
+              child: const SizedBox.shrink(),
+            ),
             SafeArea(
               child: Column(
                 children: <Widget>[
                   _Header(state: state, visible: _controlsVisible),
                   const Spacer(),
-                  AnimatedOpacity(
-                    opacity: _controlsVisible ? 1 : 0,
-                    duration: KMotion.duration(context, KDurations.base),
-                    curve: Curves_.emphasized,
-                    child: IgnorePointer(
-                      ignoring: !_controlsVisible,
-                      child: switch (state.phase) {
-                        CallPhase.incoming => _IncomingControls(
-                          onAccept: () => unawaited(_accept()),
-                          onDecline: () => unawaited(
-                            ref.read(activeCallProvider.notifier).decline(),
+                  ExcludeSemantics(
+                    excluding: !_controlsVisible,
+                    child: AnimatedOpacity(
+                      opacity: _controlsVisible ? 1 : 0,
+                      duration: KMotion.duration(context, KDurations.base),
+                      curve: Curves_.emphasized,
+                      child: IgnorePointer(
+                        ignoring: !_controlsVisible,
+                        child: switch (state.phase) {
+                          CallPhase.incoming => _IncomingControls(
+                            onAccept: () => unawaited(_accept()),
+                            onDecline: () => unawaited(
+                              ref.read(activeCallProvider.notifier).decline(),
+                            ),
+                            isVideo: state.isVideo,
                           ),
-                          isVideo: state.isVideo,
-                        ),
-                        CallPhase.ended => _EndedControls(
-                          state: state,
-                          onDone: () {
-                            _dismissTimer?.cancel();
-                            ref.read(activeCallProvider.notifier).dismiss();
-                            if (context.canPop()) {
-                              context.pop();
-                            } else {
-                              context.go(Routes.messages);
-                            }
-                          },
-                        ),
-                        _ => _InCallControls(state: state),
-                      },
+                          CallPhase.ended => _EndedControls(
+                            state: state,
+                            onDone: () {
+                              _dismissTimer?.cancel();
+                              ref.read(activeCallProvider.notifier).dismiss();
+                              if (context.canPop()) {
+                                context.pop();
+                              } else {
+                                context.go(Routes.messages);
+                              }
+                            },
+                          ),
+                          _ => _InCallControls(state: state),
+                        },
+                      ),
                     ),
                   ),
                 ],
@@ -172,39 +184,90 @@ class _CallScreenState extends ConsumerState<CallScreen>
   }
 }
 
-class _Stage extends ConsumerWidget {
+class _Stage extends ConsumerStatefulWidget {
   const _Stage({required this.state});
 
   final ActiveCallState state;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Stage> createState() => _StageState();
+}
+
+class _StageState extends ConsumerState<_Stage> {
+  Offset? _previewOffset;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.state;
     final colors = context.kc;
     final remote = state.remoteRenderer;
     final local = state.localRenderer;
+    final staleSince = state.remoteFrameStaleSince;
+    final stale =
+        staleSince != null &&
+        DateTime.now().difference(staleSince) >=
+            KlectCallTimings.remoteFrameTimeout;
     final showRemoteVideo =
-        state.isVideo && state.hasRemoteVideo && remote != null;
+        state.isVideo && state.hasRemoteVideo && remote != null && !stale;
 
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        if (showRemoteVideo)
-          RTCVideoView(
-            remote,
-            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-          )
-        else
-          ColoredBox(
-            color: colors.bgSunken,
-            child: _PeerPortrait(state: state),
-          ),
-        if (state.isVideo && state.cameraEnabled && local != null)
-          Positioned(
-            right: Space.s4,
-            top: MediaQuery.paddingOf(context).top + Space.s16,
-            child: _LocalPreview(renderer: local, mirror: state.frontCamera),
-          ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final padding = MediaQuery.paddingOf(context);
+        const previewWidth = Space.s24;
+        const previewHeight = Space.s24 * 4 / 3;
+        const minX = Space.s4;
+        final minY = padding.top + Space.s4;
+        final maxX = (constraints.maxWidth - previewWidth - Space.s4).clamp(
+          minX,
+          double.infinity,
+        );
+        final maxY =
+            (constraints.maxHeight - padding.bottom - previewHeight - Space.s4)
+                .clamp(minY, double.infinity);
+        final initial = Offset(maxX, padding.top + Space.s16);
+        final preview = _previewOffset ?? initial;
+        final clamped = Offset(
+          preview.dx.clamp(minX, maxX),
+          preview.dy.clamp(minY, maxY),
+        );
+
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            if (showRemoteVideo)
+              RTCVideoView(
+                remote,
+                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              )
+            else
+              ColoredBox(
+                color: colors.bgSunken,
+                child: _PeerPortrait(state: state),
+              ),
+            if (state.isVideo && state.cameraEnabled && local != null)
+              Positioned(
+                left: clamped.dx,
+                top: clamped.dy,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onPanUpdate: (details) {
+                    setState(() {
+                      final next = clamped + details.delta;
+                      _previewOffset = Offset(
+                        next.dx.clamp(minX, maxX),
+                        next.dy.clamp(minY, maxY),
+                      );
+                    });
+                  },
+                  child: _LocalPreview(
+                    renderer: local,
+                    mirror: state.frontCamera,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -236,7 +299,13 @@ class _PeerPortrait extends ConsumerWidget {
           const SizedBox(height: Space.s2),
           Text(
             _statusFor(state),
-            style: context.kt.body.copyWith(color: colors.textSecondary),
+            // While active the status line is the timer, so it takes the
+            // tabular count style and stops jittering as the digits change.
+            style:
+                (state.phase == CallPhase.active
+                        ? context.kt.count
+                        : context.kt.body)
+                    .copyWith(color: colors.textSecondary),
           ),
         ],
       ),
@@ -307,32 +376,32 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    return AnimatedOpacity(
-      opacity: visible ? 1 : 0,
-      duration: KMotion.duration(context, KDurations.base),
-      curve: Curves_.emphasized,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Space.s4,
-          vertical: Space.s3,
-        ),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  if (state.isVideo && state.hasRemoteVideo)
+    return ExcludeSemantics(
+      excluding: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: KMotion.duration(context, KDurations.base),
+        curve: Curves_.emphasized,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Space.s4,
+            vertical: Space.s3,
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (state.isVideo && state.hasRemoteVideo)
+                      Text(
+                        state.peer?.name ?? 'KLECT call',
+                        style: context.kt.title3,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     Text(
-                      state.peer?.name ?? 'KLECT call',
-                      style: context.kt.title3,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  Semantics(
-                    liveRegion: true,
-                    child: Text(
                       _statusFor(state),
                       style: context.kt.count.copyWith(
                         color: state.phase == CallPhase.reconnecting
@@ -340,22 +409,22 @@ class _Header extends StatelessWidget {
                             : colors.textSecondary,
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            if (!KlectCallIce.hasTurn && state.phase == CallPhase.reconnecting)
-              Tooltip(
-                message:
-                    'No TURN relay is configured, so calls across '
-                    'restrictive networks may not connect.',
-                child: Icon(
-                  Icons.info_outline_rounded,
-                  size: Space.s5,
-                  color: colors.semanticWarning,
+                  ],
                 ),
               ),
-          ],
+              if (!state.relayAvailable && state.isBusy)
+                Tooltip(
+                  message:
+                      'No relay server is available, so this call may not '
+                      'connect on a restrictive carrier network.',
+                  child: Icon(
+                    Icons.info_outline_rounded,
+                    size: Space.s5,
+                    color: colors.semanticWarning,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -371,6 +440,16 @@ class _InCallControls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
     final controller = ref.read(activeCallProvider.notifier);
+
+    Future<void> apply(
+      Future<bool> Function() operation,
+      String control,
+    ) async {
+      final applied = await operation();
+      if (!applied && context.mounted) {
+        KToast.error(context, '$control could not be changed.');
+      }
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -390,41 +469,70 @@ class _InCallControls extends ConsumerWidget {
                     ? Icons.mic_rounded
                     : Icons.mic_off_rounded,
                 label: state.micEnabled ? 'Mute' : 'Unmute',
+                semanticLabel:
+                    'Microphone, ${state.micEnabled ? 'on' : 'off'}, enabled',
                 active: !state.micEnabled,
-                onPressed: () => unawaited(controller.toggleMic()),
+                onPressed: () =>
+                    unawaited(apply(controller.toggleMic, 'Microphone')),
               ),
               _CallButton(
                 icon: state.speakerOn
                     ? Icons.volume_up_rounded
                     : Icons.hearing_rounded,
                 label: state.speakerOn ? 'Speaker' : 'Earpiece',
+                semanticLabel:
+                    'Speaker, ${state.speakerOn ? 'on' : 'off'}, enabled',
                 active: state.speakerOn,
-                onPressed: () => unawaited(controller.toggleSpeaker()),
+                onPressed: () =>
+                    unawaited(apply(controller.toggleSpeaker, 'Speaker')),
               ),
-              _CallButton(
-                icon: state.cameraEnabled
-                    ? Icons.videocam_rounded
-                    : Icons.videocam_off_rounded,
-                label: state.cameraEnabled ? 'Camera on' : 'Camera off',
-                active: state.cameraEnabled,
-                onPressed: () => unawaited(controller.toggleCamera()),
-              ),
-              _CallButton(
-                icon: Icons.cameraswitch_rounded,
-                label: 'Flip',
-                enabled: state.cameraEnabled,
-                onPressed: () => unawaited(controller.switchCamera()),
-              ),
+              if (state.isVideo) ...<Widget>[
+                _CallButton(
+                  icon: state.cameraEnabled
+                      ? Icons.videocam_rounded
+                      : Icons.videocam_off_rounded,
+                  label: state.cameraEnabled ? 'Camera on' : 'Camera off',
+                  semanticLabel:
+                      'Camera, ${state.cameraEnabled ? 'on' : 'off'}, enabled',
+                  active: state.cameraEnabled,
+                  onPressed: () =>
+                      unawaited(apply(controller.toggleCamera, 'Camera')),
+                ),
+                _CallButton(
+                  icon: Icons.cameraswitch_rounded,
+                  label: 'Flip',
+                  semanticLabel: state.cameraEnabled
+                      ? 'Flip camera, enabled'
+                      : 'Flip camera, disabled while camera is off',
+                  enabled: state.cameraEnabled,
+                  onPressed: () =>
+                      unawaited(apply(controller.switchCamera, 'Camera')),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: Space.s6),
-          _CallButton(
-            icon: Icons.call_end_rounded,
-            label: 'End',
-            size: Space.s16,
-            background: colors.semanticDanger,
-            foreground: colors.textInverse,
-            onPressed: () => unawaited(controller.hangUp()),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: <Widget>[
+              _CallButton(
+                icon: Icons.keyboard_arrow_down_rounded,
+                label: 'Minimize',
+                semanticLabel: 'Minimize call, enabled',
+                onPressed: () {
+                  if (context.canPop()) context.pop();
+                },
+              ),
+              _CallButton(
+                icon: Icons.call_end_rounded,
+                label: 'End',
+                semanticLabel: 'End call, enabled',
+                size: Space.s16,
+                background: colors.semanticDanger,
+                foreground: colors.textInverse,
+                onPressed: () => unawaited(controller.hangUp()),
+              ),
+            ],
           ),
         ],
       ),
@@ -519,6 +627,7 @@ class _CallButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onPressed,
+    this.semanticLabel,
     this.active = false,
     this.enabled = true,
     this.size = Space.s14,
@@ -528,6 +637,7 @@ class _CallButton extends StatelessWidget {
 
   final IconData icon;
   final String label;
+  final String? semanticLabel;
   final VoidCallback onPressed;
   final bool active;
   final bool enabled;
@@ -546,7 +656,8 @@ class _CallButton extends StatelessWidget {
       enabled: enabled,
       onTap: enabled ? onPressed : null,
       enforceMinTapTarget: false,
-      semanticLabel: label,
+      semanticLabel:
+          semanticLabel ?? '$label, ${enabled ? 'enabled' : 'disabled'}',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -585,4 +696,14 @@ String _statusFor(ActiveCallState state) => switch (state.phase) {
   CallPhase.active => state.formattedElapsed,
   CallPhase.reconnecting => 'Reconnecting…',
   CallPhase.ended => state.endReason ?? 'Call ended',
+};
+
+String _phaseLabel(CallPhase phase) => switch (phase) {
+  CallPhase.idle => 'Call idle',
+  CallPhase.dialing => 'Call ringing',
+  CallPhase.incoming => 'Incoming call',
+  CallPhase.connecting => 'Call connecting',
+  CallPhase.active => 'Call active',
+  CallPhase.reconnecting => 'Call reconnecting',
+  CallPhase.ended => 'Call ended',
 };

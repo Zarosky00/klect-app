@@ -28,42 +28,98 @@ re-authoring values by hand.
 
 ## 2. Push notifications
 
-The delivery path is built and deployed. It is **inert until you add two secrets** — by design, so it
-returns 200 and the webhook never retries in a loop.
+**✅ LIVE as of 2026-07-30.** Configured and verified end to end — no action required.
 
 **Edge function:** `push-fanout` (deployed, `verify_jwt = false`)
 Handles FCM v1 for both Android and iOS, composes per-type copy, respects muted conversations,
 emits a `klect://` deep link, and prunes tokens FCM reports as permanently dead.
 
-### Wire it up
+### How it is wired (for reference / disaster recovery)
 
-1. **Create the secrets** (dashboard → Edge Functions → Secrets, or CLI):
+**Firebase project:** `klect-b776a` (project number `412736900783`), owned by
+`2023cse29.gpv@gmail.com`. Android app `1:412736900783:android:98a901f20c45ca83d6ce5a`,
+package `com.klect.klect`, with the permanent release cert SHA-256
+`460d934b…f11b334f` registered.
 
-   ```bash
-   npx supabase secrets set PUSH_WEBHOOK_SECRET="$(openssl rand -hex 32)" --project-ref dikhuygcwxnrsckqglzg
-   ```
+`mobile/android/app/google-services.json` is **gitignored** — it is app-config, not a secret, but
+it is project-specific. Regenerate it for a new environment with the Firebase MCP
+(`firebase_get_sdk_config`) or `Project Settings → Your apps` in the console. The
+`com.google.gms.google-services` Gradle plugin in `android/settings.gradle.kts` +
+`android/app/build.gradle.kts` consumes it. **Note:** `firebase_messaging` pulls in a dependency
+that requires **Android SDK Platform 34** to be installed alongside 36.
 
-   ```bash
-   npx supabase secrets set FCM_SERVICE_ACCOUNT="$(cat firebase-service-account.json | tr -d '\n')" --project-ref dikhuygcwxnrsckqglzg
-   ```
+**Secrets set on `new_klect`** (`npx supabase secrets list --project-ref dikhuygcwxnrsckqglzg`):
 
-2. **Create the Database Webhook** — dashboard → Database → Webhooks → *Create*:
-   - table `public.notifications`, event **Insert**
-   - type **HTTP Request**, method `POST`
-   - URL `https://dikhuygcwxnrsckqglzg.supabase.co/functions/v1/push-fanout`
-   - header `x-klect-secret: <the PUSH_WEBHOOK_SECRET value>`
+| secret | source |
+|---|---|
+| `FCM_SERVICE_ACCOUNT` | Firebase console → Project Settings → Service Accounts → generate private key |
+| `PUSH_WEBHOOK_SECRET` | 32 random bytes, hex |
 
-3. **Client side** — on sign-in, register the FCM token into `push_tokens`
-   (`{user_id, token, platform}`); on sign-out, delete it.
-
-Verify it is reachable (should be `401` before the secret header is set):
+Setting a multi-line JSON secret via `--env-file` avoids the shell-quoting failure you get
+passing it inline (`Invalid secret pair: PRIVATE`):
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://dikhuygcwxnrsckqglzg.supabase.co/functions/v1/push-fanout -d '{}'
+npx supabase secrets set --project-ref dikhuygcwxnrsckqglzg --env-file .secrets.env.tmp
 ```
+
+⚠ The service-account JSON and the raw webhook secret are **not kept in this repo**. Both were
+deleted after being set. Re-download from Firebase if you ever need them again.
+
+**The webhook is a migration, not a dashboard click.** `notifications_push_fanout_webhook`
+creates `public.notify_push_fanout()` + an `after insert` trigger on `public.notifications` that
+`net.http_post`s to `push-fanout` (async, so it never blocks the insert). The shared secret is
+read at call time from **Supabase Vault** (`vault.decrypted_secrets`, name `push_webhook_secret`)
+rather than hardcoded — a literal in the trigger body would sit in plaintext in migration history
+forever. `pg_net` is enabled by `enable_pg_net_and_vault_secret`.
+
+If the secret is ever missing from Vault the trigger **skips silently** instead of failing the
+insert — a notification must never be lost because push is misconfigured.
+
+### Client side
+`lib/core/notifications/push_notifications.dart` (`PushNotifications`) initialises Firebase,
+requests permission, and calls the `register_push_token` RPC — plus `onTokenRefresh`, since a
+token rotates on reinstall or Play Services update. `RootShell.initState` triggers it;
+`AuthController.signOut` calls `unregister()` so a signed-out phone stops receiving the previous
+account's push. `Firebase.initializeApp` failures are caught, so a build with no
+`google-services.json` degrades to "no push" rather than crashing.
+
+### Verifying it still works
+
+```bash
+# 401 — the auth boundary
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  https://dikhuygcwxnrsckqglzg.supabase.co/functions/v1/push-fanout -d '{}'
+```
+
+```sql
+-- what the trigger actually got back, last 6 hours
+select status_code, content, error_msg from net._http_response order by created desc limit 5;
+```
+
+A reply of `{"sent":0,"pruned":1}` against a deliberately invalid token is the strongest cheap
+signal: it can only happen if the RSA key imported and the Google OAuth2 exchange succeeded.
+`{"sent":0,"reason":"no-devices"}` just means no real phone has registered a token yet.
+
+> ⚠ **`execute_sql` via the Supabase MCP rolls back writes.** A test row inserted that way will
+> not exist a moment later. Use `apply_migration` (or the CLI) when a write must persist.
 
 ### Notification channels the client must create
 `calls` (high priority, ringtone) and `social` (normal). The function already targets them.
+
+### Real-device delivery — verified 2026-07-30
+
+Confirmed on an attached RMX3771 (Android 15) running `1.6.4+14`: a genuine 142-char FCM token
+registered into `push_tokens`, `net._http_response` recorded `200 {"sent":1,"pruned":0}`, and the
+handset rendered the notification with `tag=FCM-Notification:…`, `channel=social`,
+title = actor display name, body = "started following you". That tag is emitted by the Firebase
+SDK, so it proves real push rather than the app's stage-1 local-notification path.
+
+> ⚠ **Do not test push with `adb shell am force-stop`.** Force-stop puts the app in Android's
+> *stopped state*, and the OS withholds FCM messages until the user manually relaunches the app.
+> FCM will still answer `sent:1` while nothing appears in the tray, which looks like a broken
+> integration but is not — the queued message is delivered the moment the app is reopened.
+> Swiping an app away from recents does **not** set that flag, so ordinary use is unaffected.
+> To test a not-running app, use `adb shell am kill` (no stopped flag), or just background it.
 
 ---
 
@@ -90,7 +146,8 @@ select jobname, schedule, active from cron.job;
 ## 4. Before you go live
 
 - [ ] Enable leaked-password protection (§1a)
-- [ ] Configure FCM + the webhook (§2), or accept that push is silent
+- [x] Configure FCM + the webhook (§2) — **done 2026-07-30**, verified end to end
+- [x] Real-device delivery confirmed on RMX3771 / Android 15 with `1.6.4+14` (§2)
 - [ ] Add a **TURN server** — WebRTC calls will fail across most mobile NATs with STUN alone.
       The ICE config location is marked in the mobile call service.
 - [ ] Set Auth → URL Configuration → Site URL and redirect allow-list to your real domains

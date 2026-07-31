@@ -83,6 +83,25 @@ export const stagger = {
   "max": 8
 } as const;
 
+/** Self-dismiss periods in ms. Not animation — the 480ms cap does not apply. */
+export const dwell = {
+  "banner": 5000
+} as const;
+
+/** Finger-driven commit thresholds: px, px/s and fractions of the dragged extent. */
+export const drag = {
+  "bannerLimit": 96,
+  "commitFraction": 0.4,
+  "pageCommitFraction": 0.25,
+  "flingVelocityMin": 400,
+  "overscrollMax": 32
+} as const;
+
+/** Async placeholder budgets in ms. */
+export const timeout = {
+  "thumbnail": 2000
+} as const;
+
 export const layout = {
   "breakpoint": {
     "xs": 0,
@@ -105,7 +124,8 @@ export const layout = {
   "readableMaxWidth": 680,
   "tapTargetMin": 44,
   "bottomBarHeight": 60,
-  "topBarHeight": 52
+  "topBarHeight": 52,
+  "callPillHeight": 48
 } as const;
 
 export const aspect = {

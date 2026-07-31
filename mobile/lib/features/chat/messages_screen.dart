@@ -83,10 +83,6 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     final state = ref.watch(chatInboxProvider);
     final archivedCount = state.archived.length;
     final source = _showArchived ? state.archived : state.active;
-    final entries = <ChatInboxEntry>[
-      for (final entry in source)
-        if (_matchesFilter(entry) && _matchesSearch(entry)) entry,
-    ];
 
     ref.listen(chatInboxProvider.select((s) => s.error), (_, error) {
       if (error == null || !mounted) return;
@@ -127,40 +123,67 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         ],
       ),
       onRefresh: _inbox.refresh,
-      body: Column(
-        children: <Widget>[
-          if (!_showArchived)
-            _InboxControls(
-              filter: _filter,
-              onFilterChanged: (filter) => setState(() => _filter = filter),
-              onQueryChanged: (query) => setState(() => _query = query),
-            ),
-          Expanded(
-            child: _Body(
+      body: _showArchived
+          ? _Body(
               state: state,
-              entries: entries,
-              showArchived: _showArchived,
-              filtered:
-                  !_showArchived &&
-                  (_filter != _InboxFilter.all || _query.trim().isNotEmpty),
+              entries: _entriesFor(source, _InboxFilter.all),
+              showArchived: true,
+              filtered: _query.trim().isNotEmpty,
               onOpen: _open,
               onDelete: (entry) => unawaited(_delete(entry)),
+            )
+          : Column(
+              children: <Widget>[
+                _InboxControls(
+                  onQueryChanged: (query) => setState(() => _query = query),
+                ),
+                Expanded(
+                  child: KTabPager(
+                    tabs: <KTabPagerTab>[
+                      for (final filter in _InboxFilter.values)
+                        KTabPagerTab(id: filter.name, label: filter.label),
+                    ],
+                    selectedIndex: _filter.index,
+                    onSelected: (index) =>
+                        setState(() => _filter = _InboxFilter.values[index]),
+                    builder: (context, index) {
+                      final filter = _InboxFilter.values[index];
+                      return _Body(
+                        state: state,
+                        entries: _entriesFor(source, filter),
+                        showArchived: false,
+                        filtered:
+                            filter != _InboxFilter.all ||
+                            _query.trim().isNotEmpty,
+                        onOpen: _open,
+                        onDelete: (entry) => unawaited(_delete(entry)),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
-  bool _matchesFilter(ChatInboxEntry entry) => switch (_filter) {
-    _InboxFilter.all => !entry.isRequest,
-    _InboxFilter.unread => !entry.isRequest && entry.unreadCount > 0,
-    _InboxFilter.people =>
-      !entry.isRequest && entry.conversation.kind == ConversationKind.dm,
-    _InboxFilter.groups =>
-      !entry.isRequest && entry.conversation.kind == ConversationKind.group,
-    _InboxFilter.requests => entry.isRequest,
-  };
+  List<ChatInboxEntry> _entriesFor(
+    List<ChatInboxEntry> source,
+    _InboxFilter filter,
+  ) => <ChatInboxEntry>[
+    for (final entry in source)
+      if (_matchesFilter(entry, filter) && _matchesSearch(entry)) entry,
+  ];
+
+  bool _matchesFilter(ChatInboxEntry entry, _InboxFilter filter) =>
+      switch (filter) {
+        _InboxFilter.all => !entry.isRequest,
+        _InboxFilter.unread => !entry.isRequest && entry.unreadCount > 0,
+        _InboxFilter.people =>
+          !entry.isRequest && entry.conversation.kind == ConversationKind.dm,
+        _InboxFilter.groups =>
+          !entry.isRequest && entry.conversation.kind == ConversationKind.group,
+        _InboxFilter.requests => entry.isRequest,
+      };
 
   bool _matchesSearch(ChatInboxEntry entry) {
     final query = _query.trim().toLowerCase();
@@ -246,52 +269,19 @@ extension on _InboxFilter {
 }
 
 class _InboxControls extends StatelessWidget {
-  const _InboxControls({
-    required this.filter,
-    required this.onFilterChanged,
-    required this.onQueryChanged,
-  });
+  const _InboxControls({required this.onQueryChanged});
 
-  final _InboxFilter filter;
-  final ValueChanged<_InboxFilter> onFilterChanged;
   final ValueChanged<String> onQueryChanged;
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: <Widget>[
-      Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Space.s4,
-          Space.s2,
-          Space.s4,
-          Space.s2,
-        ),
-        child: KTextField(
-          hint: 'Search conversations',
-          prefixIcon: Icons.search_rounded,
-          onChanged: onQueryChanged,
-          textInputAction: TextInputAction.search,
-        ),
-      ),
-      SizedBox(
-        height: Space.s10,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: Space.s4),
-          itemCount: _InboxFilter.values.length,
-          separatorBuilder: (_, _) => const SizedBox(width: Space.s2),
-          itemBuilder: (context, index) {
-            final candidate = _InboxFilter.values[index];
-            return KChip(
-              label: candidate.label,
-              selected: candidate == filter,
-              onTap: () => onFilterChanged(candidate),
-            );
-          },
-        ),
-      ),
-      const SizedBox(height: Space.s2),
-    ],
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(Space.s4, Space.s2, Space.s4, Space.s2),
+    child: KTextField(
+      hint: 'Search conversations',
+      prefixIcon: Icons.search_rounded,
+      onChanged: onQueryChanged,
+      textInputAction: TextInputAction.search,
+    ),
   );
 }
 

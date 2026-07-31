@@ -262,6 +262,15 @@
   --k-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   --k-ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
   --k-ease-linear: cubic-bezier(0, 0, 1, 1);
+  /* dwell + timeout: self-dismiss and network budgets, not animation */
+  --k-dwell-banner: 5000ms;
+  --k-timeout-thumbnail: 2000ms;
+  /* drag thresholds: unitless — px, px/s and fractions, per token name */
+  --k-drag-bannerLimit: 96;
+  --k-drag-commitFraction: 0.4;
+  --k-drag-pageCommitFraction: 0.25;
+  --k-drag-flingVelocityMin: 400;
+  --k-drag-overscrollMax: 32;
   /* layout */
   --k-masonry-gutter: 10px;
   --k-content-max: 1320px;
@@ -269,6 +278,7 @@
   --k-tap-min: 44px;
   --k-bottombar-h: 60px;
   --k-topbar-h: 52px;
+  --k-callpill-h: 48px;
   /* opacity + blur */
   --k-opacity-disabled: 0.38;
   --k-opacity-pressed: 0.72;

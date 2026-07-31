@@ -37,23 +37,24 @@ abstract final class MessageActionsSheet {
     required void Function(String emoji) onReact,
     required VoidCallback onReply,
     required VoidCallback onEdit,
-    required VoidCallback onDelete,
+    required VoidCallback onDeleteForEveryone,
+    required VoidCallback onDeleteForMe,
     VoidCallback? onForward,
-  }) =>
-      KSheet.show<void>(
-        context: context,
-        showHandle: true,
-        builder: (_) => _Body(
-          message: message,
-          isMine: isMine,
-          viewerId: viewerId,
-          onReact: onReact,
-          onReply: onReply,
-          onEdit: onEdit,
-          onDelete: onDelete,
-          onForward: onForward,
-        ),
-      );
+  }) => KSheet.show<void>(
+    context: context,
+    showHandle: true,
+    builder: (_) => _Body(
+      message: message,
+      isMine: isMine,
+      viewerId: viewerId,
+      onReact: onReact,
+      onReply: onReply,
+      onEdit: onEdit,
+      onDeleteForEveryone: onDeleteForEveryone,
+      onDeleteForMe: onDeleteForMe,
+      onForward: onForward,
+    ),
+  );
 }
 
 class _Body extends StatelessWidget {
@@ -64,7 +65,8 @@ class _Body extends StatelessWidget {
     required this.onReact,
     required this.onReply,
     required this.onEdit,
-    required this.onDelete,
+    required this.onDeleteForEveryone,
+    required this.onDeleteForMe,
     this.onForward,
   });
 
@@ -74,11 +76,19 @@ class _Body extends StatelessWidget {
   final void Function(String emoji) onReact;
   final VoidCallback onReply;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback onDeleteForEveryone;
+  final VoidCallback onDeleteForMe;
   final VoidCallback? onForward;
 
   @override
   Widget build(BuildContext context) {
+    if (message.isTombstone) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[_deleteForMeRow(context)],
+      );
+    }
     final canCopy = message.hasText;
     final canEdit = isMine && message.hasText && !message.pending;
     final authorId = message.authorId;
@@ -135,25 +145,26 @@ class _Body extends StatelessWidget {
               onEdit();
             },
           ),
-        if (isMine)
+        if (isMine && !message.pending && !message.failed)
           _ActionRow(
             icon: Icons.delete_outline_rounded,
-            label: 'Delete',
+            label: 'Delete for everyone',
             destructive: true,
             onTap: () async {
               final confirmed = await KConfirmDialog.show(
                 context,
-                title: 'Delete this message?',
-                message: 'It disappears for everyone in the conversation.',
-                confirmLabel: 'Delete',
+                title: 'Delete for everyone?',
+                message: 'This leaves a deleted-message marker for everyone.',
+                confirmLabel: 'Delete for everyone',
                 destructive: true,
               );
               if (!confirmed || !context.mounted) return;
               Navigator.of(context).pop();
-              onDelete();
+              onDeleteForEveryone();
             },
-          )
-        else if (authorId != null)
+          ),
+        _deleteForMeRow(context),
+        if (!isMine && authorId != null)
           _ActionRow(
             icon: Icons.flag_outlined,
             label: 'Report',
@@ -176,6 +187,24 @@ class _Body extends StatelessWidget {
       ],
     );
   }
+
+  Widget _deleteForMeRow(BuildContext context) => _ActionRow(
+    icon: Icons.delete_sweep_outlined,
+    label: 'Delete for me',
+    destructive: true,
+    onTap: () async {
+      final confirmed = await KConfirmDialog.show(
+        context,
+        title: 'Delete for you?',
+        message: 'This message disappears only from your account.',
+        confirmLabel: 'Delete for me',
+        destructive: true,
+      );
+      if (!confirmed || !context.mounted) return;
+      Navigator.of(context).pop();
+      onDeleteForMe();
+    },
+  );
 }
 
 class _QuickReactions extends StatelessWidget {
@@ -267,21 +296,15 @@ Future<void> reportMessageAuthor(
   BuildContext context, {
   required String authorId,
   String? subjectLabel,
-}) =>
-    KReportSheet.showForUser(
-      context,
-      userId: authorId,
-      subjectLabel: subjectLabel,
-    );
+}) => KReportSheet.showForUser(
+  context,
+  userId: authorId,
+  subjectLabel: subjectLabel,
+);
 
 /// Convenience so a caller can report an [EntityType] directly from chat.
 Future<void> reportSharedEntity(
   BuildContext context, {
   required EntityType type,
   required String entityId,
-}) =>
-    KReportSheet.showForEntity(
-      context,
-      type: type,
-      entityId: entityId,
-    );
+}) => KReportSheet.showForEntity(context, type: type, entityId: entityId);

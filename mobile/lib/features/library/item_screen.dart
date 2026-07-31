@@ -65,12 +65,13 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
   }
 
   void _refreshAround(ItemDetail detail) => ref.refreshLibrary(
-        itemId: widget.itemId,
-        collectionId: detail.closeup.breadcrumb?.collection?.id ??
-            detail.item.collectionId,
-        subcollectionId: detail.closeup.breadcrumb?.subcollection?.id ??
-            detail.item.subcollectionId,
-      );
+    itemId: widget.itemId,
+    collectionId:
+        detail.closeup.breadcrumb?.collection?.id ?? detail.item.collectionId,
+    subcollectionId:
+        detail.closeup.breadcrumb?.subcollection?.id ??
+        detail.item.subcollectionId,
+  );
 
   Future<void> _edit(ItemDetail detail) async {
     final saved = await EditItemSheet.show(
@@ -116,7 +117,9 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
       for (final media in detail.media) media.id: media,
     };
     try {
-      await ref.read(libraryActionsProvider).reorderMedia(
+      await ref
+          .read(libraryActionsProvider)
+          .reorderMedia(
             itemId: widget.itemId,
             ordered: <ItemMedia>[
               for (final id in order)
@@ -134,7 +137,9 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
 
   Future<void> _setCover(ItemDetail detail, String mediaId) async {
     try {
-      await ref.read(libraryActionsProvider).setItemCover(
+      await ref
+          .read(libraryActionsProvider)
+          .setItemCover(
             itemId: widget.itemId,
             media: detail.media,
             mediaId: mediaId,
@@ -151,7 +156,8 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
   Future<void> _move(ItemDetail detail) async {
     final collectionId =
         detail.closeup.breadcrumb?.collection?.id ?? detail.item.collectionId;
-    final subcollectionId = detail.closeup.breadcrumb?.subcollection?.id ??
+    final subcollectionId =
+        detail.closeup.breadcrumb?.subcollection?.id ??
         detail.item.subcollectionId;
     if (collectionId == null || subcollectionId == null) return;
 
@@ -163,7 +169,9 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
     if (target == null || !mounted) return;
 
     try {
-      final result = await ref.read(libraryActionsProvider).moveItem(
+      final result = await ref
+          .read(libraryActionsProvider)
+          .moveItem(
             itemId: widget.itemId,
             fromSubcollectionId: subcollectionId,
             toSubcollectionId: target.subcollectionId,
@@ -196,7 +204,8 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
     final confirmed = await KConfirmDialog.show(
       context,
       title: 'Delete ${detail.item.title}?',
-      message: 'Its ${plural(detail.media.length, 'photo')} and every like, '
+      message:
+          'Its ${plural(detail.media.length, 'photo')} and every like, '
           'save and comment go with it. This cannot be undone.',
       confirmLabel: 'Delete item',
       destructive: true,
@@ -235,50 +244,50 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
   }
 
   List<QuickOwnerAction> _ownerActions(ItemDetail detail) => <QuickOwnerAction>[
-        QuickOwnerAction(
-          icon: Icons.edit_rounded,
-          label: 'Edit details',
-          onSelected: () => unawaited(_edit(detail)),
-        ),
-        QuickOwnerAction(
-          icon: Icons.add_a_photo_rounded,
-          label: 'Add photos',
-          onSelected: () => unawaited(_addPhotos(detail)),
-        ),
-        if (detail.media.length > 1)
-          QuickOwnerAction(
-            icon: Icons.burst_mode_rounded,
-            label: 'Reorder photos',
-            onSelected: () => unawaited(_reorderPhotos(detail)),
-          ),
-        if (detail.media.length > 1 && _photoIndex < detail.media.length)
-          QuickOwnerAction(
-            icon: Icons.image_rounded,
-            label: 'Make photo ${_photoIndex + 1} the cover',
-            onSelected: () =>
-                unawaited(_setCover(detail, detail.media[_photoIndex].id)),
-          ),
-        QuickOwnerAction(
-          icon: Icons.drive_file_move_rounded,
-          label: 'Move to another group',
-          onSelected: () => unawaited(_move(detail)),
-        ),
-        QuickOwnerAction(
-          icon: detail.item.isFavorite
-              ? Icons.star_rounded
-              : Icons.star_border_rounded,
-          label: detail.item.isFavorite
-              ? 'Remove from favourites'
-              : 'Mark as a favourite',
-          onSelected: () => unawaited(_toggleFavourite(detail)),
-        ),
-        QuickOwnerAction(
-          icon: Icons.delete_outline_rounded,
-          label: 'Delete item',
-          destructive: true,
-          onSelected: () => unawaited(_delete(detail)),
-        ),
-      ];
+    QuickOwnerAction(
+      icon: Icons.edit_rounded,
+      label: 'Edit details',
+      onSelected: () => unawaited(_edit(detail)),
+    ),
+    QuickOwnerAction(
+      icon: Icons.add_a_photo_rounded,
+      label: 'Add photos',
+      onSelected: () => unawaited(_addPhotos(detail)),
+    ),
+    if (detail.media.length > 1)
+      QuickOwnerAction(
+        icon: Icons.burst_mode_rounded,
+        label: 'Reorder photos',
+        onSelected: () => unawaited(_reorderPhotos(detail)),
+      ),
+    if (detail.media.length > 1 && _photoIndex < detail.media.length)
+      QuickOwnerAction(
+        icon: Icons.image_rounded,
+        label: 'Make photo ${_photoIndex + 1} the cover',
+        onSelected: () =>
+            unawaited(_setCover(detail, detail.media[_photoIndex].id)),
+      ),
+    QuickOwnerAction(
+      icon: Icons.drive_file_move_rounded,
+      label: 'Move to another group',
+      onSelected: () => unawaited(_move(detail)),
+    ),
+    QuickOwnerAction(
+      icon: detail.item.isFavorite
+          ? Icons.star_rounded
+          : Icons.star_border_rounded,
+      label: detail.item.isFavorite
+          ? 'Remove from favourites'
+          : 'Mark as a favourite',
+      onSelected: () => unawaited(_toggleFavourite(detail)),
+    ),
+    QuickOwnerAction(
+      icon: Icons.delete_outline_rounded,
+      label: 'Delete item',
+      destructive: true,
+      onSelected: () => unawaited(_delete(detail)),
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -332,18 +341,19 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
                 context.canPop() ? context.pop() : context.go('/surf'),
             onOverflow: detail.isOwner
                 ? () => OwnerMenuSheet.show(
-                      context,
-                      title: item.title,
-                      actions: _ownerActions(detail),
-                    )
+                    context,
+                    title: item.title,
+                    actions: _ownerActions(detail),
+                  )
                 : () => KReportSheet.showForEntity(
-                      context,
-                      type: EntityType.item,
-                      entityId: item.id,
-                      subjectLabel: item.title,
-                    ),
-            overflowIcon:
-                detail.isOwner ? Icons.more_horiz_rounded : Icons.flag_outlined,
+                    context,
+                    type: EntityType.item,
+                    entityId: item.id,
+                    subjectLabel: item.title,
+                  ),
+            overflowIcon: detail.isOwner
+                ? Icons.more_horiz_rounded
+                : Icons.flag_outlined,
           ),
         ),
         SliverPadding(
@@ -366,8 +376,9 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
                   if (breadcrumb?.subcollection != null)
                     BreadcrumbStep(
                       label: breadcrumb!.subcollection!.name,
-                      onTap: () => context
-                          .push<void>('/s/${breadcrumb.subcollection!.id}'),
+                      onTap: () => context.push<void>(
+                        '/s/${breadcrumb.subcollection!.id}',
+                      ),
                     ),
                 ],
               ),
@@ -392,8 +403,9 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
                 const SizedBox(height: Space.s1),
                 Text(
                   _subtitle(item),
-                  style:
-                      context.kt.callout.copyWith(color: colors.textSecondary),
+                  style: context.kt.callout.copyWith(
+                    color: colors.textSecondary,
+                  ),
                 ),
               ],
               const SizedBox(height: Space.s4),
@@ -413,25 +425,25 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
               ],
               const SizedBox(height: Space.s5),
               _SpecTable(item: item, mediaCount: detail.media.length),
-              if (detail.closeup.tags.isNotEmpty || _tagsOf(item).isNotEmpty)
-                ...<Widget>[
-                  const SizedBox(height: Space.s5),
-                  Wrap(
-                    spacing: Space.s2,
-                    runSpacing: Space.s2,
-                    children: <Widget>[
-                      for (final tag in <String>{
-                        ...detail.closeup.tags,
-                        ..._tagsOf(item),
-                      })
-                        KChip(
-                          label: '#$tag',
-                          dense: true,
-                          onTap: () => context.push<void>('/search?q=$tag'),
-                        ),
-                    ],
-                  ),
-                ],
+              if (detail.closeup.tags.isNotEmpty ||
+                  _tagsOf(item).isNotEmpty) ...<Widget>[
+                const SizedBox(height: Space.s5),
+                Wrap(
+                  spacing: Space.s2,
+                  runSpacing: Space.s2,
+                  children: <Widget>[
+                    for (final tag in <String>{
+                      ...detail.closeup.tags,
+                      ..._tagsOf(item),
+                    })
+                      KChip(
+                        label: '#$tag',
+                        dense: true,
+                        onTap: () => context.push<void>('/search?q=$tag'),
+                      ),
+                  ],
+                ),
+              ],
               if (detail.isOwner) ...<Widget>[
                 const SizedBox(height: Space.s6),
                 _OwnerToolbar(
@@ -462,10 +474,10 @@ class _ItemScreenState extends ConsumerState<ItemScreen> {
   }
 
   static String _subtitle(ItemModel item) => <String>[
-        if ((item.brand ?? '').isNotEmpty) item.brand!,
-        if ((item.model ?? '').isNotEmpty) item.model!,
-        if (item.year != null) '${item.year}',
-      ].join(' · ');
+    if ((item.brand ?? '').isNotEmpty) item.brand!,
+    if ((item.model ?? '').isNotEmpty) item.model!,
+    if (item.year != null) '${item.year}',
+  ].join(' · ');
 
   static List<String> _tagsOf(ItemModel item) =>
       asStringList(item.attributes['tags']);
@@ -501,10 +513,11 @@ class _PhotoPager extends ConsumerWidget {
     final colors = context.kc;
     final api = ref.watch(klectApiProvider);
     final safeIndex = media.isEmpty ? 0 : index.clamp(0, media.length - 1);
-    final ratio = (media.isEmpty
-            ? item.coverAspect ?? Aspect.cover
-            : media[safeIndex].aspect ?? Aspect.cover)
-        .clamp(Aspect.gridMin, Aspect.gridMax);
+    final ratio =
+        (media.isEmpty
+                ? item.coverAspect ?? Aspect.cover
+                : media[safeIndex].aspect ?? Aspect.cover)
+            .clamp(Aspect.gridMin, Aspect.gridMax);
 
     return Stack(
       children: <Widget>[
@@ -522,31 +535,34 @@ class _PhotoPager extends ConsumerWidget {
                   heroTag: LibraryHero.cover(EntityType.item, item.id),
                   semanticLabel: item.title,
                 )
-              : PageView.builder(
-                  controller: controller,
-                  itemCount: media.length,
-                  onPageChanged: onIndexChanged,
-                  itemBuilder: (context, page) {
-                    final photo = media[page];
-                    final label = photo.altText ??
-                        'Photo ${page + 1} of ${media.length}';
-                    return KGestureRegion(
-                      semanticLabel: label,
-                      onTap: () => onOpenImmersive(page),
-                      onDoubleTap: () => onOpenImmersive(page),
-                      onLongPress: onPeek,
-                      child: KBlurhashImage(
-                        url: api.publicUrl(photo.storagePath),
-                        blurhash: photo.blurhash,
-                        fit: BoxFit.cover,
-                        borderRadius: BorderRadius.zero,
-                        heroTag: page == 0
-                            ? LibraryHero.cover(EntityType.item, item.id)
-                            : null,
+              : KHorizontalDragClaimRegion(
+                  child: PageView.builder(
+                    controller: controller,
+                    itemCount: media.length,
+                    onPageChanged: onIndexChanged,
+                    itemBuilder: (context, page) {
+                      final photo = media[page];
+                      final label =
+                          photo.altText ??
+                          'Photo ${page + 1} of ${media.length}';
+                      return KGestureRegion(
                         semanticLabel: label,
-                      ),
-                    );
-                  },
+                        onTap: () => onOpenImmersive(page),
+                        onDoubleTap: () => onOpenImmersive(page),
+                        onLongPress: onPeek,
+                        child: KBlurhashImage(
+                          url: api.publicUrl(photo.storagePath),
+                          blurhash: photo.blurhash,
+                          fit: BoxFit.cover,
+                          borderRadius: BorderRadius.zero,
+                          heroTag: page == 0
+                              ? LibraryHero.cover(EntityType.item, item.id)
+                              : null,
+                          semanticLabel: label,
+                        ),
+                      );
+                    },
+                  ),
                 ),
         ),
         Positioned(
@@ -590,8 +606,9 @@ class _PhotoPager extends ConsumerWidget {
                     decoration: BoxDecoration(
                       color: i == safeIndex
                           ? colors.textPrimary
-                          : colors.textPrimary
-                              .withValues(alpha: Opacities.veil),
+                          : colors.textPrimary.withValues(
+                              alpha: Opacities.veil,
+                            ),
                       borderRadius: BorderRadius.circular(Radii.full),
                     ),
                   ),
@@ -652,8 +669,9 @@ class _SpecTable extends StatelessWidget {
                     width: Space.s24,
                     child: Text(
                       rows[i].$1,
-                      style: context.kt.caption
-                          .copyWith(color: colors.textTertiary),
+                      style: context.kt.caption.copyWith(
+                        color: colors.textTertiary,
+                      ),
                     ),
                   ),
                   Expanded(child: Text(rows[i].$2, style: context.kt.callout)),
@@ -684,38 +702,38 @@ class _OwnerToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        children: <Widget>[
-          Expanded(
-            child: KButton(
-              label: 'Edit',
-              icon: Icons.edit_rounded,
-              variant: KButtonVariant.secondary,
-              expand: true,
-              onPressed: onEdit,
-            ),
-          ),
-          const SizedBox(width: Space.s2),
-          Expanded(
-            child: KButton(
-              label: 'Photos',
-              icon: Icons.add_a_photo_rounded,
-              variant: KButtonVariant.secondary,
-              expand: true,
-              onPressed: onAddPhotos,
-            ),
-          ),
-          const SizedBox(width: Space.s2),
-          Expanded(
-            child: KButton(
-              label: 'Move',
-              icon: Icons.drive_file_move_rounded,
-              variant: KButtonVariant.secondary,
-              expand: true,
-              onPressed: onMove,
-            ),
-          ),
-        ],
-      );
+    children: <Widget>[
+      Expanded(
+        child: KButton(
+          label: 'Edit',
+          icon: Icons.edit_rounded,
+          variant: KButtonVariant.secondary,
+          expand: true,
+          onPressed: onEdit,
+        ),
+      ),
+      const SizedBox(width: Space.s2),
+      Expanded(
+        child: KButton(
+          label: 'Photos',
+          icon: Icons.add_a_photo_rounded,
+          variant: KButtonVariant.secondary,
+          expand: true,
+          onPressed: onAddPhotos,
+        ),
+      ),
+      const SizedBox(width: Space.s2),
+      Expanded(
+        child: KButton(
+          label: 'Move',
+          icon: Icons.drive_file_move_rounded,
+          variant: KButtonVariant.secondary,
+          expand: true,
+          onPressed: onMove,
+        ),
+      ),
+    ],
+  );
 }
 
 class _SiblingsRail extends ConsumerWidget {
@@ -765,8 +783,9 @@ class _SiblingsRail extends ConsumerWidget {
                     const SizedBox(height: Space.s15),
                     Text(
                       sibling.title,
-                      style: context.kt.micro
-                          .copyWith(color: context.kc.textSecondary),
+                      style: context.kt.micro.copyWith(
+                        color: context.kc.textSecondary,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),

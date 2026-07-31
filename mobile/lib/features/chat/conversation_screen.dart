@@ -14,10 +14,12 @@ import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../router.dart';
 import '../../ui/ui.dart';
+import 'calls/call_availability.dart';
 import 'calls/call_controller.dart';
 import 'calls/call_permissions.dart';
 import 'chat_api.dart';
 import 'chat_models.dart';
+import 'error_copy.dart';
 import 'inbox_controller.dart';
 import 'thread_controller.dart';
 import 'widgets/chat_composer.dart';
@@ -42,13 +44,6 @@ const int _jumpPageCap = 10;
 /// How many scroll-and-settle steps a jump may take before giving up — the
 /// lazy list needs a frame per step to build rows near the new offset.
 const int _jumpScrollAttempts = 24;
-
-/// Keeps unfinished calling controls out of production conversations. The
-/// backend flag only turns true after Firebase delivery, TURN and native call
-/// integration have passed their device matrix.
-final _callFeatureEnabledProvider = FutureProvider.autoDispose<bool>((ref) {
-  return ref.watch(chatApiProvider).callFeatureEnabled();
-}, name: 'callFeatureEnabled');
 
 /// One conversation.
 ///
@@ -86,6 +81,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
   String _searchTerm = '';
   bool _searchLoading = false;
   List<MessageModel> _searchResults = const <MessageModel>[];
+  bool _startInFlight = false;
 
   ChatThreadController get _thread =>
       ref.read(chatThreadProvider(widget.conversationId).notifier);
@@ -130,36 +126,55 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
   // ────────────────────────────────────────────────────────────── actions ──
 
   Future<void> _startCall(CallKind kind, Profile? peer) async {
-    try {
-      final enabled = await ref.read(chatApiProvider).callFeatureEnabled();
-      if (!enabled) {
-        if (mounted) {
-          KToast.show(
-            context,
-            'Calls are being prepared for reliable mobile delivery.',
-          );
-        }
-        return;
-      }
-    } on Object catch (error) {
-      if (mounted) {
-        KToast.error(context, KlectError.from(error).message);
-      }
+    if (_startInFlight ||
+        !ref.read(callAvailabilityProvider) ||
+        ref.read(activeCallProvider).isBusy) {
       return;
     }
-    if (!mounted) return;
 
-    final granted = await CallPermissions.request(
-      context,
-      kind: kind,
-      outgoing: true,
-    );
-    if (!mounted || granted != CallPermissionResult.granted) return;
-    final call = await ref
-        .read(activeCallProvider.notifier)
-        .place(conversationId: widget.conversationId, kind: kind, peer: peer);
-    if (!mounted || call == null) return;
-    await context.push('/call/${call.id}');
+    setState(() => _startInFlight = true);
+    CallModel? call;
+    try {
+      final permission = await CallPermissions.request(
+        context,
+        kind: kind,
+        outgoing: true,
+      );
+      if (!mounted) return;
+      if (permission != CallPermissionResult.granted) {
+        final permissionName = kind == CallKind.video
+            ? 'Camera and microphone permission'
+            : 'Microphone permission';
+        final callName = kind == CallKind.video ? 'video call' : 'audio call';
+        KToast.show(
+          context,
+          '$permissionName is needed to start a $callName.',
+          kind: KToastKind.error,
+          actionLabel: 'Open settings',
+          onAction: () => unawaited(CallPermissions.openSettings()),
+        );
+        return;
+      }
+
+      call = await ref
+          .read(activeCallProvider.notifier)
+          .place(conversationId: widget.conversationId, kind: kind, peer: peer);
+      if (!mounted) return;
+      if (call == null) {
+        final failure = ref.read(activeCallProvider).error;
+        KToast.error(
+          context,
+          failure == null
+              ? stableErrorIdentifierCopy('unknown')
+              : chatErrorCopy(failure),
+        );
+        return;
+      }
+    } finally {
+      if (mounted) setState(() => _startInFlight = false);
+    }
+
+    if (mounted) await context.push('/call/${call.id}');
   }
 
   void _openActions(ChatMessage message, {required bool isMine}) {
@@ -179,8 +194,38 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
           _editing = message;
           _replyTo = null;
         }),
-        onDelete: () => unawaited(_thread.delete(message.id)),
+        onDeleteForEveryone: () => unawaited(_deleteForEveryone(message.id)),
+        onDeleteForMe: () => unawaited(_hideForMe(message.id)),
       ),
+    );
+  }
+
+  /// Deletes a message for every participant, showing the one error indication
+  /// the failure path asks for — and it carries the retry, which re-runs this
+  /// very method, so a timeout is one tap from a second attempt (11.12).
+  Future<void> _deleteForEveryone(String messageId) async {
+    final failure = await _thread.deleteForEveryone(messageId);
+    if (failure == null || !mounted) return;
+    KToast.show(
+      context,
+      failure.message,
+      kind: KToastKind.error,
+      icon: Icons.error_outline_rounded,
+      actionLabel: 'Retry',
+      onAction: () => unawaited(_deleteForEveryone(messageId)),
+    );
+  }
+
+  Future<void> _hideForMe(String messageId) async {
+    final failure = await _thread.hideForMe(messageId);
+    if (failure == null || !mounted) return;
+    KToast.show(
+      context,
+      failure.message,
+      kind: KToastKind.error,
+      icon: Icons.error_outline_rounded,
+      actionLabel: 'Retry',
+      onAction: () => unawaited(_hideForMe(messageId)),
     );
   }
 
@@ -470,7 +515,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     final state = ref.watch(chatThreadProvider(widget.conversationId));
     final viewerId = ref.watch(currentUserIdProvider);
     final isGroup = state.conversation?.kind == ConversationKind.group;
-    final callsEnabled = ref.watch(_callFeatureEnabledProvider).value ?? false;
+    final callsEnabled = ref.watch(callAvailabilityProvider);
+    final activeCall = ref.watch(activeCallProvider);
+    final showCallActions = !isGroup && callsEnabled;
+    final canCall = showCallActions && !activeCall.isBusy && !_startInFlight;
+    String? viewerRole;
+    for (final member in state.members) {
+      if (member.userId == viewerId &&
+          member.isActive &&
+          member.requestState == 'accepted') {
+        viewerRole = member.role;
+        break;
+      }
+    }
+    final groupSendScope = state.conversation?.groupPolicy.sendMessages;
+    final groupSendAllowed =
+        !isGroup || (groupSendScope?.allows(viewerRole) ?? false);
     // A group has no single "peer": every peer-shaped affordance (profile
     // push, call, block, report) is DM-only.
     final peer = isGroup ? null : state.otherMember(viewerId)?.profile;
@@ -494,7 +554,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
             state: state,
             peer: peer,
             isGroup: isGroup,
-            canCall: !isGroup && callsEnabled,
+            showCallActions: showCallActions,
+            canCall: canCall,
             onCall: (kind) => unawaited(_startCall(kind, peer)),
             onSearch: _openSearch,
             onOverflow: () =>
@@ -545,18 +606,59 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
             ),
           ),
           TypingIndicator(typing: state.typing),
-          ChatComposer(
-            conversationId: widget.conversationId,
-            replyTo: _replyTo,
-            editing: _editing,
-            enabled: !state.loading || state.messages.isNotEmpty,
-            onCancelReply: () => setState(() => _replyTo = null),
-            onCancelEdit: () => setState(() => _editing = null),
-          ),
+          if (!groupSendAllowed && groupSendScope != null)
+            _ComposerLock(scopeLabel: groupSendScope.label)
+          else
+            ChatComposer(
+              conversationId: widget.conversationId,
+              replyTo: _replyTo,
+              editing: _editing,
+              enabled: !state.loading || state.messages.isNotEmpty,
+              onCancelReply: () => setState(() => _replyTo = null),
+              onCancelEdit: () => setState(() => _editing = null),
+            ),
         ],
       ),
     );
   }
+}
+
+class _ComposerLock extends StatelessWidget {
+  const _ComposerLock({required this.scopeLabel});
+
+  final String scopeLabel;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    readOnly: true,
+    label: 'Messaging is limited to $scopeLabel',
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+        Space.s4,
+        Space.s3,
+        Space.s4,
+        Space.s3,
+      ),
+      decoration: BoxDecoration(
+        color: context.kc.surface1,
+        border: Border(
+          top: BorderSide(
+            color: context.kc.borderSubtle,
+            width: Strokes.hairline,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Text(
+          'Only $scopeLabel can send messages in this group.',
+          textAlign: TextAlign.center,
+          style: context.kt.callout.copyWith(color: context.kc.textSecondary),
+        ),
+      ),
+    ),
+  );
 }
 
 class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
@@ -564,6 +666,7 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required this.state,
     required this.peer,
     required this.isGroup,
+    required this.showCallActions,
     required this.canCall,
     required this.onCall,
     required this.onSearch,
@@ -574,6 +677,7 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final ChatThreadState state;
   final Profile? peer;
   final bool isGroup;
+  final bool showCallActions;
   final bool canCall;
   final void Function(CallKind kind) onCall;
   final VoidCallback onSearch;
@@ -676,16 +780,16 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
         ),
       ),
       actions: <Widget>[
-        if (canCall) ...<Widget>[
+        if (showCallActions) ...<Widget>[
           KIconButton(
             icon: Icons.call_rounded,
             semanticLabel: 'Start an audio call',
-            onPressed: () => onCall(CallKind.audio),
+            onPressed: canCall ? () => onCall(CallKind.audio) : null,
           ),
           KIconButton(
             icon: Icons.videocam_rounded,
             semanticLabel: 'Start a video call',
-            onPressed: () => onCall(CallKind.video),
+            onPressed: canCall ? () => onCall(CallKind.video) : null,
           ),
         ],
         KIconButton(

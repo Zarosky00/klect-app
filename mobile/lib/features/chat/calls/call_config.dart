@@ -4,7 +4,51 @@
 /// how the *media* path is negotiated.
 library;
 
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../../../core/supabase.dart';
+
+/// The outcome of one ICE-server resolution for one call id.
+///
+/// Resolution never throws: a failure, a timeout, or a response without a
+/// usable relay entry all degrade to a STUN-only [configuration] with
+/// [relayAvailable] `false` and a [failure] code, so call setup continues and
+/// the Call_Screen can show the non-blocking carrier-network warning
+/// (Requirements 10.3, 10.4).
+class IceResolution {
+  /// Creates a resolution.
+  const IceResolution({
+    required this.configuration,
+    required this.relayAvailable,
+    this.failure,
+  });
+
+  /// Ready to hand to `createPeerConnection`.
+  final Map<String, dynamic> configuration;
+
+  /// Whether a relay (TURN) entry carrying both a username and a credential is
+  /// part of [configuration]. `false` ⇒ show the carrier-network warning.
+  final bool relayAvailable;
+
+  /// `'turn_not_configured' | 'timeout' | 'provider_unavailable'`, or null when
+  /// a relay path was resolved.
+  final String? failure;
+
+  /// The ICE servers actually passed to the peer connection.
+  List<Map<String, dynamic>> get iceServers => <Map<String, dynamic>>[
+    for (final server in configuration['iceServers'] as List<dynamic>)
+      server as Map<String, dynamic>,
+  ];
+
+  /// What `record_call_diagnostic` stores for operator review.
+  Map<String, dynamic> get diagnostic => <String, dynamic>{
+    'relay_available': relayAvailable,
+    if (failure != null) 'failure': failure,
+    'ice_server_count': iceServers.length,
+  };
+}
 
 /// ICE configuration for the peer connection.
 ///
@@ -15,7 +59,7 @@ import '../../../core/supabase.dart';
 /// NATs (most carrier-grade mobile networks), corporate firewalls that block
 /// UDP, and double-NAT home routers all fail. Those calls will ring, negotiate,
 /// and then never connect — the peer connection walks
-/// `connecting → failed`, and [hasTurn] is why.
+/// `connecting → failed`, and `IceResolution.relayAvailable == false` is why.
 ///
 /// **To fix it, fill in [turnServers] below** with credentials from a TURN
 /// provider (coturn on your own box, Cloudflare Calls, Twilio NTS, Xirsys, …).
@@ -57,10 +101,14 @@ abstract final class KlectCallIce {
   /// ```
   static const List<Map<String, dynamic>> turnServers =
       <Map<String, dynamic>>[];
-  static bool _hasTurn = false;
 
-  /// Whether a relay path is available. False means cross-NAT calls can fail.
-  static bool get hasTurn => _hasTurn;
+  /// At most this many ICE entries reach the peer connection (Requirement
+  /// 10.5). Entries beyond the eighth of the STUN-then-relay order are dropped.
+  static const int maxIceServers = 8;
+
+  /// The resolution already computed for [_cachedCallId].
+  static IceResolution? _cached;
+  static String? _cachedCallId;
 
   /// The `RTCConfiguration` handed to `createPeerConnection`.
   ///
@@ -75,37 +123,132 @@ abstract final class KlectCallIce {
     'rtcpMuxPolicy': 'require',
   };
 
-  /// The configuration the call engine actually uses.
-  ///
-  /// ★ This is the hook: replace the body with a call to your
-  /// credential-minting edge function and return
-  /// `{...configuration(), 'iceServers': [...stunServers, ...fetchedTurn]}`.
-  /// It is already awaited on every call setup, so nothing else has to change.
-  static Future<Map<String, dynamic>> resolve() async {
+  /// Fetches the raw `turn-credentials` payload. Overridable in tests.
+  @visibleForTesting
+  static Future<Object?> Function() credentialFetcher = _invokeEdgeFunction;
+
+  static Future<Object?> _invokeEdgeFunction() async {
     final response = await KlectSupabase.client.functions.invoke(
       'turn-credentials',
     );
-    final data = response.data;
-    if (data is! Map) {
-      throw StateError('TURN credentials are unavailable.');
+    return response.data;
+  }
+
+  /// Resolves the ICE configuration for [callId] — never throws.
+  ///
+  /// The whole resolution is capped at [KlectCallTimings.iceConfigTimeout]
+  /// (Requirements 10.1, 10.4). On a failure, a timeout, or a response without
+  /// a usable relay entry the result is a STUN-only configuration with
+  /// `relayAvailable: false`. The outcome is memoised per call id, so no second
+  /// `turn-credentials` request is ever issued for the same call.
+  static Future<IceResolution> resolve({required String callId}) async {
+    final cached = _cached;
+    if (cached != null && _cachedCallId == callId) return cached;
+    IceResolution resolution;
+    try {
+      final data = await credentialFetcher().timeout(
+        KlectCallTimings.iceConfigTimeout,
+      );
+      resolution = resolutionFrom(data);
+    } on TimeoutException {
+      resolution = stunOnly('timeout');
+    } catch (_) {
+      resolution = stunOnly('provider_unavailable');
     }
-    final rawServers = data['iceServers'];
-    if (rawServers is! List || rawServers.isEmpty) {
-      throw StateError('TURN credentials are unavailable.');
+    _cached = resolution;
+    _cachedCallId = callId;
+    return resolution;
+  }
+
+  /// Turns a `turn-credentials` payload into a resolution: every STUN entry
+  /// first, every relay entry after, the list truncated to [maxIceServers] by
+  /// discarding the tail of that order (Requirement 10.5).
+  @visibleForTesting
+  static IceResolution resolutionFrom(Object? data) {
+    final rawServers = data is Map ? data['iceServers'] : null;
+    if (rawServers is! List) return stunOnly('provider_unavailable');
+
+    final stun = <Map<String, dynamic>>[];
+    final relay = <Map<String, dynamic>>[];
+    for (final raw in rawServers) {
+      if (raw is! Map) continue;
+      final server = <String, dynamic>{
+        for (final entry in raw.entries) entry.key.toString(): entry.value,
+      };
+      final urls = _urlsOf(server);
+      if (urls.isEmpty) continue;
+      if (urls.any(_isRelayUrl)) {
+        // An incomplete relay entry cannot authenticate, so it is dropped
+        // rather than passed to the peer connection (Requirement 10.3).
+        if (_hasCredentials(server)) relay.add(server);
+        continue;
+      }
+      stun.add(server);
     }
-    final servers = <Map<String, dynamic>>[
-      for (final server in rawServers)
-        if (server is Map)
-          <String, dynamic>{
-            for (final entry in server.entries)
-              entry.key.toString(): entry.value,
-          },
-    ];
-    _hasTurn = servers.any(
-      (server) => server['username'] != null && server['credential'] != null,
+    if (stun.isEmpty) stun.addAll(stunServers);
+    if (relay.isEmpty) {
+      return IceResolution(
+        configuration: _configurationWith(stun),
+        relayAvailable: false,
+        failure: 'turn_not_configured',
+      );
+    }
+    return IceResolution(
+      configuration: _configurationWith(<Map<String, dynamic>>[
+        ...stun,
+        ...relay,
+      ]),
+      relayAvailable: true,
     );
-    if (!_hasTurn) throw StateError('TURN credentials are unavailable.');
-    return <String, dynamic>{...configuration(), 'iceServers': servers};
+  }
+
+  /// A STUN-only resolution carrying [failure].
+  @visibleForTesting
+  static IceResolution stunOnly(String failure) => IceResolution(
+    configuration: _configurationWith(stunServers),
+    relayAvailable: false,
+    failure: failure,
+  );
+
+  /// Forgets the memoised resolution — for tests and for a fresh session.
+  @visibleForTesting
+  static void resetResolution() {
+    _cached = null;
+    _cachedCallId = null;
+  }
+
+  static Map<String, dynamic> _configurationWith(
+    List<Map<String, dynamic>> servers,
+  ) => <String, dynamic>{
+    ...configuration(),
+    'iceServers': servers.length <= maxIceServers
+        ? List<Map<String, dynamic>>.unmodifiable(servers)
+        : List<Map<String, dynamic>>.unmodifiable(servers.take(maxIceServers)),
+  };
+
+  static bool _isRelayUrl(String url) =>
+      url.startsWith('turn:') || url.startsWith('turns:');
+
+  /// Whether the peer connection could actually authenticate with this entry.
+  static bool _hasCredentials(Map<String, dynamic> server) {
+    final username = server['username'];
+    final credential = server['credential'];
+    return username is String &&
+        username.isNotEmpty &&
+        credential is String &&
+        credential.isNotEmpty;
+  }
+
+  static List<String> _urlsOf(Map<String, dynamic> server) {
+    final urls = server['urls'] ?? server['url'];
+    if (urls is String) return urls.isEmpty ? <String>[] : <String>[urls];
+    if (urls is List) {
+      return <String>[
+        for (final url in urls)
+          if (url is String && url.isNotEmpty) url,
+      ];
+    }
+    return <String>[];
   }
 
   /// Media constraints for a call of the given kind.
@@ -133,8 +276,33 @@ abstract final class KlectCallIce {
 /// design tokens — `docs/DESIGN_SYSTEM.md` caps *animation* at 480 ms, which
 /// has nothing to do with how long a phone rings.
 abstract final class KlectCallTimings {
+  /// How long the whole ICE-server resolution may take before the call engine
+  /// gives up and creates the peer connection with STUN only.
+  static const Duration iceConfigTimeout = Duration(seconds: 5);
+
   /// How long an unanswered call rings before it is marked missed.
+  ///
+  /// Measured from the `calls` row creation timestamp, never from the moment
+  /// the local timer was armed (Requirement 7.5), so a row that arrives late
+  /// still rings for the right remaining time.
   static const Duration ringTimeout = Duration(seconds: 45);
+
+  /// How long an answered call may negotiate media before it is declared
+  /// failed, measured from the transition into `connecting` (Requirement 7.15).
+  static const Duration connectTimeout = Duration(seconds: 30);
+
+  /// How long the `answer_call` RPC may take before the join is abandoned
+  /// (Requirement 7.14).
+  static const Duration answerTimeout = Duration(seconds: 15);
+
+  /// How long `start_call` may take before the thread recovers its controls.
+  static const Duration startTimeout = Duration(seconds: 15);
+
+  /// Maximum time for one in-call device control to apply.
+  static const Duration controlTimeout = Duration(seconds: 1);
+
+  /// No remote video frame for this long switches to the named fallback.
+  static const Duration remoteFrameTimeout = Duration(seconds: 3);
 
   /// How long a `disconnected` peer connection is given to heal itself before
   /// an ICE restart is attempted.
@@ -142,4 +310,11 @@ abstract final class KlectCallTimings {
 
   /// How long a reconnect attempt runs before the call is declared failed.
   static const Duration reconnectTimeout = Duration(seconds: 25);
+
+  /// How often the in-call duration is republished.
+  static const Duration elapsedTick = Duration(seconds: 1);
+
+  /// The upper bound on the client-reported elapsed value handed to `end_call`
+  /// (Requirement 7.8) — one day, matching the server-side clamp.
+  static const int maxClientElapsedSeconds = 86400;
 }

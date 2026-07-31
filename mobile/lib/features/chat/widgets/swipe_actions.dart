@@ -4,6 +4,7 @@ import 'package:flutter/physics.dart';
 import '../../../design/motion.dart';
 import '../../../design/theme.dart';
 import '../../../ui/k_pressable.dart';
+import '../../../ui/k_tab_pager.dart';
 
 /// One action revealed by swiping a row.
 class SwipeAction {
@@ -113,51 +114,53 @@ class _KSwipeActionsState extends State<KSwipeActions>
     if (!widget.enabled || widget.actions.isEmpty) return widget.child;
     final colors = context.kc;
 
-    return GestureDetector(
-      onHorizontalDragUpdate: _onDragUpdate,
-      onHorizontalDragEnd: _onDragEnd,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          final revealed = _controller.value.clamp(0.0, _extent);
-          return Stack(
-            children: <Widget>[
-              Positioned.fill(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: ClipRect(
-                    child: SizedBox(
-                      width: revealed,
-                      child: OverflowBox(
-                        alignment: Alignment.centerRight,
-                        maxWidth: _extent,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            for (final action in widget.actions)
-                              _ActionButton(
-                                action: action,
-                                width: _actionWidth,
-                                onTap: () {
-                                  _close();
-                                  action.onPressed();
-                                },
-                              ),
-                          ],
+    return KHorizontalDragClaimRegion(
+      child: GestureDetector(
+        onHorizontalDragUpdate: _onDragUpdate,
+        onHorizontalDragEnd: _onDragEnd,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final revealed = _controller.value.clamp(0.0, _extent);
+            return Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: ClipRect(
+                      child: SizedBox(
+                        width: revealed,
+                        child: OverflowBox(
+                          alignment: Alignment.centerRight,
+                          maxWidth: _extent,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              for (final action in widget.actions)
+                                _ActionButton(
+                                  action: action,
+                                  width: _actionWidth,
+                                  onTap: () {
+                                    _close();
+                                    action.onPressed();
+                                  },
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              Transform.translate(
-                offset: Offset(-revealed, 0),
-                child: ColoredBox(color: colors.bgBase, child: child),
-              ),
-            ],
-          );
-        },
-        child: widget.child,
+                Transform.translate(
+                  offset: Offset(-revealed, 0),
+                  child: ColoredBox(color: colors.bgBase, child: child),
+                ),
+              ],
+            );
+          },
+          child: widget.child,
+        ),
       ),
     );
   }

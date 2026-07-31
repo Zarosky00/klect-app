@@ -21,5 +21,6 @@ export 'k_scaffold.dart';
 export 'k_share_sheet.dart';
 export 'k_sheet.dart';
 export 'k_skeleton.dart';
+export 'k_tab_pager.dart';
 export 'k_text_field.dart';
 export 'k_toast.dart';

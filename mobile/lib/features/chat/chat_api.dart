@@ -34,6 +34,12 @@ class ChatApi {
 
   /// The columns a thread row needs: the author, its reactions, and enough of
   /// the parent message to draw a quoted preview.
+  ///
+  /// `deleted_at` travels on both the row and the embedded parent, and no read
+  /// built on this projection filters on it. A message deleted for everyone
+  /// keeps its row with an empty body and no attachments, so the thread renders
+  /// a tombstone in place and the quoted preview renders as unavailable —
+  /// after a restart and on every older-history page alike (11.13, 11.5).
   static const String _messageSelect =
       '*, author:profiles!author_id(*), reactions:message_reactions(*), '
       'reply_to:messages!reply_to_id(id, conversation_id, body, author_id, '
@@ -453,6 +459,11 @@ class ChatApi {
 
   /// A page of messages, newest first. Pass the oldest [before] you hold to
   /// page backwards.
+  ///
+  /// Tombstones are part of the page. Delete-for-me is a separate, per-viewer
+  /// concern: read [fetchHiddenMessageIds] alongside the first page and apply
+  /// it client-side, so a hidden message never consumes a different code path
+  /// from a deleted one (11.13, 12.5).
   Future<List<ChatMessage>> fetchMessages(
     String conversationId, {
     int limit = 40,
@@ -461,8 +472,7 @@ class ChatApi {
     var query = _client
         .from('messages')
         .select(_messageSelect)
-        .eq('conversation_id', conversationId)
-        .isFilter('deleted_at', null);
+        .eq('conversation_id', conversationId);
     final cutoff = isoOrNull(before);
     if (cutoff != null) query = query.lt('created_at', cutoff);
     final rows = await _guard(
@@ -473,6 +483,9 @@ class ChatApi {
 
   /// One message in the thread shape — used to hydrate a realtime INSERT,
   /// whose payload carries neither the author profile nor the parent.
+  ///
+  /// Returns tombstones too, so an UPDATE that lands while the row is being
+  /// hydrated resolves to the tombstone rather than to null (11.13).
   Future<ChatMessage?> fetchMessage(String messageId) async {
     final row = await _guard(
       () => _client
@@ -545,6 +558,9 @@ class ChatApi {
           .from('messages')
           .select('*, author:profiles!author_id(*)')
           .eq('conversation_id', conversationId)
+          // Search keeps the filter the thread reads dropped: a tombstone's
+          // body is `''`, so it can never match a term, and returning it would
+          // only put an empty result row in the list.
           .isFilter('deleted_at', null)
           .ilike('body', '%$escaped%')
           .order('created_at', ascending: false)
@@ -612,8 +628,12 @@ class ChatApi {
         .eq('author_id', requireUserId),
   );
 
-  /// Soft-deletes the viewer's own message. Threads filter on
-  /// `deleted_at is null`, so the bubble disappears on both sides.
+  /// Soft-deletes the viewer's own message with a direct row update.
+  ///
+  /// Superseded by [deleteMessageForEveryone], which is author-checked,
+  /// idempotent and refreshes the inbox preview server-side. The thread
+  /// controller has moved across, so nothing calls this any more — it is kept
+  /// only until its removal is confirmed, and no new caller should use it.
   Future<void> deleteMessage(String messageId) => _guard(
     () => _client
         .from('messages')
@@ -621,6 +641,69 @@ class ChatApi {
         .eq('id', messageId)
         .eq('author_id', requireUserId),
   );
+
+  // ────────────────────────────────────────────────────────────── deletion ──
+
+  /// Turns the viewer's own message into a tombstone for every participant.
+  ///
+  /// The RPC is author-only (`not_message_author`) and idempotent: it keeps the
+  /// row's `id`, `author_id`, `reply_to_id` and `created_at`, clears `body` to
+  /// `''` and `attachments` to `[]`, and refreshes
+  /// `conversations.last_message_preview` only when this really was the
+  /// conversation's newest message. A repeat returns the identical row, so a
+  /// retry after a timeout is safe (11.1, 11.9, 11.10).
+  ///
+  /// Returns the stored row in the thread shape. The RPC returns the bare
+  /// `messages` row — no author profile and no embedded parent — so the caller
+  /// keeps whatever it already holds for those and only takes the deletion
+  /// state from here.
+  Future<ChatMessage> deleteMessageForEveryone(String messageId) async {
+    final row = asMap(
+      await _rpc('delete_message_for_everyone', <String, dynamic>{
+        'p_message': messageId,
+      }),
+    );
+    if (row.isEmpty) {
+      throw const KlectError(
+        KlectErrorKind.unknown,
+        'The message was deleted but could not be refreshed.',
+      );
+    }
+    return ChatMessage.fromJson(row);
+  }
+
+  /// Hides one message from the viewer's own copy of the thread.
+  ///
+  /// Idempotent per `(message, viewer)`: the RPC inserts into
+  /// `public.message_hides` with `on conflict do nothing`, so a repeat succeeds
+  /// without producing a second record (12.7). Nothing changes for any other
+  /// participant.
+  Future<void> hideMessageForMe(String messageId) async {
+    await _rpc('hide_message_for_me', <String, dynamic>{
+      'p_message': messageId,
+    });
+  }
+
+  /// The message ids the viewer has hidden in one conversation.
+  ///
+  /// Read directly from `public.message_hides`, whose own-row RLS policy is
+  /// what scopes the result — the viewer id is never sent as a filter, so
+  /// another account's hidden set is unreachable rather than merely unrequested
+  /// (12.8). Load this with the thread's first page and re-apply it to every
+  /// later page and every realtime insert so a hidden message stays hidden
+  /// across restart, re-sign-in, edits and reactions (12.5).
+  Future<Set<String>> fetchHiddenMessageIds(String conversationId) async {
+    final rows = await _guard(
+      () => _client
+          .from('message_hides')
+          .select('message_id')
+          .eq('conversation_id', conversationId),
+    );
+    return <String>{
+      for (final row in rows)
+        if (asString(row['message_id']).isNotEmpty) asString(row['message_id']),
+    };
+  }
 
   /// Adds an emoji reaction.
   Future<void> react(String messageId, String emoji) =>
@@ -804,18 +887,41 @@ class ChatApi {
   Future<CallModel> answerCall(String callId, {String? deviceId}) =>
       _api.answerCall(callId, deviceId: deviceId);
 
+  /// Declines a ringing call without disturbing any call already held.
+  Future<void> declineCall(String callId, {String reason = 'declined'}) =>
+      _api.declineCall(callId, reason: reason);
+
   /// Moves a call through its lifecycle.
+  ///
+  /// [clientElapsedSeconds] rides along as a diagnostic only — the stored
+  /// duration stays server-computed (Requirement 7.8).
   Future<void> updateCallStatus(
     String callId,
     CallStatus status, {
-    int? durationSeconds,
+    int? clientElapsedSeconds,
     String? endReason,
   }) => _api.updateCallStatus(
     callId,
     status,
-    durationSeconds: durationSeconds,
+    clientElapsedSeconds: clientElapsedSeconds,
     endReason: endReason,
   );
+
+  /// Merges one operator-facing diagnostic into `calls.diagnostics`.
+  ///
+  /// Participant-only server side; the RPC merges rather than replaces, so
+  /// several keys can be recorded for one call.
+  Future<void> recordCallDiagnostic({
+    required String callId,
+    required String key,
+    required Map<String, dynamic> value,
+  }) async {
+    await _rpc('record_call_diagnostic', <String, dynamic>{
+      'p_call': callId,
+      'p_key': key,
+      'p_value': value,
+    });
+  }
 
   /// Records that the viewer joined the media session.
   Future<void> joinCall(String callId) => _api.joinCall(callId);

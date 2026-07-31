@@ -45,8 +45,6 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
 
   PulseMode get _mode => ref.read(pulseModeProvider);
 
-  ScrollController get _scroll => _scrolls[_mode]!;
-
   @override
   void dispose() {
     for (final controller in _scrolls.values) {
@@ -55,7 +53,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     super.dispose();
   }
 
-  bool _onScroll(ScrollNotification notification) {
+  bool _onScroll(ScrollNotification notification, PulseMode mode) {
     if (notification is! ScrollUpdateNotification &&
         notification is! ScrollEndNotification) {
       return false;
@@ -63,15 +61,17 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     final metrics = notification.metrics;
     if (metrics.hasContentDimensions &&
         metrics.maxScrollExtent - metrics.pixels < metrics.viewportDimension) {
-      unawaited(ref.read(pulseFeedProvider(_mode).notifier).loadMore());
+      unawaited(ref.read(pulseFeedProvider(mode).notifier).loadMore());
     }
     return false;
   }
 
-  Future<void> _refresh() async {
-    await ref.read(pulseFeedProvider(_mode).notifier).refresh();
+  Future<void> _refresh([PulseMode? requestedMode]) async {
+    final mode = requestedMode ?? _mode;
+    await ref.read(pulseFeedProvider(mode).notifier).refresh();
     if (!mounted) return;
-    if (_scroll.hasClients) _scroll.jumpTo(0);
+    final scroll = _scrolls[mode]!;
+    if (scroll.hasClients) scroll.jumpTo(0);
   }
 
   void _selectMode(PulseMode mode) {
@@ -94,7 +94,10 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
   @override
   Widget build(BuildContext context) {
     final mode = ref.watch(pulseModeProvider);
-    final feed = ref.watch(pulseFeedProvider(mode));
+    final feeds = <PulseMode, PulseFeedState>{
+      for (final candidate in PulseMode.values)
+        candidate: ref.watch(pulseFeedProvider(candidate)),
+    };
     final filters = ref.watch(pulseFiltersProvider);
     // The matched-collector set only loads once the toggle is first used.
     final tasteIds = filters.sharedTaste
@@ -108,60 +111,87 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
         padding: const EdgeInsets.only(bottom: Layout.bottomBarHeight),
         child: _ComposeButton(onPressed: () => unawaited(_compose())),
       ),
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _onScroll,
-        child: CustomScrollView(
-          key: PageStorageKey<String>('pulse-${mode.wire}'),
-          controller: _scrolls[mode],
-          slivers: <Widget>[
-            SliverAppBar(
-              pinned: true,
-              automaticallyImplyLeading: false,
-              toolbarHeight: Layout.topBarHeight,
-              backgroundColor: colors.bgBase,
-              surfaceTintColor: Colors.transparent,
-              elevation: Elevation.none.y,
-              scrolledUnderElevation: Elevation.none.y,
-              title: Text('Pulse', style: context.kt.title2),
-              actions: <Widget>[
-                KIconButton(
-                  icon: Icons.search_rounded,
-                  semanticLabel: 'Search',
-                  onPressed: () => context.push(Routes.search),
-                ),
-                const MessagesAction(),
-                const SizedBox(width: Space.s2),
-              ],
-              bottom: _PulseTabs(
-                selected: mode,
-                onSelect: _selectMode,
-                filtersOpen: _filtersOpen,
-                filtersActive: filters.isActive,
-                onToggleFilters: () =>
-                    setState(() => _filtersOpen = !_filtersOpen),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: _PulsePrompt(onPressed: () => unawaited(_compose())),
-            ),
-            // The filter drawer unfolds under the tabs — animated collapse,
-            // zero height when shut.
-            SliverToBoxAdapter(
-              child: AnimatedSize(
-                duration: KMotion.duration(context, KDurations.medium),
-                curve: KMotion.curve(context, KCurves.emphasized),
-                alignment: Alignment.topCenter,
-                child: _filtersOpen
-                    ? const PulseFilterDrawer()
-                    : const SizedBox(width: double.infinity),
-              ),
-            ),
-            ..._body(feed, mode, filters, tasteIds),
-            const SliverToBoxAdapter(
-              child: SizedBox(height: Layout.bottomBarHeight + Space.s16),
-            ),
-          ],
+      body: KTabPager(
+        tabs: <KTabPagerTab>[
+          for (final candidate in PulseMode.values)
+            KTabPagerTab(id: candidate.wire, label: candidate.label),
+        ],
+        selectedIndex: mode.index,
+        onSelected: (index) => _selectMode(PulseMode.values[index]),
+        showRail: false,
+        builder: (context, index) => _page(
+          context,
+          PulseMode.values[index],
+          feeds[PulseMode.values[index]]!,
+          filters,
+          tasteIds,
+          colors,
         ),
+      ),
+    );
+  }
+
+  Widget _page(
+    BuildContext context,
+    PulseMode mode,
+    PulseFeedState feed,
+    PulseFilters filters,
+    Set<String>? tasteIds,
+    KlectColors colors,
+  ) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) => _onScroll(notification, mode),
+      child: CustomScrollView(
+        key: PageStorageKey<String>('pulse-${mode.wire}'),
+        controller: _scrolls[mode],
+        slivers: <Widget>[
+          SliverAppBar(
+            pinned: true,
+            automaticallyImplyLeading: false,
+            toolbarHeight: Layout.topBarHeight,
+            backgroundColor: colors.bgBase,
+            surfaceTintColor: Colors.transparent,
+            elevation: Elevation.none.y,
+            scrolledUnderElevation: Elevation.none.y,
+            title: Text('Pulse', style: context.kt.title2),
+            actions: <Widget>[
+              KIconButton(
+                icon: Icons.search_rounded,
+                semanticLabel: 'Search',
+                onPressed: () => context.push(Routes.search),
+              ),
+              const MessagesAction(),
+              const SizedBox(width: Space.s2),
+            ],
+            bottom: _PulseTabs(
+              selected: mode,
+              onSelect: _selectMode,
+              filtersOpen: _filtersOpen,
+              filtersActive: filters.isActive,
+              onToggleFilters: () =>
+                  setState(() => _filtersOpen = !_filtersOpen),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _PulsePrompt(onPressed: () => unawaited(_compose())),
+          ),
+          // The filter drawer unfolds under the tabs — animated collapse,
+          // zero height when shut.
+          SliverToBoxAdapter(
+            child: AnimatedSize(
+              duration: KMotion.duration(context, KDurations.medium),
+              curve: KMotion.curve(context, KCurves.emphasized),
+              alignment: Alignment.topCenter,
+              child: _filtersOpen
+                  ? const PulseFilterDrawer()
+                  : const SizedBox(width: double.infinity),
+            ),
+          ),
+          ..._body(feed, mode, filters, tasteIds),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: Layout.bottomBarHeight + Space.s16),
+          ),
+        ],
       ),
     );
   }
