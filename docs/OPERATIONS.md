@@ -48,6 +48,10 @@ it is project-specific. Regenerate it for a new environment with the Firebase MC
 `android/app/build.gradle.kts` consumes it. **Note:** `firebase_messaging` pulls in a dependency
 that requires **Android SDK Platform 34** to be installed alongside 36.
 
+GitHub Actions stores the same file as the encrypted repository secret
+`GOOGLE_SERVICES_JSON`; both `ci.yml` and `release-android.yml` materialize it only inside the
+runner before building. Update that secret whenever the Firebase Android app config changes.
+
 **Secrets set on `new_klect`** (`npx supabase secrets list --project-ref dikhuygcwxnrsckqglzg`):
 
 | secret | source |
