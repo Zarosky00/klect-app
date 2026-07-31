@@ -41,6 +41,10 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
   access. New indexes only report the expected unused-index INFO until production traffic uses them.
 - `scripts/verify.sh mobile` could not start because WSL Bash is not registered on this Windows host
   (`REGDB_E_CLASSNOTREG`). Its mobile commands were run directly in PowerShell and passed.
+- PR #12 merged to `main`; merged-main CI and the tagged Android release workflow passed.
+- GitHub release `v1.6.4` contains the stable-signed `klect.apk`, and Vercel production deployment
+  `dpl_AEVhNVxfXGioXKXqYgYa17Ej3vMj` is READY at `https://klect-web.vercel.app`. The public web
+  download button resolves through the stable latest-release URL to the verified v1.6.4 APK.
 
 ## Remaining outside the required implementation
 
@@ -48,4 +52,3 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
   generators). These improve proof depth but are not required by the task runner's MVP path.
 - Operator setup already called out by the spec: enable `reliable_calls` and configure Cloudflare TURN
   secrets when production infrastructure is ready.
-- The feature remains uncommitted in the current working tree.

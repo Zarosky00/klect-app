@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-07-31 · Session: chat/calls/notifications Kiro spec required work complete
+> Last updated: 2026-07-31 · Session: v1.6.4 released on GitHub and deployed to Vercel
 
 ---
 
@@ -12,10 +12,10 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 38 tables, 93 RLS policies, 14 realtime tables, 4 storage buckets and 37 applied migrations. The live chat/calls/notifications contract now includes synced notification preferences, private message hides, call diagnostics/reasons, 256-member group enforcement, 60/500-character identity validation and identity system messages. `pg_net` is enabled and `notifications_push_fanout_webhook` fires push delivery from an `after insert` trigger. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | `pulse_feed_v2`, `social_engagement_v1`, `profile_pulse_activity_v1`, `profile_discussion_activity_v1`, `my_profile_reactions_v1` and owner-only `delete_post` are live alongside the completed notification/message/group/call RPC contract. Calls remain feature-gated off. |
-| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.3 SHIPPED** · 🟡 next worktree build verified, not tagged | The required `chat-calls-notifications-overhaul` work is complete: Alert Center filtering, call lifecycle/surfaces, message deletion, group enforcement/reporting and shared swipeable tabs. Flutter analysis is clean, all 268 tests pass, and the release web build passes. The work remains uncommitted and calls remain feature-gated pending production TURN/device validation. |
-| 5 | Next.js web + admin (`web/`) | ✅ **v1.6.3 DEPLOYED** | Matching Pulse cards, engagement dialog, URL-restored profile modes and owner controls are live on Vercel deployment `dpl_FpFUXGmyTQ9k2c3MUAv5AJVrMsUR`. Group management remains Android-first. |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / physical QA pending** | 2026-07-31: `flutter analyze` has 0 issues, full Flutter suite is 268/268, the focused feature suite is 145/145, and `flutter build web --release` passes with its Wasm dry run. The Bash wrapper cannot start because WSL is unregistered, so the same mobile commands were run directly. Two-account/call relay/background/locked and physical accessibility matrices remain. |
-| 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **KIRO REQUIRED WORK COMPLETE** | All 49 required implementation tasks in `chat-calls-notifications-overhaul/tasks.md` are complete. The 73 remaining `*` entries are explicitly optional property/widget/SQL proof tasks. Group reporting, send-scope lockout, tombstones/delete-for-me, call pill/system actions and sibling-tab paging now ship in the worktree. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.4 SHIPPED** | The required `chat-calls-notifications-overhaul` work is released: Alert Center filtering, call lifecycle/surfaces, message deletion, group enforcement/reporting and shared swipeable tabs. Flutter analysis is clean, all 268 local tests pass, and the public APK is permanently signed. Calls remain feature-gated pending production TURN/device validation. |
+| 5 | Next.js web + admin (`web/`) | ✅ **v1.6.4 DEPLOYED** | Production deployment `dpl_AEVhNVxfXGioXKXqYgYa17Ej3vMj` is READY at `https://klect-web.vercel.app`. The public home returns HTTP 200 and its Android button uses the stable latest-release `klect.apk` URL. Group management remains Android-first. |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / physical QA pending** | 2026-07-31: local analysis, 268 Flutter tests, the 145-test focused run, Flutter web, web typecheck, 15 Vitest tests and the 31-route Next build pass. PR #12, merged-main CI and the signed-release workflow are green. Two-account/call relay/background/locked and physical accessibility matrices remain. |
+| 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **KIRO REQUIRED WORK COMPLETE** | All 49 required implementation tasks in `chat-calls-notifications-overhaul/tasks.md` ship in v1.6.4. The 73 remaining `*` entries are explicitly optional property/widget/SQL proof tasks. Group reporting, send-scope lockout, tombstones/delete-for-me, call pill/system actions and sibling-tab paging are released. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
 
@@ -156,6 +156,23 @@
   The latest-release API and stable asset URL report the same version, MIME type, size and digest.
   The connected phone dropped off ADB immediately before installation, so v1.6.3 physical-device
   installation and the manual two-account matrix remain explicitly pending.
+
+**v1.6.4 verification (2026-07-31):**
+- PR **#12** merged to `main` at commit `a30510207fd10ceb612a1e128f2875a01a57f0be`.
+  Pull-request and merged-main CI passed mobile analysis/tests/APK build plus web typecheck,
+  **15/15** Vitest tests and the 31-route production build. The tagged release workflow also
+  passed analysis, tests, permanent signing and asset publication.
+- Supabase migrations `notifications_calls_messages_overhaul`, `group_spec_consistency` and
+  `message_hides_fk_index` are live. Production now reports 38 tables, 93 RLS policies and 37
+  migrations; anonymous access to the new RPCs is denied.
+- GitHub release `v1.6.4` publishes `klect.apk` (103,865,675 bytes,
+  `application/vnd.android.package-archive`). A fresh download through the stable website URL
+  verifies as `com.klect.klect`, version `1.6.4` / code `14`, target SDK 36, permanent certificate
+  SHA-256 `460d934bcca98539907f82259f803080be55b153e7df0edec5878d4bf11b334f`, and file SHA-256
+  `b05bddb04321c55c58f601f59c30ac8e7418ad61b8317decde414ddae0ea39ce`.
+- Vercel production deployment `dpl_AEVhNVxfXGioXKXqYgYa17Ej3vMj` is READY and aliased to
+  `https://klect-web.vercel.app`. The public home returns HTTP 200, contains the stable
+  `releases/latest/download/klect.apk` link, and the post-deploy error log scan is empty.
 
 Legend: ✅ done · 🟡 in progress · ⬜ not started · 🔴 blocked
 
@@ -592,23 +609,23 @@ relaunch. FCM reported `sent:1` while the tray stayed empty, which reads as a br
 but is not; the queued message arrived on relaunch (hence two notifications appearing later). Use
 `am kill` or simple backgrounding instead. Recorded in `OPERATIONS.md` §2.
 
-**Version bookkeeping:** `pubspec.yaml` and `lib/core/app_version.dart` were bumped to `1.6.4` in
-lockstep as the update checker requires. Nothing is committed, pushed or tagged — cutting the
-GitHub `v1.6.4` release is a deliberate separate step.
+**Version bookkeeping:** `pubspec.yaml`, `lib/core/app_version.dart` and the web version constant
+are `1.6.4`. PR #12 is merged, GitHub release `v1.6.4` is public with the stable-signed APK, and
+the matching web build is deployed to Vercel.
 
 ---
 
 ## Next actions
 
-1. Reconnect the Android phone, install stable `v1.6.3` in place, then run the two-account Pulse
+1. Run the two-account Pulse
    matrix: four-photo original → plain repost → quote → Likes/Reposts/Quotes account lists; profile
    Surf/Pulse/Activity filters; Surf/Pulse replies and deep links; private/blocked/unavailable
    targets; owner delete/undo; offline replay; large text and reduced motion.
 2. Finish the remaining stretch UI: server-paginated inbox filters and per-chat wallpaper. Keep web
    group-management parity as a separate scoped release.
-3. Commit the FCM work, open a PR and cut GitHub release `v1.6.4` with `klect.apk` — the working
-   tree is currently ahead of the last tag and the device-verified build exists only locally.
-   Consider also asserting `kAppVersion` == `pubspec` version in a test so the two cannot drift.
+3. Add a small automated assertion that `kAppVersion` matches the `pubspec` version so release
+   bookkeeping cannot drift again, and take on the optional Kiro proof tasks only when their added
+   confidence justifies the time.
 4. Configure Cloudflare TURN secrets and implement Android Core-Telecom/CallStyle, then run the
    required two-device Wi-Fi/carrier/background/terminated/locked/permission-denied/forced-relay
    matrix before enabling `reliable_calls` or tagging v1.7. (Firebase push, the third prerequisite,
