@@ -107,7 +107,10 @@ class _KlectAppState extends ConsumerState<KlectApp>
             boldText: settings.highContrast || media.boldText,
           ),
           child: KInteractionFeedbackHost(
-            child: CallOverlayHost(child: child ?? const SizedBox.shrink()),
+            child: CallOverlayHost(
+              router: router,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },
