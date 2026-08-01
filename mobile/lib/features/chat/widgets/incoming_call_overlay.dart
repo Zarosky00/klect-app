@@ -25,10 +25,14 @@ import 'call_pill.dart';
 /// [incomingCallProvider] holds a single call).
 class CallOverlayHost extends ConsumerWidget {
   /// Wraps [child].
-  const CallOverlayHost({required this.child, super.key});
+  const CallOverlayHost({required this.child, required this.router, super.key});
 
   /// The subtree the banner floats over.
   final Widget child;
+
+  /// The app router, passed from [MaterialApp.router] so this overlay does not
+  /// try to look it up from the builder context (which sits above the router).
+  final GoRouter router;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -62,8 +66,6 @@ class CallOverlayHost extends ConsumerWidget {
         ref.read(callNotificationMessageProvider.notifier).clear();
       });
     });
-
-    final router = GoRouter.of(context);
 
     return AnimatedBuilder(
       animation: router.routerDelegate,
