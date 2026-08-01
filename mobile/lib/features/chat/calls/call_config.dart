@@ -76,6 +76,16 @@ class IceResolution {
 /// Until then the app runs on public STUN, which is correct for development
 /// and for peers on friendly networks.
 abstract final class KlectCallIce {
+  /// QA-only switch used by the mandatory relay test matrix.
+  ///
+  /// Build the candidate with
+  /// `--dart-define=KLECT_FORCE_TURN_RELAY=true` to reject host and
+  /// server-reflexive candidates. Production builds omit the define and keep
+  /// WebRTC's normal direct-path-first behaviour.
+  static const bool forceTurnRelay = bool.fromEnvironment(
+    'KLECT_FORCE_TURN_RELAY',
+  );
+
   /// Public STUN servers. Free, stateless, and enough to discover a
   /// server-reflexive candidate.
   static const List<Map<String, dynamic>> stunServers = <Map<String, dynamic>>[
@@ -121,6 +131,25 @@ abstract final class KlectCallIce {
     'iceCandidatePoolSize': 2,
     'bundlePolicy': 'max-bundle',
     'rtcpMuxPolicy': 'require',
+    if (forceTurnRelay) 'iceTransportPolicy': 'relay',
+  };
+
+  /// Builds the final peer-connection configuration.
+  ///
+  /// [forceRelay] is exposed for deterministic tests; runtime resolution uses
+  /// [forceTurnRelay], which is compile-time only and cannot be toggled by a
+  /// remote payload or an end user.
+  @visibleForTesting
+  static Map<String, dynamic> peerConnectionConfiguration(
+    List<Map<String, dynamic>> servers, {
+    bool forceRelay = forceTurnRelay,
+  }) => <String, dynamic>{
+    ...configuration(),
+    'iceServers': servers.length <= maxIceServers
+        ? List<Map<String, dynamic>>.unmodifiable(servers)
+        : List<Map<String, dynamic>>.unmodifiable(servers.take(maxIceServers)),
+    if (forceRelay) 'iceTransportPolicy': 'relay',
+    if (!forceRelay) 'iceTransportPolicy': 'all',
   };
 
   /// Fetches the raw `turn-credentials` payload. Overridable in tests.
@@ -219,12 +248,7 @@ abstract final class KlectCallIce {
 
   static Map<String, dynamic> _configurationWith(
     List<Map<String, dynamic>> servers,
-  ) => <String, dynamic>{
-    ...configuration(),
-    'iceServers': servers.length <= maxIceServers
-        ? List<Map<String, dynamic>>.unmodifiable(servers)
-        : List<Map<String, dynamic>>.unmodifiable(servers.take(maxIceServers)),
-  };
+  ) => peerConnectionConfiguration(servers);
 
   static bool _isRelayUrl(String url) =>
       url.startsWith('turn:') || url.startsWith('turns:');

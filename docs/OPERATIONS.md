@@ -158,6 +158,17 @@ npx supabase secrets list --project-ref dikhuygcwxnrsckqglzg
 As of the v1.7.0 implementation pass, these two names were not yet present, so TURN and forced-relay
 physical QA remain blocked. FCM secrets are present and `push-fanout` v5 is ACTIVE.
 
+For the mandatory relay-only case, build the same release source with the compile-time QA switch:
+
+```bash
+flutter build apk --release --target-platform android-arm64 \
+  --dart-define=KLECT_FORCE_TURN_RELAY=true
+```
+
+That candidate sets WebRTC `iceTransportPolicy` to `relay`; normal production builds omit the
+define and accept direct or relayed candidates. The switch is compile-time only and is not exposed
+to users or remote notification payloads.
+
 ## 4. Scheduled work
 
 The existing `klect-nightly` job remains at **03:17 UTC**. Calling also owns two additive jobs:

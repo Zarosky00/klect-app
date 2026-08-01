@@ -695,9 +695,16 @@ returns HTTP 200.
   Core-Telecom registration, incoming/ongoing CallStyle notifications, locked-screen intent,
   phone-call foreground service, durable Answer/Decline/Hang-up recovery, strict stale-payload
   parsing and local ringing expiry.
-- Verification completed: Flutter analysis 0 issues; **288/288** Flutter tests; Deno format/check
+- Added the compile-time-only `KLECT_FORCE_TURN_RELAY=true` QA build mode, which hands WebRTC
+  `iceTransportPolicy: relay` for the mandatory two-phone forced-relay case while normal releases
+  continue to allow both direct and relayed candidates.
+- Verification completed: Flutter analysis 0 issues; **291/291** Flutter tests; Deno format/check
   plus 2/2 call-payload tests; Android Kotlin compile, merged-manifest and native payload unit tests;
   web typecheck, **15/15** Vitest tests and the 31-route production build.
+- A permanent-signed arm64 candidate built as `com.klect.klect`, `1.7.0+17`, min SDK 24 / target
+  SDK 36, 59,761,769 bytes, SHA-256
+  `6746d9ecb54278024f3ef09af65a333c00a616519b3de9590be84492d56ff43a`, with release
+  certificate SHA-256 `460d934bcca98539907f82259f803080be55b153e7df0edec5878d4bf11b334f`.
 - Release remains intentionally blocked: neither Android phone is attached to ADB and Supabase does
   not yet contain `CLOUDFLARE_TURN_KEY_ID` or `CLOUDFLARE_TURN_API_TOKEN`. No PR merge, tag, global
   enablement, GitHub APK publication or Vercel deployment is claimed yet.

@@ -1,50 +1,50 @@
-# Design QA — Follow outcome panel
+# KLECT v1.7.0 design QA
 
-## Evidence
+- source visual truth paths:
+  - `C:\Users\trial\Downloads\WhatsApp Image 2026-08-01 at 11.50.33 AM.jpeg`
+  - `C:\Users\trial\Downloads\WhatsApp Image 2026-08-01 at 11.50.32 AM(2).jpeg`
+  - `C:\Users\trial\Downloads\WhatsApp Image 2026-08-01 at 11.50.32 AM(1).jpeg`
+  - `C:\Users\trial\Downloads\WhatsApp Image 2026-08-01 at 11.50.32 AM.jpeg`
+  - `C:\Users\trial\Downloads\WhatsApp Image 2026-08-01 at 12.00.22 PM.jpeg`
+- implementation screenshot path: unavailable; no Android device or emulator is attached
+- viewport: source phone viewport, 716 x 1600 physical pixels; implementation viewport pending the same physical phones
+- dimensions and density normalization: every source is 716 x 1600 pixels; implementation pixels, CSS/logical size, device pixel ratio and normalization are pending capture
+- states: Surf collection rail, compact foreground notice, closeup comment keyboard, direct-message header/history, and call initiation
 
-- Source visual truth: `C:\Users\trial\Downloads\WhatsApp Image 2026-07-27 at 12.35.33 PM.jpeg`
-- Rendered implementation: `D:\D drive\coding\Ideas\hackathon\klect\mobile\test\goldens\follow_panel_358x800.png`
-- State: dark theme, confirmed follow outcome, panel fully settled below a 44 logical-pixel safe area
-- Viewport: 358 × 800 logical pixels
-- Source pixels: 716 × 1600 at approximately 2× density, normalized to 358 × 800
-- Implementation pixels: 358 × 800 at device-pixel ratio 1
+**Full-view comparison evidence**
 
-## Full-view comparison
+Blocked. The five source screenshots are available, but there is no rendered v1.7.0 device capture to place beside them in a combined comparison input. Automated widget tests and a successful APK build are not substitutes for rendered visual evidence.
 
-The normalized source and implementation use the same phone width, height, safe-area offset, black background, and top-overlay state. The source contains the surrounding Pinterest profile while the implementation golden intentionally isolates the reusable notification component, so the profile content below the overlay was excluded from fidelity judgments.
+**Focused region comparison evidence**
 
-The panel matches the source’s near-full-width composition, 16-pixel screen margins, 12-pixel safe-area gap, light inverse surface, dark text, 40-pixel circular avatar slot, two-line message, large rounded corners, and soft elevation. The shipped copy intentionally uses KLECT’s Pulse language rather than Pinterest’s Pins/home-feed wording.
+Not performed because the implementation capture is unavailable. Required regions after installation are the Surf filter rail during a mid-swipe, foreground notification notice, comment draft/composer above the OEM keyboard, DM app bar, hydrated call-event rows, and incoming/ongoing native call surface.
 
-## Focused region comparison
+**Findings**
 
-The top notification region was compared at equal normalized size. This focused pass was required because panel height, corner radius, avatar scale, typography wrapping, and internal padding are too small to judge reliably from the full profile screenshot.
+- [P0] Rendered implementation evidence is missing
+  - Location: all five annotated Android states.
+  - Evidence: source screenshots exist at 716 x 1600, while ADB currently reports no attached device and no implementation screenshot can be captured.
+  - Impact: typography, spacing/layout rhythm, colors/tokens, image quality, icons, copy, keyboard overlap and native call surfaces cannot be compared honestly.
+  - Fix: attach the two Android phones, install the permanent-signed v1.7.0 candidate, recreate each source state, capture matching screenshots, compose source and implementation side by side, fix any P0/P1/P2 drift, and repeat.
 
-### Fidelity surfaces
+**Open Questions**
 
-- Fonts and typography: KLECT’s Instrument Sans remains the product font. The 15/22 body-strong style produces the same two-line density and hierarchy as the reference without clipping.
-- Spacing and layout rhythm: 16-pixel outer margins, 12-pixel horizontal content padding, 8-pixel vertical padding, 12-pixel avatar-to-copy gap, and a 20-pixel radius closely reproduce the source proportions.
-- Colors and tokens: the dark-screen/light-panel contrast follows the source while using KLECT’s `inverseSurface` and `onInverseSurface` theme tokens for light/dark accessibility.
-- Image quality and asset fidelity: production renders the followed person’s real avatar URL; the golden deliberately exercises the required initials fallback because remote images are not stable golden-test inputs.
-- Copy and content: all confirmed, unfollowed, queued, and failed messages use the approved KLECT-specific text. The visible confirmed state contains no generic status icon.
-- Motion and accessibility: normal motion uses downward slide, fade, and restrained scale settle; reduced motion uses fade only. The panel is a live region, includes the person’s name in its announcement, and supports tap/upward/horizontal dismissal.
+- None in the visual specification. The remaining dependency is physical-device availability.
 
-## Findings and comparison history
+**Implementation Checklist**
 
-### Iteration 1
+- Attach both phones with USB debugging authorized.
+- Capture the five matching v1.7.0 app states at the same orientation and content state.
+- Normalize each implementation capture to 716 x 1600 or compare at equal density.
+- Produce combined full-view and focused-region comparisons.
+- Record and fix all P0/P1/P2 findings, then update this report.
 
-- [P2] The first rendered panel was visibly taller and more pill-like than the reference.
-  - Evidence: the first capture used 12-pixel vertical padding and a 28-pixel radius, producing a roughly 68-pixel panel against the source’s approximately 60-pixel normalized height.
-  - Fix: changed vertical padding to 8 pixels and radius to 20 pixels while preserving the 40-pixel avatar and two-line text.
+**Comparison History**
 
-### Iteration 2
+- Pass 0: blocked before comparison because no implementation capture exists. No visual fix was made or claimed from code/tests alone.
 
-- Post-fix evidence: `mobile/test/goldens/follow_panel_358x800.png`
-- No actionable P0, P1, or P2 mismatch remains.
+**Follow-up Polish**
 
-## Follow-up polish
+- P3 polish will be recorded only after the first valid comparison.
 
-- [P3] A deterministic photographic avatar fixture could make the golden closer to the supplied example, but the current initials state intentionally verifies the production fallback and does not affect live rendering.
-
-## Final result
-
-final result: passed
+final result: blocked
