@@ -1,7 +1,7 @@
 # KIRO — Spec execution log: `chat-calls-notifications-overhaul`
 
 > Spec: `.kiro/specs/chat-calls-notifications-overhaul/`
-> Last updated: 2026-07-31
+> Last updated: 2026-08-01
 
 ## Status
 
@@ -45,6 +45,11 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
 - GitHub release `v1.6.4` contains the stable-signed `klect.apk`, and Vercel production deployment
   `dpl_AEVhNVxfXGioXKXqYgYa17Ej3vMj` is READY at `https://klect-web.vercel.app`. The public web
   download button resolves through the stable latest-release URL to the verified v1.6.4 APK.
+- PR #14 fixed the Android startup white screen by passing the router into the call overlay instead
+  of looking it up above `MaterialApp.router`. Release `v1.6.5` (`versionCode 15`) passed CI, was
+  verified with the permanent signing certificate, installed in place over v1.6.4 on the attached
+  RMX3771, and rendered the Surf screen successfully. Vercel production was redeployed with the
+  matching web version.
 
 ## Remaining outside the required implementation
 

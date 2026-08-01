@@ -615,6 +615,32 @@ the matching web build is deployed to Vercel.
 
 ---
 
+### 2026-08-01 — v1.6.5 Android blank-screen repair and device verification
+
+- Reproduced the reported white screen on the connected RMX3771 while running `1.6.4+14`.
+  Firebase initialized and the activity stayed alive, but Flutter logged `No GoRouter found in
+  context` from `incoming_call_overlay.dart`: the overlay was mounted above the router by
+  `MaterialApp.router.builder` and tried to find the router from the wrong context.
+- PR #14 (`c827e926`) passes the existing `GoRouter` into `CallOverlayHost` and removes the invalid
+  context lookup. Mobile/web versions moved together to `1.6.5` (`versionCode 15`). GitHub CI
+  passed analyze, tests and release build.
+- Public GitHub release `v1.6.5` is live with `klect.apk` (`sha256
+  8c21cc14ec3b88ed1f08d3cdc91a1e3fe091c7cf7aa6aa9412114ecef3a6edb9`), package
+  `com.klect.klect`, version `1.6.5+15`, and the permanent certificate
+  `460d934b…f11b334f`.
+- Downloaded that public asset and ran `adb install -r` over the installed `1.6.4` without
+  uninstalling. The phone retained app data, launched `MainActivity`, showed the Surf screen, and
+  no longer logged the GoRouter exception. This is now the correct in-place update path.
+- Deployed the matching web source to Vercel production deployment
+  `dpl_ERtdhrza9qz2ss7jSKXKFAYn45pV`, READY at `https://klect-web.vercel.app`; the download button
+  continues to use the stable latest-release APK URL.
+
+**Version bookkeeping:** `pubspec.yaml`, `lib/core/app_version.dart` and the web version constant
+are now `1.6.5`. PR #14 is merged, GitHub release `v1.6.5` is public, the signed APK is verified
+on the attached phone, and the matching web build is deployed to Vercel.
+
+---
+
 ## Next actions
 
 1. Run the two-account Pulse
