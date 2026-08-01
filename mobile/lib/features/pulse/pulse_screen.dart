@@ -12,6 +12,7 @@ import '../../router.dart';
 import '../../ui/ui.dart';
 import '../auth/auth_controller.dart';
 import '../chat/widgets/messages_action.dart';
+import '../shell/root_shell.dart';
 import 'data/pulse_feed_controller.dart';
 import 'data/pulse_filters.dart';
 import 'widgets/pulse_card.dart';
@@ -103,30 +104,73 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     final tasteIds = filters.sharedTaste
         ? ref.watch(matchedCollectorIdsProvider).value
         : null;
-    final colors = context.kc;
+
+    ref.listen<RootTabReselectEvent?>(rootTabReselectProvider, (_, event) {
+      if (event?.index != 1) return;
+      final scroll = _scrolls[mode]!;
+      if (!scroll.hasClients) return;
+      unawaited(
+        scroll.animateTo(
+          0,
+          duration: KMotion.duration(context, KDurations.medium),
+          curve: KMotion.curve(context, KCurves.emphasized),
+        ),
+      );
+    });
 
     return KScaffold(
       onRefresh: _refresh,
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: Layout.bottomBarHeight),
-        child: _ComposeButton(onPressed: () => unawaited(_compose())),
-      ),
-      body: KTabPager(
-        tabs: <KTabPagerTab>[
-          for (final candidate in PulseMode.values)
-            KTabPagerTab(id: candidate.wire, label: candidate.label),
+      appBar: KFixedAppBar(
+        title: 'Pulse',
+        actions: <Widget>[
+          KIconButton(
+            icon: Icons.search_rounded,
+            semanticLabel: 'Search',
+            onPressed: () => context.push(Routes.search),
+          ),
+          const MessagesAction(),
         ],
-        selectedIndex: mode.index,
-        onSelected: (index) => _selectMode(PulseMode.values[index]),
-        showRail: false,
-        builder: (context, index) => _page(
-          context,
-          PulseMode.values[index],
-          feeds[PulseMode.values[index]]!,
-          filters,
-          tasteIds,
-          colors,
-        ),
+      ),
+      floatingActionButton: _ComposeButton(
+        onPressed: () => unawaited(_compose()),
+      ),
+      body: Column(
+        children: <Widget>[
+          _PulseTabs(
+            selected: mode,
+            onSelect: _selectMode,
+            filtersOpen: _filtersOpen,
+            filtersActive: filters.isActive,
+            onToggleFilters: () => setState(() => _filtersOpen = !_filtersOpen),
+          ),
+          _PulsePrompt(onPressed: () => unawaited(_compose())),
+          AnimatedSize(
+            duration: KMotion.duration(context, KDurations.medium),
+            curve: KMotion.curve(context, KCurves.emphasized),
+            alignment: Alignment.topCenter,
+            child: _filtersOpen
+                ? const PulseFilterDrawer()
+                : const SizedBox(width: double.infinity),
+          ),
+          Expanded(
+            child: KTabPager(
+              tabs: <KTabPagerTab>[
+                for (final candidate in PulseMode.values)
+                  KTabPagerTab(id: candidate.wire, label: candidate.label),
+              ],
+              selectedIndex: mode.index,
+              onSelected: (index) => _selectMode(PulseMode.values[index]),
+              showRail: false,
+              builder: (context, index) => _page(
+                context,
+                PulseMode.values[index],
+                feeds[PulseMode.values[index]]!,
+                filters,
+                tasteIds,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -137,7 +181,6 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     PulseFeedState feed,
     PulseFilters filters,
     Set<String>? tasteIds,
-    KlectColors colors,
   ) {
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) => _onScroll(notification, mode),
@@ -145,52 +188,8 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
         key: PageStorageKey<String>('pulse-${mode.wire}'),
         controller: _scrolls[mode],
         slivers: <Widget>[
-          SliverAppBar(
-            pinned: true,
-            automaticallyImplyLeading: false,
-            toolbarHeight: Layout.topBarHeight,
-            backgroundColor: colors.bgBase,
-            surfaceTintColor: Colors.transparent,
-            elevation: Elevation.none.y,
-            scrolledUnderElevation: Elevation.none.y,
-            title: Text('Pulse', style: context.kt.title2),
-            actions: <Widget>[
-              KIconButton(
-                icon: Icons.search_rounded,
-                semanticLabel: 'Search',
-                onPressed: () => context.push(Routes.search),
-              ),
-              const MessagesAction(),
-              const SizedBox(width: Space.s2),
-            ],
-            bottom: _PulseTabs(
-              selected: mode,
-              onSelect: _selectMode,
-              filtersOpen: _filtersOpen,
-              filtersActive: filters.isActive,
-              onToggleFilters: () =>
-                  setState(() => _filtersOpen = !_filtersOpen),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: _PulsePrompt(onPressed: () => unawaited(_compose())),
-          ),
-          // The filter drawer unfolds under the tabs — animated collapse,
-          // zero height when shut.
-          SliverToBoxAdapter(
-            child: AnimatedSize(
-              duration: KMotion.duration(context, KDurations.medium),
-              curve: KMotion.curve(context, KCurves.emphasized),
-              alignment: Alignment.topCenter,
-              child: _filtersOpen
-                  ? const PulseFilterDrawer()
-                  : const SizedBox(width: double.infinity),
-            ),
-          ),
           ..._body(feed, mode, filters, tasteIds),
-          const SliverToBoxAdapter(
-            child: SizedBox(height: Layout.bottomBarHeight + Space.s16),
-          ),
+          const SliverToBoxAdapter(child: SizedBox(height: Space.s16)),
         ],
       ),
     );

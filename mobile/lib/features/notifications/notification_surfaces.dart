@@ -38,10 +38,11 @@ final notificationPresenterProvider = Provider<NotificationPresenter>(
 /// FCM device push registration — inert (no crash, no-op) until a
 /// `google-services.json`/`GoogleService-Info.plist` is bundled and the
 /// server-side secrets in `docs/OPERATIONS.md` §2 are configured.
-final pushNotificationsProvider = Provider<PushNotifications>(
-  (ref) => PushNotifications(ref.read(klectApiProvider)),
-  name: 'pushNotifications',
-);
+final pushNotificationsProvider = Provider<PushNotifications>((ref) {
+  final service = PushNotifications(ref.read(klectApiProvider));
+  ref.onDispose(() => unawaited(service.dispose()));
+  return service;
+}, name: 'pushNotifications');
 
 // ── The pure decision ────────────────────────────────────────────────────────
 //
@@ -286,9 +287,9 @@ class BannerResolutionBudget {
 
   /// [work]'s result, or [fallback] if the budget runs out or [work] fails.
   Future<T> race<T>(Future<T> work, T fallback) => Future.any(<Future<T>>[
-        work.then<T>((T value) => value, onError: (_, _) => fallback),
-        _expired.future.then<T>((_) => fallback),
-      ]);
+    work.then<T>((T value) => value, onError: (_, _) => fallback),
+    _expired.future.then<T>((_) => fallback),
+  ]);
 
   /// Releases the timer. Safe to call more than once.
   void close() {
@@ -403,8 +404,7 @@ class NotificationPresenter {
     if (_recent.contains(incoming.id)) return;
     if (!_resolving.add(incoming.id)) return;
     try {
-      final preferences =
-          _ref.read(resolvedNotificationPreferencesProvider);
+      final preferences = _ref.read(resolvedNotificationPreferencesProvider);
       // Composed from the un-enriched row purely to learn the category and the
       // thumbnail reference; the real content is composed again below, once the
       // actor is joined, because a follow destination needs the username.
@@ -423,7 +423,9 @@ class NotificationPresenter {
           lifecycle != null && lifecycle != AppLifecycleState.resumed;
       if (backgrounded) {
         _recent.remember(model.id);
-        await _ref.read(localNotificationsProvider).show(
+        await _ref
+            .read(localNotificationsProvider)
+            .show(
               id: model.id.hashCode,
               title: content.title,
               body: content.message,
@@ -505,8 +507,10 @@ class NotificationPresenter {
     }
   }
 
-  static const ({String? blurhash, String? url}) _noThumb =
-      (url: null, blurhash: null);
+  static const ({String? blurhash, String? url}) _noThumb = (
+    url: null,
+    blurhash: null,
+  );
 
   /// The entity cover an "liked your item" banner is legible with.
   Future<({String? blurhash, String? url})> _fetchThumb(
@@ -568,23 +572,23 @@ class NotificationPresenter {
         final actorId = notification.actorId;
         if (actorId == null) return null;
         return () => _effects.runOnce(
-              BannerEffectKeys.follow(actorId),
-              () => _followBack(notification, actorId),
-            );
+          BannerEffectKeys.follow(actorId),
+          () => _followBack(notification, actorId),
+        );
       case BannerActionKind.acceptCall:
         final callId = content.callId;
         if (callId == null) return null;
         return () => _effects.runOnce(
-              BannerEffectKeys.call(callId),
-              () => _acceptCall(callId),
-            );
+          BannerEffectKeys.call(callId),
+          () => _acceptCall(callId),
+        );
       case BannerActionKind.declineCall:
         final callId = content.callId;
         if (callId == null) return null;
         return () => _effects.runOnce(
-              BannerEffectKeys.call(callId),
-              () => _declineCall(callId),
-            );
+          BannerEffectKeys.call(callId),
+          () => _declineCall(callId),
+        );
     }
   }
 

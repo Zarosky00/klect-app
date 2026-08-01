@@ -1,8 +1,16 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import '../api/klect_api.dart';
+
+/// Reads one non-empty string from an FCM data payload.
+String? pushDataString(Map<String, dynamic> data, String key) {
+  final value = data[key];
+  return value is String && value.isNotEmpty ? value : null;
+}
 
 /// FCM device push — stage 2 of the notifications plan (stage 1 is
 /// `LocalNotifications`, for realtime arrivals while the app is
@@ -20,6 +28,21 @@ class PushNotifications {
 
   final KlectApi _api;
   String? _lastToken;
+  final StreamController<String> _foregroundNotificationIds =
+      StreamController<String>.broadcast();
+  final StreamController<String> _openedPaths =
+      StreamController<String>.broadcast();
+  StreamSubscription<RemoteMessage>? _foregroundSubscription;
+  StreamSubscription<RemoteMessage>? _openedSubscription;
+  StreamSubscription<String>? _tokenSubscription;
+  bool _initialMessageHandled = false;
+
+  /// Notification ids delivered while KLECT is visible.
+  Stream<String> get foregroundNotificationIds =>
+      _foregroundNotificationIds.stream;
+
+  /// Deep-link paths selected from background or terminated FCM cards.
+  Stream<String> get openedPaths => _openedPaths.stream;
 
   /// Whether this platform can receive FCM push at all.
   static bool get isSupported =>
@@ -51,6 +74,7 @@ class PushNotifications {
     }
 
     final messaging = FirebaseMessaging.instance;
+    await _ensureMessageListeners(messaging);
     final settings = await messaging.requestPermission(
       alert: true,
       badge: true,
@@ -58,7 +82,7 @@ class PushNotifications {
     );
     final granted =
         settings.authorizationStatus == AuthorizationStatus.authorized ||
-            settings.authorizationStatus == AuthorizationStatus.provisional;
+        settings.authorizationStatus == AuthorizationStatus.provisional;
     if (!granted) return;
 
     final token = await messaging.getToken();
@@ -66,7 +90,32 @@ class PushNotifications {
 
     // A token can rotate at any time (app reinstall, Google Play Services
     // update, etc.) — re-register whenever that happens.
-    FirebaseMessaging.instance.onTokenRefresh.listen(_register);
+    _tokenSubscription ??= FirebaseMessaging.instance.onTokenRefresh.listen(
+      _register,
+    );
+  }
+
+  Future<void> _ensureMessageListeners(FirebaseMessaging messaging) async {
+    _foregroundSubscription ??= FirebaseMessaging.onMessage.listen((message) {
+      final id = pushDataString(message.data, 'notification_id');
+      if (id != null && !_foregroundNotificationIds.isClosed) {
+        _foregroundNotificationIds.add(id);
+      }
+    });
+    _openedSubscription ??= FirebaseMessaging.onMessageOpenedApp.listen(
+      _emitOpenedPath,
+    );
+    if (_initialMessageHandled) return;
+    _initialMessageHandled = true;
+    final initial = await messaging.getInitialMessage();
+    if (initial != null) _emitOpenedPath(initial);
+  }
+
+  void _emitOpenedPath(RemoteMessage message) {
+    final path = pushDataString(message.data, 'link');
+    if (path != null && !_openedPaths.isClosed) {
+      _openedPaths.add(path);
+    }
   }
 
   Future<void> _register(String token) async {
@@ -94,5 +143,14 @@ class PushNotifications {
       // Best-effort — the row is harmless if it lingers as enabled.
     }
     _lastToken = null;
+  }
+
+  /// Releases Firebase listeners owned by this provider instance.
+  Future<void> dispose() async {
+    await _foregroundSubscription?.cancel();
+    await _openedSubscription?.cancel();
+    await _tokenSubscription?.cancel();
+    await _foregroundNotificationIds.close();
+    await _openedPaths.close();
   }
 }

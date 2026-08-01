@@ -6,6 +6,7 @@ import 'package:klect/core/api/api_error.dart';
 import 'package:klect/core/supabase.dart';
 import 'package:klect/features/chat/calls/call_availability.dart';
 import 'package:klect/features/chat/chat_api.dart';
+import 'package:klect/features/chat/conversation_screen.dart';
 
 /// A `call_feature_enabled` RPC scripted per call.
 class _GateApi extends Fake implements ChatApi {
@@ -37,6 +38,11 @@ void main() {
   setUp(() => CallAvailability.clock = () => now);
   tearDown(() => CallAvailability.clock = DateTime.now);
 
+  test('direct-message call actions remain visible while the gate is off', () {
+    expect(conversationShowsCallActions(isGroup: false), isTrue);
+    expect(conversationShowsCallActions(isGroup: true), isFalse);
+  });
+
   test('starts disabled and adopts a successful read', () async {
     final api = _GateApi([() async => true]);
     final container = _containerFor(api);
@@ -60,10 +66,7 @@ void main() {
   });
 
   test('a failed read after a success falls closed', () async {
-    final api = _GateApi([
-      () async => true,
-      () async => throw _rpcFailed,
-    ]);
+    final api = _GateApi([() async => true, () async => throw _rpcFailed]);
     final container = _containerFor(api);
     final gate = container.read(callAvailabilityProvider.notifier);
 
@@ -91,38 +94,40 @@ void main() {
     expect(api.calls, 1, reason: 'one read in flight at a time');
   });
 
-  test('foreground refresh is skipped until the success is 5 minutes old',
-      () async {
-    final api = _GateApi([() async => true]);
-    final container = _containerFor(api);
-    final gate = container.read(callAvailabilityProvider.notifier);
+  test(
+    'foreground refresh is skipped until the success is 5 minutes old',
+    () async {
+      final api = _GateApi([() async => true]);
+      final container = _containerFor(api);
+      final gate = container.read(callAvailabilityProvider.notifier);
 
-    await gate.refreshIfStale();
-    expect(api.calls, 1);
+      await gate.refreshIfStale();
+      expect(api.calls, 1);
 
-    now = now.add(CallAvailability.staleAfter - const Duration(seconds: 1));
-    await gate.refreshIfStale();
-    expect(api.calls, 1, reason: 'still fresh');
+      now = now.add(CallAvailability.staleAfter - const Duration(seconds: 1));
+      await gate.refreshIfStale();
+      expect(api.calls, 1, reason: 'still fresh');
 
-    now = now.add(const Duration(seconds: 1));
-    await gate.refreshIfStale();
-    expect(api.calls, 2, reason: 'exactly 5 minutes old is stale');
-  });
+      now = now.add(const Duration(seconds: 1));
+      await gate.refreshIfStale();
+      expect(api.calls, 2, reason: 'exactly 5 minutes old is stale');
+    },
+  );
 
   // The widget binding runs the body in a fake-async zone, so pumping past the
   // budget fires the real `.timeout()` timer without a real 10 s wait.
-  testWidgets('a read that never returns is disabled after the 10 s budget',
-      (tester) async {
-    final api = _GateApi([
-      () => Completer<bool>().future,
-      () async => true,
-    ]);
+  testWidgets('a read that never returns is disabled after the 10 s budget', (
+    tester,
+  ) async {
+    final api = _GateApi([() => Completer<bool>().future, () async => true]);
     final container = _containerFor(api);
     final gate = container.read(callAvailabilityProvider.notifier);
 
     var settled = false;
     unawaited(gate.refreshIfStale().then((_) => settled = true));
-    await tester.pump(CallAvailability.readTimeout + const Duration(seconds: 1));
+    await tester.pump(
+      CallAvailability.readTimeout + const Duration(seconds: 1),
+    );
 
     expect(settled, isTrue, reason: 'the read stops waiting at the budget');
     expect(container.read(callAvailabilityProvider), isFalse);

@@ -77,7 +77,9 @@ class LocalNotifications {
 
     await _plugin.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings(
+          '@drawable/ic_launcher_monochrome',
+        ),
         iOS: DarwinInitializationSettings(),
       ),
       onDidReceiveNotificationResponse: (response) {
@@ -136,6 +138,7 @@ class LocalNotifications {
         android: AndroidNotificationDetails(
           channel.id,
           channel.name,
+          icon: '@drawable/ic_launcher_monochrome',
           channelDescription: channel.description,
           importance: channel.importance,
           priority: isCall ? Priority.max : Priority.high,
@@ -166,6 +169,7 @@ class LocalNotifications {
         android: AndroidNotificationDetails(
           callsChannel.id,
           callsChannel.name,
+          icon: '@drawable/ic_launcher_monochrome',
           channelDescription: callsChannel.description,
           importance: Importance.max,
           priority: Priority.max,

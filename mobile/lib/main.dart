@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show LicenseEntryWithLineBreaks, LicenseRegistry;
+import 'package:flutter/foundation.dart'
+    show LicenseEntryWithLineBreaks, LicenseRegistry;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,10 +19,9 @@ Future<void> main() async {
       'assets/fonts/OFL-Fraunces.txt',
       'assets/fonts/OFL-InstrumentSans.txt',
     ]) {
-      yield LicenseEntryWithLineBreaks(
-        <String>['klect_fonts'],
-        await rootBundle.loadString(path),
-      );
+      yield LicenseEntryWithLineBreaks(<String>[
+        'klect_fonts',
+      ], await rootBundle.loadString(path));
     }
   });
 
@@ -29,6 +29,7 @@ Future<void> main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -44,9 +45,7 @@ Future<void> main() async {
 
   runApp(
     ProviderScope(
-      overrides: [
-        keyValueStoreProvider.overrideWithValue(store),
-      ],
+      overrides: [keyValueStoreProvider.overrideWithValue(store)],
       child: const KlectApp(),
     ),
   );

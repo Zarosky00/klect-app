@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:klect/core/api/klect_api.dart';
@@ -21,8 +23,10 @@ class _SurfFakeApi extends FakeKlectApi {
   int calls = 0;
 
   @override
-  String? publicUrl(String? path, {StorageBucket bucket = StorageBucket.media}) =>
-      null;
+  String? publicUrl(
+    String? path, {
+    StorageBucket bucket = StorageBucket.media,
+  }) => null;
 
   @override
   Future<List<SurfCard>> surfFeed({
@@ -44,34 +48,41 @@ SurfCard _card({
   required int height,
   EntityType type = EntityType.item,
   int childCount = 1,
-}) =>
-    SurfCard(
-      entityType: type,
-      entityId: id,
-      ownerId: 'owner-$id',
-      username: 'aria',
-      displayName: 'Aria Vale',
-      title: 'Card $id',
-      width: width,
-      height: height,
-      likeCount: 5,
-      saveCount: 2,
-      childCount: childCount,
-    );
+}) => SurfCard(
+  entityType: type,
+  entityId: id,
+  ownerId: 'owner-$id',
+  username: 'aria',
+  displayName: 'Aria Vale',
+  title: 'Card $id',
+  width: width,
+  height: height,
+  likeCount: 5,
+  saveCount: 2,
+  childCount: childCount,
+);
 
 void main() {
-  setUpAll(useOfflineFonts);
+  setUpAll(() async {
+    final sans = FontLoader('Instrument Sans')
+      ..addFont(rootBundle.load('assets/fonts/InstrumentSans[wdth,wght].ttf'));
+    final display = FontLoader('Fraunces')
+      ..addFont(
+        rootBundle.load('assets/fonts/Fraunces[SOFT,WONK,opsz,wght].ttf'),
+      );
+    await Future.wait(<Future<void>>[sans.load(), display.load()]);
+  });
 
   ProviderContainer containerFor(_SurfFakeApi api) => ProviderContainer.test(
-        overrides: [
-          klectApiProvider.overrideWithValue(api),
-          currentUserIdProvider.overrideWithValue('me'),
-          // The app bar's MessagesAction watches this; stubbing it here keeps
-          // the realtime inbox (which needs a live Supabase client) out of
-          // these widget tests.
-          unreadMessageCountProvider.overrideWith((ref) => 0),
-        ],
-      );
+    overrides: [
+      klectApiProvider.overrideWithValue(api),
+      currentUserIdProvider.overrideWithValue('me'),
+      // The app bar's MessagesAction watches this; stubbing it here keeps
+      // the realtime inbox (which needs a live Supabase client) out of
+      // these widget tests.
+      unreadMessageCountProvider.overrideWith((ref) => 0),
+    ],
+  );
 
   group('surf masonry', () {
     testWidgets('reserves every tile from its intrinsic size', (tester) async {
@@ -105,8 +116,9 @@ void main() {
       expect(second.width, closeTo(first.width, 0.01));
     });
 
-    testWidgets('clamps a pathological aspect into the grid band',
-        (tester) async {
+    testWidgets('clamps a pathological aspect into the grid band', (
+      tester,
+    ) async {
       final api = _SurfFakeApi(<SurfCard>[
         _card(id: 'tall', width: 100, height: 4000),
       ]);
@@ -124,7 +136,9 @@ void main() {
       expect(size.height / size.width, closeTo(1 / Aspect.gridMin, 0.02));
     });
 
-    testWidgets('offers all four filters and switching reloads', (tester) async {
+    testWidgets('offers all four filters and switching reloads', (
+      tester,
+    ) async {
       final api = _SurfFakeApi(<SurfCard>[
         _card(id: 'a', width: 1000, height: 1000),
       ]);
@@ -148,6 +162,66 @@ void main() {
       expect(api.calls, greaterThanOrEqualTo(2));
       expect(find.byType(SurfTile), findsNothing);
     });
+
+    testWidgets('header and filters are not duplicated during a page drag', (
+      tester,
+    ) async {
+      final api = _SurfFakeApi(<SurfCard>[
+        _card(id: 'a', width: 1000, height: 1000),
+      ]);
+
+      await pumpKlect(
+        tester,
+        const SurfScreen(),
+        container: containerFor(api),
+        disableAnimations: true,
+      );
+      await tester.pumpAndSettle();
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(PageView)),
+      );
+      await gesture.moveBy(const Offset(-120, 0));
+      await tester.pump();
+
+      expect(find.text('Surf'), findsOneWidget);
+      for (final filter in SurfFilter.values) {
+        expect(find.text(filter.label), findsOneWidget);
+      }
+
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+      'fixed header layout at reference phone size',
+      (tester) async {
+        tester.view
+          ..physicalSize = const Size(360, 800)
+          ..devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final api = _SurfFakeApi(<SurfCard>[
+          _card(id: 'a', width: 1000, height: 1000),
+          _card(id: 'b', width: 1000, height: 1500),
+          _card(id: 'c', width: 1600, height: 1000),
+          _card(id: 'd', width: 1000, height: 1200),
+        ]);
+
+        await pumpKlect(
+          tester,
+          const SurfScreen(),
+          container: containerFor(api),
+          disableAnimations: true,
+        );
+        await tester.pumpAndSettle();
+
+        await expectLater(
+          find.byType(SurfScreen),
+          matchesGoldenFile('goldens/surf_fixed_header_360x800.png'),
+        );
+      },
+      tags: const <String>['golden'],
+    );
   });
 
   group('immersiveMediaOf', () {

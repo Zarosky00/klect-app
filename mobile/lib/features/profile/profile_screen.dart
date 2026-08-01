@@ -20,6 +20,7 @@ import '../pulse/data/pulse_entry_view.dart';
 import '../pulse/widgets/comment_action_bar.dart';
 import '../pulse/widgets/pulse_card.dart';
 import '../pulse/widgets/pulse_target_card.dart';
+import '../shell/root_shell.dart';
 import 'edit_profile_screen.dart';
 import 'entity_tile.dart';
 import 'fill_viewport.dart';
@@ -158,7 +159,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 }
 
-class _ProfileBody extends ConsumerWidget {
+class _ProfileBody extends ConsumerStatefulWidget {
   const _ProfileBody({
     required this.profile,
     required this.isMe,
@@ -173,58 +174,84 @@ class _ProfileBody extends ConsumerWidget {
   final ValueChanged<ProfileMode> onModeChanged;
   final Future<void> Function() onRefresh;
 
+  @override
+  ConsumerState<_ProfileBody> createState() => _ProfileBodyState();
+}
+
+class _ProfileBodyState extends ConsumerState<_ProfileBody> {
+  final ScrollController _outerScroll = ScrollController();
+
   List<ProfileMode> get _tabs => <ProfileMode>[
     for (final candidate in ProfileMode.values)
-      if (isMe || !candidate.isPrivate) candidate,
+      if (widget.isMe || !candidate.isPrivate) candidate,
   ];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final visibleTab = _tabs.contains(mode) ? mode : ProfileMode.surf;
+  void dispose() {
+    _outerScroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = widget.profile;
+    final visibleTab = _tabs.contains(widget.mode)
+        ? widget.mode
+        : ProfileMode.surf;
+
+    ref.listen<RootTabReselectEvent?>(rootTabReselectProvider, (_, event) {
+      if (event?.index != 4 || !_outerScroll.hasClients) return;
+      unawaited(
+        _outerScroll.animateTo(
+          0,
+          duration: KMotion.duration(context, KDurations.medium),
+          curve: KMotion.curve(context, KCurves.emphasized),
+        ),
+      );
+    });
 
     return KScaffold(
       safeTop: false,
-      onRefresh: onRefresh,
-      body: CustomScrollView(
-        slivers: <Widget>[
-          _ProfileAppBar(profile: profile, isMe: isMe),
+      onRefresh: widget.onRefresh,
+      body: NestedScrollView(
+        controller: _outerScroll,
+        headerSliverBuilder: (context, innerBoxIsScrolled) => <Widget>[
+          _ProfileAppBar(profile: profile, isMe: widget.isMe),
           SliverToBoxAdapter(
-            child: _ProfileHeader(profile: profile, isMe: isMe),
+            child: _ProfileHeader(profile: profile, isMe: widget.isMe),
           ),
           SliverPersistentHeader(
             pinned: true,
             delegate: _TabBarDelegate(
               tabs: _tabs,
               selected: visibleTab,
-              onChanged: onModeChanged,
-            ),
-          ),
-          SliverFillRemaining(
-            hasScrollBody: true,
-            child: KTabPager(
-              tabs: <KTabPagerTab>[
-                for (final tab in _tabs)
-                  KTabPagerTab(id: tab.name, label: tab.label),
-              ],
-              selectedIndex: _tabs.indexOf(visibleTab),
-              onSelected: (index) => onModeChanged(_tabs[index]),
-              showRail: false,
-              builder: (context, index) => CustomScrollView(
-                key: PageStorageKey<String>(
-                  'profile-${profile.id}-${_tabs[index].name}',
-                ),
-                slivers: <Widget>[
-                  _ProfileModeContent(
-                    profile: profile,
-                    mode: _tabs[index],
-                    isMe: isMe,
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: Space.s20)),
-                ],
-              ),
+              onChanged: widget.onModeChanged,
             ),
           ),
         ],
+        body: KTabPager(
+          tabs: <KTabPagerTab>[
+            for (final tab in _tabs)
+              KTabPagerTab(id: tab.name, label: tab.label),
+          ],
+          selectedIndex: _tabs.indexOf(visibleTab),
+          onSelected: (index) => widget.onModeChanged(_tabs[index]),
+          showRail: false,
+          builder: (context, index) => CustomScrollView(
+            key: PageStorageKey<String>(
+              'profile-${profile.id}-${_tabs[index].name}',
+            ),
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: <Widget>[
+              _ProfileModeContent(
+                profile: profile,
+                mode: _tabs[index],
+                isMe: widget.isMe,
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: Space.s20)),
+            ],
+          ),
+        ),
       ),
     );
   }
