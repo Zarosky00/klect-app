@@ -33,6 +33,10 @@ import 'widgets/typing_indicator.dart';
 /// Messages closer together than this belong to one visual group.
 const Duration _groupWindow = Duration(minutes: 5);
 
+/// Direct conversations keep their call affordances visible even while the
+/// production reliability gate is off; groups never expose peer call actions.
+bool conversationShowsCallActions({required bool isGroup}) => !isGroup;
+
 /// How close to the top of the history the user gets before the next page
 /// starts loading.
 const double _paginationThreshold = Space.s24 * 4;
@@ -175,6 +179,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     }
 
     if (mounted) await context.push('/call/${call.id}');
+  }
+
+  void _requestCall(CallKind kind, Profile? peer) {
+    if (!ref.read(callAvailabilityProvider)) {
+      KToast.show(
+        context,
+        'Calls are temporarily unavailable while secure relay setup is completed.',
+      );
+      return;
+    }
+    unawaited(_startCall(kind, peer));
   }
 
   void _openActions(ChatMessage message, {required bool isMine}) {
@@ -517,8 +532,8 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     final isGroup = state.conversation?.kind == ConversationKind.group;
     final callsEnabled = ref.watch(callAvailabilityProvider);
     final activeCall = ref.watch(activeCallProvider);
-    final showCallActions = !isGroup && callsEnabled;
-    final canCall = showCallActions && !activeCall.isBusy && !_startInFlight;
+    final showCallActions = conversationShowsCallActions(isGroup: isGroup);
+    final canCall = !callsEnabled || (!activeCall.isBusy && !_startInFlight);
     String? viewerRole;
     for (final member in state.members) {
       if (member.userId == viewerId &&
@@ -555,8 +570,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
             peer: peer,
             isGroup: isGroup,
             showCallActions: showCallActions,
+            callsAvailable: callsEnabled,
             canCall: canCall,
-            onCall: (kind) => unawaited(_startCall(kind, peer)),
+            onCall: (kind) => _requestCall(kind, peer),
             onSearch: _openSearch,
             onOverflow: () =>
                 unawaited(_openOverflow(state, peer, isGroup: isGroup)),
@@ -565,62 +581,84 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
 
     return KScaffold(
       appBar: topBar,
-      // The composer belongs to the resizable body, not Scaffold's
-      // bottomNavigationBar. Scaffold now owns the keyboard inset exactly
-      // once, so Gboard cannot cover the caret or typed text.
-      body: Column(
-        children: <Widget>[
-          Expanded(
-            child: Stack(
-              children: <Widget>[
-                _ThreadBody(
-                  state: state,
-                  viewerId: viewerId,
-                  scroll: _scroll,
-                  highlightedId: _highlightedId,
-                  keyFor: _keyFor,
-                  onLongPress: _openActions,
-                  onQuickReact: (message) => unawaited(
-                    _thread.toggleReaction(message.id, kQuickReactions.first),
-                  ),
-                  onSwipeReply: _armReply,
-                  onReplyTap: (replyToId) =>
-                      unawaited(_jumpToMessage(replyToId)),
-                  onRetry: (message) => unawaited(_thread.retry(message.id)),
-                  onDiscard: (message) => _thread.discard(message.id),
-                  onReaction: (message, emoji) =>
-                      unawaited(_thread.toggleReaction(message.id, emoji)),
-                  localPreview: _thread.localPreview,
-                  onRefresh: () => unawaited(_thread.refresh()),
-                ),
-                if (_searching && (_searchTerm.isNotEmpty || _searchLoading))
-                  Positioned.fill(
-                    child: ThreadSearchResults(
-                      term: _searchTerm,
-                      loading: _searchLoading,
-                      results: _searchResults,
-                      onTap: _openSearchResult,
+      // This screen owns the IME inset explicitly. Disabling Scaffold's
+      // automatic resize prevents OEM edge-to-edge implementations from
+      // applying the same keyboard space twice or not at all.
+      resizeToAvoidBottomInset: false,
+      body: ConversationKeyboardInset(
+        child: Column(
+          children: <Widget>[
+            Expanded(
+              child: Stack(
+                children: <Widget>[
+                  _ThreadBody(
+                    state: state,
+                    viewerId: viewerId,
+                    scroll: _scroll,
+                    highlightedId: _highlightedId,
+                    keyFor: _keyFor,
+                    onLongPress: _openActions,
+                    onQuickReact: (message) => unawaited(
+                      _thread.toggleReaction(message.id, kQuickReactions.first),
                     ),
+                    onSwipeReply: _armReply,
+                    onReplyTap: (replyToId) =>
+                        unawaited(_jumpToMessage(replyToId)),
+                    onRetry: (message) => unawaited(_thread.retry(message.id)),
+                    onDiscard: (message) => _thread.discard(message.id),
+                    onReaction: (message, emoji) =>
+                        unawaited(_thread.toggleReaction(message.id, emoji)),
+                    localPreview: _thread.localPreview,
+                    onRefresh: () => unawaited(_thread.refresh()),
                   ),
-              ],
+                  if (_searching && (_searchTerm.isNotEmpty || _searchLoading))
+                    Positioned.fill(
+                      child: ThreadSearchResults(
+                        term: _searchTerm,
+                        loading: _searchLoading,
+                        results: _searchResults,
+                        onTap: _openSearchResult,
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          TypingIndicator(typing: state.typing),
-          if (!groupSendAllowed && groupSendScope != null)
-            _ComposerLock(scopeLabel: groupSendScope.label)
-          else
-            ChatComposer(
-              conversationId: widget.conversationId,
-              replyTo: _replyTo,
-              editing: _editing,
-              enabled: !state.loading || state.messages.isNotEmpty,
-              onCancelReply: () => setState(() => _replyTo = null),
-              onCancelEdit: () => setState(() => _editing = null),
-            ),
-        ],
+            TypingIndicator(typing: state.typing),
+            if (!groupSendAllowed && groupSendScope != null)
+              _ComposerLock(scopeLabel: groupSendScope.label)
+            else
+              ChatComposer(
+                conversationId: widget.conversationId,
+                replyTo: _replyTo,
+                editing: _editing,
+                enabled: !state.loading || state.messages.isNotEmpty,
+                onCancelReply: () => setState(() => _replyTo = null),
+                onCancelEdit: () => setState(() => _editing = null),
+              ),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// Applies Android/iOS keyboard space exactly once around a conversation.
+/// Exposed for the small-viewport regression test; app routes use it directly.
+class ConversationKeyboardInset extends StatelessWidget {
+  /// Creates the keyboard-safe region.
+  const ConversationKeyboardInset({required this.child, super.key});
+
+  /// Thread list, typing row and composer.
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnimatedPadding(
+    key: const ValueKey<String>('conversation-keyboard-inset'),
+    duration: KMotion.duration(context, KDurations.fast),
+    curve: KMotion.curve(context, KCurves.emphasized),
+    padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+    child: child,
+  );
 }
 
 class _ComposerLock extends StatelessWidget {
@@ -667,6 +705,7 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required this.peer,
     required this.isGroup,
     required this.showCallActions,
+    required this.callsAvailable,
     required this.canCall,
     required this.onCall,
     required this.onSearch,
@@ -678,6 +717,7 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final Profile? peer;
   final bool isGroup;
   final bool showCallActions;
+  final bool callsAvailable;
   final bool canCall;
   final void Function(CallKind kind) onCall;
   final VoidCallback onSearch;
@@ -783,12 +823,16 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
         if (showCallActions) ...<Widget>[
           KIconButton(
             icon: Icons.call_rounded,
-            semanticLabel: 'Start an audio call',
+            semanticLabel: callsAvailable
+                ? 'Start an audio call'
+                : 'Audio calls temporarily unavailable',
             onPressed: canCall ? () => onCall(CallKind.audio) : null,
           ),
           KIconButton(
             icon: Icons.videocam_rounded,
-            semanticLabel: 'Start a video call',
+            semanticLabel: callsAvailable
+                ? 'Start a video call'
+                : 'Video calls temporarily unavailable',
             onPressed: canCall ? () => onCall(CallKind.video) : null,
           ),
         ],

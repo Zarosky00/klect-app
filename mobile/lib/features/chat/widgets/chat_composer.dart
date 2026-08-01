@@ -100,8 +100,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       return;
     }
     _controller.text = editing.message.body ?? '';
-    _controller.selection =
-        TextSelection.collapsed(offset: _controller.text.length);
+    _controller.selection = TextSelection.collapsed(
+      offset: _controller.text.length,
+    );
     _focus.requestFocus();
   }
 
@@ -143,8 +144,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
             icon: Icons.photo_camera_outlined,
             variant: KButtonVariant.secondary,
             expand: true,
-            onPressed: () =>
-                Navigator.of(sheetContext).pop(ImageSource.camera),
+            onPressed: () => Navigator.of(sheetContext).pop(ImageSource.camera),
           ),
           const SizedBox(height: Space.s2),
           KButton(
@@ -230,6 +230,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
     final canSend = _hasText && widget.enabled && !_busy;
 
     return Container(
+      key: const ValueKey<String>('chat-composer'),
       decoration: BoxDecoration(
         color: colors.surface1,
         border: Border(
@@ -254,7 +255,8 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
             else if (replyTo != null)
               _ContextBanner(
                 icon: Icons.reply_rounded,
-                title: 'Replying to '
+                title:
+                    'Replying to '
                     '${replyTo.message.author?.name ?? 'message'}',
                 body: replyTo.hasText
                     ? replyTo.message.body!
@@ -285,6 +287,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                   ],
                   Expanded(
                     child: KTextField(
+                      key: const ValueKey<String>('chat-composer-field'),
                       controller: _controller,
                       focusNode: _focus,
                       enabled: widget.enabled,
@@ -359,6 +362,7 @@ class _ContextBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.kc;
     return Container(
+      key: const ValueKey<String>('chat-context-banner'),
       padding: const EdgeInsets.fromLTRB(
         Space.s4,
         Space.s2,
@@ -367,7 +371,10 @@ class _ContextBanner extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: colors.borderSubtle, width: Strokes.hairline),
+          bottom: BorderSide(
+            color: colors.borderSubtle,
+            width: Strokes.hairline,
+          ),
         ),
       ),
       child: Row(
@@ -387,8 +394,9 @@ class _ContextBanner extends StatelessWidget {
                   body,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      context.kt.caption.copyWith(color: colors.textSecondary),
+                  style: context.kt.caption.copyWith(
+                    color: colors.textSecondary,
+                  ),
                 ),
               ],
             ),

@@ -11,6 +11,7 @@ import '../../design/theme.dart';
 import '../../router.dart';
 import '../../ui/ui.dart';
 import '../chat/widgets/messages_action.dart';
+import '../shell/root_shell.dart';
 import 'data/surf_feed_controller.dart';
 import 'widgets/masonry_grid.dart';
 import 'widgets/surf_tile.dart';
@@ -131,23 +132,77 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
     final columnWidth = (media.size.width - gutter * (columns + 1)) / columns;
     final decodeWidth = (columnWidth * media.devicePixelRatio).round();
 
+    ref.listen<RootTabReselectEvent?>(rootTabReselectProvider, (_, event) {
+      if (event?.index != 0) return;
+      final scroll = _scrolls[filter]!;
+      if (scroll.hasClients) {
+        unawaited(
+          scroll.animateTo(
+            0,
+            duration: KMotion.duration(context, KDurations.medium),
+            curve: KMotion.curve(context, KCurves.emphasized),
+          ),
+        );
+      }
+    });
+
     return KScaffold(
       onRefresh: _refresh,
-      body: KTabPager(
-        tabs: <KTabPagerTab>[
-          for (final candidate in SurfFilter.values)
-            KTabPagerTab(id: candidate.name, label: candidate.label),
+      appBar: KFixedAppBar(
+        title: 'Surf',
+        actions: <Widget>[
+          KIconButton(
+            icon: Icons.auto_awesome_outlined,
+            semanticLabel: 'Collectors like you',
+            onPressed: () => context.push(Routes.matches),
+          ),
+          KIconButton(
+            icon: Icons.search_rounded,
+            semanticLabel: 'Search',
+            onPressed: () => context.push(Routes.search),
+          ),
+          const MessagesAction(),
         ],
-        selectedIndex: filter.index,
-        onSelected: (index) => _selectFilter(SurfFilter.values[index]),
-        showRail: false,
-        builder: (context, index) => _page(
-          context,
-          SurfFilter.values[index],
-          feeds[SurfFilter.values[index]]!,
-          columns,
-          decodeWidth,
-        ),
+      ),
+      body: Column(
+        children: <Widget>[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Space.s4,
+                Space.s1,
+                Space.s4,
+                Space.s1,
+              ),
+              child: Text(
+                'Collections, shelves and things',
+                style: context.kt.caption.copyWith(
+                  color: context.kc.textSecondary,
+                ),
+              ),
+            ),
+          ),
+          _FilterBar(selected: filter, onSelect: _selectFilter),
+          Expanded(
+            child: KTabPager(
+              tabs: <KTabPagerTab>[
+                for (final candidate in SurfFilter.values)
+                  KTabPagerTab(id: candidate.name, label: candidate.label),
+              ],
+              selectedIndex: filter.index,
+              onSelected: (index) => _selectFilter(SurfFilter.values[index]),
+              showRail: false,
+              builder: (context, index) => _page(
+                context,
+                SurfFilter.values[index],
+                feeds[SurfFilter.values[index]]!,
+                columns,
+                decodeWidth,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -166,33 +221,8 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
         controller: _scrolls[filter],
         scrollCacheExtent: const ScrollCacheExtent.viewport(_cacheViewports),
         slivers: <Widget>[
-          KAppBar(
-            title: 'Surf',
-            subtitle: 'Collections, shelves and things',
-            // Room for the serif title to collapse into the toolbar with the
-            // filter row pinned underneath it.
-            expandedHeight: Space.s24 + Space.s12,
-            actions: <Widget>[
-              KIconButton(
-                icon: Icons.auto_awesome_outlined,
-                semanticLabel: 'Collectors like you',
-                onPressed: () => context.push(Routes.matches),
-              ),
-              KIconButton(
-                icon: Icons.search_rounded,
-                semanticLabel: 'Search',
-                onPressed: () => context.push(Routes.search),
-              ),
-              const MessagesAction(),
-            ],
-            bottom: _FilterBar(selected: filter, onSelect: _selectFilter),
-          ),
           ..._bodySlivers(context, feed, columns, decodeWidth),
-          // The shell's tab bar floats over the body (`extendBody`), so the
-          // last row of tiles needs to clear it.
-          const SliverToBoxAdapter(
-            child: SizedBox(height: Layout.bottomBarHeight + Space.s8),
-          ),
+          const SliverToBoxAdapter(child: SizedBox(height: Space.s8)),
         ],
       ),
     );
@@ -336,24 +366,35 @@ class _FilterBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(Space.s12);
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: Space.s12,
-    child: ListView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(
-        horizontal: Space.s4,
-        vertical: Space.s2,
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: context.kc.bgBase,
+      border: Border(
+        bottom: BorderSide(
+          color: context.kc.borderSubtle,
+          width: Strokes.hairline,
+        ),
       ),
-      children: <Widget>[
-        for (final filter in SurfFilter.values) ...<Widget>[
-          KChip(
-            label: filter.label,
-            selected: filter == selected,
-            onTap: () => onSelect(filter),
-          ),
-          const SizedBox(width: Space.s2),
+    ),
+    child: SizedBox(
+      height: Space.s12,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.s4,
+          vertical: Space.s2,
+        ),
+        children: <Widget>[
+          for (final filter in SurfFilter.values) ...<Widget>[
+            KChip(
+              label: filter.label,
+              selected: filter == selected,
+              onTap: () => onSelect(filter),
+            ),
+            const SizedBox(width: Space.s2),
+          ],
         ],
-      ],
+      ),
     ),
   );
 }

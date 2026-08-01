@@ -462,7 +462,7 @@ class KTabPager extends StatefulWidget {
   State<KTabPager> createState() => _KTabPagerState();
 }
 
-class _KTabPagerState extends State<KTabPager> {
+class _KTabPagerState extends State<KTabPager> with WidgetsBindingObserver {
   /// Rail height and indicator geometry, straight off the token ramp.
   static const double _railHeight = Space.s12;
   static const double _indicatorWidth = Space.s8;
@@ -486,6 +486,7 @@ class _KTabPagerState extends State<KTabPager> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final initial = tabPagerInitialIndex(
       tabs: widget.tabs,
       routeParam: widget.routeParam,
@@ -532,6 +533,7 @@ class _KTabPagerState extends State<KTabPager> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _claims.dispose();
     super.dispose();
@@ -543,6 +545,11 @@ class _KTabPagerState extends State<KTabPager> {
   ];
 
   int get _length => _tabs.length;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _settleFractionalPage();
+  }
 
   /// The live fractional page, or the rest page before the first layout.
   double get _page {
@@ -569,6 +576,14 @@ class _KTabPagerState extends State<KTabPager> {
       );
     }
     if (notify && target != widget.selectedIndex) widget.onSelected(target);
+  }
+
+  void _settleFractionalPage() {
+    if (!_controller.hasClients || _length < 2) return;
+    final page = _page;
+    final nearest = page.round().clamp(0, _length - 1);
+    if ((page - nearest).abs() <= 0.001) return;
+    _animateTo(nearest);
   }
 
   bool _onScroll(ScrollNotification notification) {
@@ -705,15 +720,23 @@ class _KTabPagerState extends State<KTabPager> {
                 context,
               ).copyWith(overscroll: false, scrollbars: false),
               child: LayoutBuilder(
-                builder: (context, constraints) => PageView.builder(
-                  controller: _controller,
-                  pageSnapping: false,
-                  physics: _length < 2 || _claims.isHeld
-                      ? const NeverScrollableScrollPhysics()
-                      : _physics,
-                  itemCount: _length,
-                  itemBuilder: (context, index) =>
-                      _buildPage(context, index, constraints.maxWidth),
+                builder: (context, constraints) => Listener(
+                  onPointerCancel: (_) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _settleFractionalPage();
+                    });
+                  },
+                  child: PageView.builder(
+                    controller: _controller,
+                    pageSnapping: false,
+                    clipBehavior: Clip.hardEdge,
+                    physics: _length < 2 || _claims.isHeld
+                        ? const NeverScrollableScrollPhysics()
+                        : _physics,
+                    itemCount: _length,
+                    itemBuilder: (context, index) =>
+                        _buildPage(context, index, constraints.maxWidth),
+                  ),
                 ),
               ),
             ),

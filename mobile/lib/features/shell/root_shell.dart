@@ -20,6 +20,40 @@ final unreadNotificationCountProvider = FutureProvider<int>((ref) async {
   return ref.watch(klectApiProvider).fetchUnreadNotificationCount();
 }, name: 'unreadNotificationCount');
 
+/// One bottom-tab reselect, used by branch roots to return their active feed
+/// to the top without throwing away the branch navigation stack.
+@immutable
+class RootTabReselectEvent {
+  /// Creates a monotonic reselect event.
+  const RootTabReselectEvent({required this.index, required this.serial});
+
+  /// Bottom-tab index that was tapped while already selected.
+  final int index;
+
+  /// Distinguishes consecutive taps of the same tab.
+  final int serial;
+}
+
+class RootTabReselectNotifier extends Notifier<RootTabReselectEvent?> {
+  int _serial = 0;
+
+  @override
+  RootTabReselectEvent? build() => null;
+
+  /// Announces that [index] was tapped while already active.
+  void reselect(int index) {
+    state = RootTabReselectEvent(index: index, serial: ++_serial);
+  }
+}
+
+/// Branch roots listen to this instead of sharing scroll controllers through
+/// the router shell.
+final rootTabReselectProvider =
+    NotifierProvider<RootTabReselectNotifier, RootTabReselectEvent?>(
+      RootTabReselectNotifier.new,
+      name: 'rootTabReselect',
+    );
+
 /// The five-tab shell: surf · pulse · create · notifications · profile.
 ///
 /// Each tab keeps its own navigation stack, so switching away and back returns
@@ -41,6 +75,9 @@ class RootShell extends ConsumerStatefulWidget {
 }
 
 class _RootShellState extends ConsumerState<RootShell> {
+  StreamSubscription<String>? _foregroundPushSubscription;
+  StreamSubscription<String>? _openedPushSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -50,8 +87,15 @@ class _RootShellState extends ConsumerState<RootShell> {
     // deep link.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_initLocalNotifications());
-      unawaited(ref.read(pushNotificationsProvider).ensureRegistered());
+      unawaited(_initPushNotifications());
     });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_foregroundPushSubscription?.cancel());
+    unawaited(_openedPushSubscription?.cancel());
+    super.dispose();
   }
 
   Future<void> _initLocalNotifications() async {
@@ -60,6 +104,31 @@ class _RootShellState extends ConsumerState<RootShell> {
     final launchPath = await local.takeLaunchPayload();
     if (launchPath != null && mounted) {
       unawaited(GoRouter.of(context).push(launchPath));
+    }
+  }
+
+  Future<void> _initPushNotifications() async {
+    final push = ref.read(pushNotificationsProvider);
+    _foregroundPushSubscription ??= push.foregroundNotificationIds.listen(
+      (id) => unawaited(_presentForegroundPush(id)),
+    );
+    _openedPushSubscription ??= push.openedPaths.listen((path) {
+      if (mounted) unawaited(GoRouter.of(context).push(path));
+    });
+    await push.ensureRegistered();
+  }
+
+  Future<void> _presentForegroundPush(String notificationId) async {
+    try {
+      final incoming = await ref
+          .read(klectApiProvider)
+          .fetchNotification(notificationId);
+      if (incoming == null || !mounted) return;
+      ref.invalidate(unreadNotificationCountProvider);
+      await ref.read(notificationPresenterProvider).present(context, incoming);
+    } on Object {
+      // Realtime remains the fallback if a foreground FCM fetch races a
+      // transient network failure.
     }
   }
 
@@ -84,14 +153,21 @@ class _RootShellState extends ConsumerState<RootShell> {
 
     return Scaffold(
       backgroundColor: colors.bgBase,
-      extendBody: true,
+      // The navigation bar and optional update banner participate in layout.
+      // Branches no longer guess their height or render content underneath.
+      extendBody: false,
       body: widget.navigationShell,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           // Sideloaded-build update prompt; renders nothing when up to date.
           const UpdateBanner(),
-          _BottomBar(navigationShell: widget.navigationShell, unread: unread),
+          _BottomBar(
+            navigationShell: widget.navigationShell,
+            unread: unread,
+            onReselect: (index) =>
+                ref.read(rootTabReselectProvider.notifier).reselect(index),
+          ),
         ],
       ),
     );
@@ -99,10 +175,15 @@ class _RootShellState extends ConsumerState<RootShell> {
 }
 
 class _BottomBar extends StatelessWidget {
-  const _BottomBar({required this.navigationShell, required this.unread});
+  const _BottomBar({
+    required this.navigationShell,
+    required this.unread,
+    required this.onReselect,
+  });
 
   final StatefulNavigationShell navigationShell;
   final int unread;
+  final ValueChanged<int> onReselect;
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +213,7 @@ class _BottomBar extends StatelessWidget {
                     activeIcon: Icons.grid_view_rounded,
                     label: 'Surf',
                     shell: navigationShell,
+                    onReselect: onReselect,
                   ),
                   _Tab(
                     index: 1,
@@ -139,6 +221,7 @@ class _BottomBar extends StatelessWidget {
                     activeIcon: Icons.bolt_rounded,
                     label: 'Pulse',
                     shell: navigationShell,
+                    onReselect: onReselect,
                   ),
                   _Tab(
                     index: 2,
@@ -146,6 +229,7 @@ class _BottomBar extends StatelessWidget {
                     activeIcon: Icons.add_box_rounded,
                     label: 'Create',
                     shell: navigationShell,
+                    onReselect: onReselect,
                   ),
                   _Tab(
                     index: 3,
@@ -154,6 +238,7 @@ class _BottomBar extends StatelessWidget {
                     label: 'Alerts',
                     badge: unread,
                     shell: navigationShell,
+                    onReselect: onReselect,
                   ),
                   _Tab(
                     index: 4,
@@ -161,6 +246,7 @@ class _BottomBar extends StatelessWidget {
                     activeIcon: Icons.person_rounded,
                     label: 'You',
                     shell: navigationShell,
+                    onReselect: onReselect,
                   ),
                 ],
               ),
@@ -179,6 +265,7 @@ class _Tab extends StatelessWidget {
     required this.activeIcon,
     required this.label,
     required this.shell,
+    required this.onReselect,
     this.badge = 0,
   });
 
@@ -187,6 +274,7 @@ class _Tab extends StatelessWidget {
   final IconData activeIcon;
   final String label;
   final StatefulNavigationShell shell;
+  final ValueChanged<int> onReselect;
   final int badge;
 
   @override
@@ -205,7 +293,10 @@ class _Tab extends StatelessWidget {
           enforceMinTapTarget: false,
           // `initialLocation: true` on a re-tap pops that branch to its root,
           // which is the behaviour people expect from a tab bar.
-          onTap: () => shell.goBranch(index, initialLocation: selected),
+          onTap: () {
+            if (selected) onReselect(index);
+            shell.goBranch(index, initialLocation: selected);
+          },
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[

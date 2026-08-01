@@ -32,7 +32,7 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
 ## Verification
 
 - `flutter analyze`: **No issues found**.
-- `flutter test --no-pub`: **268 tests passed**.
+- `flutter test --no-pub`: **281 tests passed** in the v1.6.6 stabilization candidate.
 - Focused notification/call/group/deletion/pager run: **145 tests passed**.
 - `flutter build web --release`: **passed**; Wasm dry run also passed.
 - Live Supabase `new_klect`: all 3 completion migrations applied and contract-checked
@@ -50,6 +50,11 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
   verified with the permanent signing certificate, installed in place over v1.6.4 on the attached
   RMX3771, and rendered the Surf screen successfully. Vercel production was redeployed with the
   matching web version.
+- The v1.6.6 stabilization candidate keeps Surf/Pulse chrome outside horizontal pages, coordinates
+  Profile scrolling, removes shell-bar overlap, protects reply text from large keyboards, keeps
+  gated DM call actions visible, and normalizes foreground FCM through the existing banner
+  presenter. Analysis, 281 tests, the arm64 APK build and all web gates pass; physical QA remains
+  pending because no Android device or AVD is available.
 
 ## Remaining outside the required implementation
 

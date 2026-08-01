@@ -256,6 +256,23 @@ void main() {
     );
   });
 
+  testWidgets('an interrupted drag cannot leave a fractional page at rest', (
+    tester,
+  ) async {
+    final selections = await pumpPager(tester);
+    final pageLeft = tester.getTopLeft(find.byType(PageView)).dx;
+    final gesture = await dragBy(tester, -140, release: false);
+
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+
+    expect(selections, isEmpty);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey<String>('page-0'))).dx,
+      closeTo(pageLeft, 0.5),
+    );
+  });
+
   testWidgets('a drag past the first member neither wraps nor overtravels', (
     tester,
   ) async {

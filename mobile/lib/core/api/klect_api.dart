@@ -1112,6 +1112,20 @@ class KlectApi {
   /// A `HEAD` request with `count=exact`: Postgres counts, nothing is
   /// materialised or shipped — the badge costs the same whether 3 or 3000
   /// rows are unread.
+  /// Reads one notification owned by the viewer. Foreground FCM uses this to
+  /// hydrate the same model that the Realtime INSERT stream carries.
+  Future<NotificationModel?> fetchNotification(String notificationId) async {
+    final row = await _guard(
+      () => _client
+          .from('notifications')
+          .select('*, actor:profiles!actor_id(*)')
+          .eq('id', notificationId)
+          .eq('user_id', requireUserId)
+          .maybeSingle(),
+    );
+    return row == null ? null : NotificationModel.fromJson(row);
+  }
+
   Future<int> fetchUnreadNotificationCount() => _guard(
     () => _client
         .from('notifications')
@@ -1288,10 +1302,7 @@ class KlectApi {
 
   /// Declines a ringing call with a stable reason such as `declined` or
   /// `busy`. The server owns validation and notification fanout.
-  Future<void> declineCall(
-    String callId, {
-    String reason = 'declined',
-  }) async {
+  Future<void> declineCall(String callId, {String reason = 'declined'}) async {
     await _rpc('decline_call', <String, dynamic>{
       'p_call': callId,
       'p_reason': reason,

@@ -28,6 +28,11 @@
         android:label="KLECT"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Android owns the notification-card frame; this alpha-only brand
+             mark is tinted correctly by every supported system surface. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_launcher_monochrome" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
