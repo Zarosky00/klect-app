@@ -79,4 +79,8 @@ dependencies {
     // flutter_local_notifications. Keep in sync with the AGP-recommended
     // version; 2.1.4+ is what current AGP asks for.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    implementation("androidx.core:core-telecom:1.0.0")
+    implementation(platform("com.google.firebase:firebase-bom:34.15.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    testImplementation("junit:junit:4.13.2")
 }

@@ -319,17 +319,20 @@ class _CloseupScreenState extends ConsumerState<CloseupScreen>
     return KScaffold(
       safeTop: false,
       safeBottom: false,
+      resizeToAvoidBottomInset: false,
       backgroundColor: context.kc.bgSunken,
       bottomBar: closeup == null
           ? null
-          : ListenableBuilder(
-              listenable: _commentDraft,
-              builder: (context, _) => CommentComposer(
-                controller: _commentDraft.text,
-                focusNode: _composerFocus,
-                replyTo: _commentDraft.replyTo,
-                onCancelReply: _commentDraft.cancelReply,
-                onSend: () => unawaited(_sendComment()),
+          : KKeyboardInset(
+              child: ListenableBuilder(
+                listenable: _commentDraft,
+                builder: (context, _) => CommentComposer(
+                  controller: _commentDraft.text,
+                  focusNode: _composerFocus,
+                  replyTo: _commentDraft.replyTo,
+                  onCancelReply: _commentDraft.cancelReply,
+                  onSend: () => unawaited(_sendComment()),
+                ),
               ),
             ),
       body: closeup != null

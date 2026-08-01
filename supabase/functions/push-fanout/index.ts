@@ -18,6 +18,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { buildCallPushData } from "./call_payload.ts";
 
 type NotificationRow = {
   id: string;
@@ -26,15 +27,12 @@ type NotificationRow = {
   type: string;
   entity_type: string | null;
   entity_id: string | null;
+  call_id: string | null;
   conversation_id: string | null;
   body: string | null;
 };
 
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
-
-// Intent action the Android client filters on to build the CallStyle notification with its
-// accept / decline actions instead of merely opening the launcher activity (Requirement 9.6).
-const CALL_CLICK_ACTION = "KLECT_CALL";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -46,45 +44,73 @@ function json(body: unknown, status = 200): Response {
 // The call id a `call` notification points at, so the client can accept/decline without a lookup.
 function callIdFor(n: NotificationRow): string | null {
   if (n.type !== "call") return null;
-  if (n.entity_type && n.entity_type !== "call") return null;
-  return n.entity_id ?? null;
+  return n.call_id ?? null;
 }
 
 // ── copy shown in the notification tray, per notification_type ──
 function compose(n: NotificationRow, actor: string) {
   switch (n.type) {
-    case "like":    return { title: actor, body: `liked your ${n.entity_type ?? "post"}` };
-    case "save":    return { title: actor, body: `saved your ${n.entity_type ?? "post"}` };
-    case "repost":  return { title: actor, body: `reposted your ${n.entity_type ?? "post"}` };
-    case "comment": return { title: actor, body: n.body ?? "commented on your post" };
-    case "reply":   return { title: actor, body: n.body ?? "replied to you" };
-    case "mention": return { title: actor, body: n.body ?? "mentioned you" };
-    case "follow":  return { title: actor, body: "started following you" };
-    case "message": return { title: actor, body: n.body ?? "sent you a message" };
-    case "call":    return { title: actor, body: "is calling you" };
-    case "match":   return { title: "New match", body: `You and ${actor} collect the same things` };
-    case "recommendation": return { title: "Picked for you", body: n.body ?? "A collection we think you'll like" };
-    case "moderation": return { title: "Klect", body: n.body ?? "An update about your content" };
-    default:        return { title: "Klect", body: n.body ?? "You have a new notification" };
+    case "like":
+      return { title: actor, body: `liked your ${n.entity_type ?? "post"}` };
+    case "save":
+      return { title: actor, body: `saved your ${n.entity_type ?? "post"}` };
+    case "repost":
+      return { title: actor, body: `reposted your ${n.entity_type ?? "post"}` };
+    case "comment":
+      return { title: actor, body: n.body ?? "commented on your post" };
+    case "reply":
+      return { title: actor, body: n.body ?? "replied to you" };
+    case "mention":
+      return { title: actor, body: n.body ?? "mentioned you" };
+    case "follow":
+      return { title: actor, body: "started following you" };
+    case "message":
+      return { title: actor, body: n.body ?? "sent you a message" };
+    case "call":
+      return { title: actor, body: "is calling you" };
+    case "match":
+      return {
+        title: "New match",
+        body: `You and ${actor} collect the same things`,
+      };
+    case "recommendation":
+      return {
+        title: "Picked for you",
+        body: n.body ?? "A collection we think you'll like",
+      };
+    case "moderation":
+      return { title: "Klect", body: n.body ?? "An update about your content" };
+    default:
+      return { title: "Klect", body: n.body ?? "You have a new notification" };
   }
 }
 
 // deep link the client resolves into a route
 function linkFor(n: NotificationRow): string {
+  if (n.call_id) return `klect://call/${n.call_id}`;
   if (n.conversation_id) return `klect://messages/${n.conversation_id}`;
-  if (n.entity_type && n.entity_id) return `klect://closeup/${n.entity_type}/${n.entity_id}`;
+  if (n.entity_type && n.entity_id) {
+    return `klect://closeup/${n.entity_type}/${n.entity_id}`;
+  }
   if (n.type === "follow" && n.actor_id) return `klect://u/${n.actor_id}`;
   return "klect://notifications";
 }
 
 // ── minimal RS256 JWT -> OAuth2 access token for FCM ──
 function b64url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(
+    /\//g,
+    "_",
+  ).replace(/=+$/, "");
 }
 
-async function accessToken(sa: { client_email: string; private_key: string }): Promise<string> {
+async function accessToken(
+  sa: { client_email: string; private_key: string },
+): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: "RS256", typ: "JWT" })));
+  const header = b64url(
+    new TextEncoder().encode(JSON.stringify({ alg: "RS256", typ: "JWT" })),
+  );
   const claim = b64url(new TextEncoder().encode(JSON.stringify({
     iss: sa.client_email,
     scope: FCM_SCOPE,
@@ -94,14 +120,25 @@ async function accessToken(sa: { client_email: string; private_key: string }): P
   })));
 
   const pem = sa.private_key.replace(/\\n/g, "\n")
-    .replace(/-----BEGIN PRIVATE KEY-----/, "").replace(/-----END PRIVATE KEY-----/, "").replace(/\s/g, "");
+    .replace(/-----BEGIN PRIVATE KEY-----/, "").replace(
+      /-----END PRIVATE KEY-----/,
+      "",
+    ).replace(/\s/g, "");
   const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
   const key = await crypto.subtle.importKey(
-    "pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"],
+    "pkcs8",
+    der,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"],
   );
-  const signature = new Uint8Array(await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${header}.${claim}`),
-  ));
+  const signature = new Uint8Array(
+    await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      key,
+      new TextEncoder().encode(`${header}.${claim}`),
+    ),
+  );
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -111,7 +148,9 @@ async function accessToken(sa: { client_email: string; private_key: string }): P
       assertion: `${header}.${claim}.${b64url(signature)}`,
     }),
   });
-  if (!res.ok) throw new Error(`token exchange failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    throw new Error(`token exchange failed: ${res.status} ${await res.text()}`);
+  }
   return (await res.json()).access_token as string;
 }
 
@@ -120,23 +159,30 @@ Deno.serve(async (req: Request) => {
     const secret = Deno.env.get("PUSH_WEBHOOK_SECRET");
     if (!secret || req.headers.get("x-klect-secret") !== secret) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401, headers: { "Content-Type": "application/json" },
+        status: 401,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
     const payload = await req.json();
-    const n: NotificationRow | undefined = payload?.record ?? payload?.new ?? payload;
+    const n: NotificationRow | undefined = payload?.record ?? payload?.new ??
+      payload;
     if (!n?.user_id) {
-      return new Response(JSON.stringify({ error: "no notification row in payload" }), {
-        status: 400, headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "no notification row in payload" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     const saRaw = Deno.env.get("FCM_SERVICE_ACCOUNT");
     if (!saRaw) {
       // Deliberate: return 200 so the webhook does not retry forever before FCM is configured.
       return new Response(JSON.stringify({ skipped: "fcm-not-configured" }), {
-        status: 200, headers: { "Content-Type": "application/json" },
+        status: 200,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -151,7 +197,9 @@ Deno.serve(async (req: Request) => {
     // cannot drift. A disabled category returns 200 so the webhook never enters a retry loop.
     const { data: category, error: categoryError } = await supabase
       .rpc("notification_category", { p_type: n.type });
-    if (categoryError) console.error("notification_category failed", categoryError);
+    if (categoryError) {
+      console.error("notification_category failed", categoryError);
+    }
     if (typeof category === "string") {
       const { data: prefs } = await supabase
         .from("user_preferences").select("notifications")
@@ -169,80 +217,133 @@ Deno.serve(async (req: Request) => {
       .eq("enabled", true);
     if (!tokens?.length) {
       return new Response(JSON.stringify({ sent: 0, reason: "no-devices" }), {
-        status: 200, headers: { "Content-Type": "application/json" },
+        status: 200,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
     // Respect a muted conversation even if the row slipped through.
-    if (n.conversation_id) {
+    if (n.conversation_id && n.type !== "call") {
       const { data: member } = await supabase
         .from("conversation_members").select("muted_until")
-        .eq("conversation_id", n.conversation_id).eq("user_id", n.user_id).maybeSingle();
+        .eq("conversation_id", n.conversation_id).eq("user_id", n.user_id)
+        .maybeSingle();
       if (member?.muted_until && new Date(member.muted_until) > new Date()) {
         return new Response(JSON.stringify({ sent: 0, reason: "muted" }), {
-          status: 200, headers: { "Content-Type": "application/json" },
+          status: 200,
+          headers: { "Content-Type": "application/json" },
         });
       }
     }
 
     let actorName = "Someone";
+    let actorAvatarPath = "";
     if (n.actor_id) {
       const { data: actor } = await supabase
-        .from("profiles").select("display_name").eq("id", n.actor_id).maybeSingle();
+        .from("profiles").select("display_name, avatar_path")
+        .eq("id", n.actor_id).maybeSingle();
       if (actor?.display_name) actorName = actor.display_name;
+      if (actor?.avatar_path) actorAvatarPath = actor.avatar_path;
     }
 
-    const sa = JSON.parse(saRaw) as { client_email: string; private_key: string; project_id: string };
+    const sa = JSON.parse(saRaw) as {
+      client_email: string;
+      private_key: string;
+      project_id: string;
+    };
     const token = await accessToken(sa);
     const { title, body } = compose(n, actorName);
     const link = linkFor(n);
-    const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
+    const endpoint =
+      `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
 
     const isCall = n.type === "call";
     const callId = callIdFor(n);
-    const data: Record<string, string> = { link, type: n.type, notification_id: n.id };
-    if (callId) data.call_id = callId;
+    const data: Record<string, string> = {
+      link,
+      type: n.type,
+      notification_id: n.id,
+    };
+    if (isCall) {
+      if (!callId) return json({ sent: 0, reason: "call-id-missing" });
+      const { data: call, error: callError } = await supabase
+        .from("calls")
+        .select("id, conversation_id, created_by, kind, status, expires_at")
+        .eq("id", callId)
+        .maybeSingle();
+      if (callError || !call || call.status !== "ringing") {
+        return json({ sent: 0, reason: "call-not-ringing" });
+      }
+      Object.assign(
+        data,
+        buildCallPushData(n.id, call, actorName, actorAvatarPath),
+      );
+    }
 
     const dead: string[] = [];
     let sent = 0;
 
-    await Promise.all(tokens.map(async (t: { token: string; platform: string }) => {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: {
-            token: t.token,
-            notification: { title, body },
-            data,
-            android: {
-              priority: isCall ? "HIGH" : "NORMAL",
-              notification: {
-                channel_id: isCall ? "calls" : "social",
-                ...(isCall ? { click_action: CALL_CLICK_ACTION } : {}),
-              },
-            },
-            apns: {
-              headers: { "apns-priority": isCall ? "10" : "5" },
-              payload: { aps: { sound: isCall ? "ringtone.caf" : "default", "thread-id": n.conversation_id ?? n.type } },
-            },
+    await Promise.all(
+      tokens.map(async (t: { token: string; platform: string }) => {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
-        }),
-      });
-      if (res.ok) { sent++; return; }
-      // 404 UNREGISTERED / 400 INVALID_ARGUMENT mean the token will never work again.
-      if (res.status === 404 || res.status === 400) dead.push(t.token);
-    }));
+          body: JSON.stringify({
+            message: isCall
+              ? {
+                token: t.token,
+                data,
+                android: { priority: "HIGH", ttl: "45s" },
+                apns: {
+                  headers: { "apns-priority": "10" },
+                  payload: { aps: { "content-available": 1 } },
+                },
+              }
+              : {
+                token: t.token,
+                notification: { title, body },
+                data,
+                android: {
+                  priority: "NORMAL",
+                  notification: { channel_id: "social" },
+                },
+                apns: {
+                  headers: { "apns-priority": "5" },
+                  payload: {
+                    aps: {
+                      sound: "default",
+                      "thread-id": n.conversation_id ?? n.type,
+                    },
+                  },
+                },
+              },
+          }),
+        });
+        if (res.ok) {
+          sent++;
+          return;
+        }
+        // 404 UNREGISTERED / 400 INVALID_ARGUMENT mean the token will never work again.
+        if (res.status === 404 || res.status === 400) dead.push(t.token);
+      }),
+    );
 
-    if (dead.length) await supabase.from("push_tokens").delete().in("token", dead);
+    if (dead.length) {
+      await supabase.from("push_tokens").delete().in("token", dead);
+    }
 
     return new Response(JSON.stringify({ sent, pruned: dead.length }), {
-      status: 200, headers: { "Content-Type": "application/json" },
+      status: 200,
+      headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error("push-fanout failed", err);
     return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500, headers: { "Content-Type": "application/json" },
+      status: 500,
+      headers: { "Content-Type": "application/json" },
     });
   }
 });

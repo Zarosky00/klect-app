@@ -13,22 +13,24 @@ void main() {
     VoidCallback? onTap,
     List<NotificationBannerAction> actions = const <NotificationBannerAction>[],
     String message = 'liked your item',
-  }) =>
-      NotificationBannerData(
-        notificationId: 'n1',
-        title: 'aria',
-        message: message,
-        glyph: Icons.favorite_rounded,
-        glyphTint: const Color(0xFFA6323F),
-        actions: actions,
-        onTap: onTap,
-      );
+    bool compact = false,
+  }) => NotificationBannerData(
+    notificationId: 'n1',
+    title: 'aria',
+    message: message,
+    glyph: Icons.favorite_rounded,
+    glyphTint: const Color(0xFFA6323F),
+    actions: actions,
+    onTap: onTap,
+    compact: compact,
+  );
 
   Future<void> pumpHost(
     WidgetTester tester, {
     VoidCallback? onTap,
     List<NotificationBannerAction> actions = const <NotificationBannerAction>[],
     void Function(bool shown)? onShow,
+    bool compact = false,
   }) async {
     await pumpKlect(
       tester,
@@ -37,7 +39,7 @@ void main() {
           onPressed: () {
             final shown = KNotificationBanner.show(
               context,
-              data(onTap: onTap, actions: actions),
+              data(onTap: onTap, actions: actions, compact: compact),
             );
             onShow?.call(shown);
           },
@@ -51,6 +53,38 @@ void main() {
   }
 
   tearDown(KNotificationBanner.debugClear);
+
+  testWidgets('compact notice is minimal, two-line and has no close affordance', (
+    tester,
+  ) async {
+    await pumpKlect(
+      tester,
+      Builder(
+        builder: (context) => TextButton(
+          onPressed: () => KNotificationBanner.show(
+            context,
+            data(
+              compact: true,
+              message:
+                  'sent a deliberately long notification that must stay compact',
+            ),
+          ),
+          child: const Text('fire compact'),
+        ),
+      ),
+    );
+    await tester.tap(find.text('fire compact'));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.close_rounded), findsNothing);
+    expect(find.byIcon(Icons.favorite_rounded), findsNothing);
+    final rich = tester.widget<Text>(
+      find.byWidgetPredicate(
+        (widget) => widget is Text && widget.textSpan != null,
+      ),
+    );
+    expect(rich.maxLines, 2);
+  });
 
   testWidgets('shows actor, verb and dismisses via the ✕', (tester) async {
     await pumpHost(tester);
@@ -86,8 +120,9 @@ void main() {
     expect(find.text('aria'), findsNothing);
   });
 
-  testWidgets('drops a second notification while one is mounted',
-      (tester) async {
+  testWidgets('drops a second notification while one is mounted', (
+    tester,
+  ) async {
     final results = <bool>[];
     await pumpHost(tester, onShow: results.add);
     expect(results, <bool>[true]);
@@ -101,8 +136,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('a long upward drag dismisses, a small one returns to rest',
-      (tester) async {
+  testWidgets('a long upward drag dismisses, a small one returns to rest', (
+    tester,
+  ) async {
     await pumpHost(tester);
     final centre = tester.getCenter(find.text('aria'));
 
@@ -125,8 +161,9 @@ void main() {
     expect(find.text('aria'), findsNothing);
   });
 
-  testWidgets('activating an action runs it and removes the banner',
-      (tester) async {
+  testWidgets('activating an action runs it and removes the banner', (
+    tester,
+  ) async {
     var followed = false;
     await pumpHost(
       tester,
@@ -148,8 +185,9 @@ void main() {
     expect(find.text('aria'), findsNothing);
   });
 
-  testWidgets('a card tap while an action is in flight does nothing',
-      (tester) async {
+  testWidgets('a card tap while an action is in flight does nothing', (
+    tester,
+  ) async {
     var opened = false;
     final running = Completer<void>();
     await pumpHost(

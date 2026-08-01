@@ -61,6 +61,7 @@ class NotificationBannerData {
     this.thumbBlurhash,
     this.actions = const <NotificationBannerAction>[],
     this.onTap,
+    this.compact = false,
   });
 
   /// The `notifications` row id, used by the presenter for dedupe.
@@ -95,6 +96,9 @@ class NotificationBannerData {
 
   /// Deep-links to the thing the notification is about.
   final VoidCallback? onTap;
+
+  /// Uses the shared minimal follow-feedback presentation.
+  final bool compact;
 
   /// True where a thumbnail area should be reserved at all.
   bool get hasThumb => thumbUrl != null || thumbBlurhash != null;
@@ -323,9 +327,10 @@ class _KNotificationBannerHostState extends State<_KNotificationBannerHost>
   void _onDragUpdate(DragUpdateDetails details) {
     if (_leaving) return;
     setState(() {
-      _dragOffset = notificationBannerDragTranslation(
-        <double>[_dragOffset, details.delta.dy],
-      );
+      _dragOffset = notificationBannerDragTranslation(<double>[
+        _dragOffset,
+        details.delta.dy,
+      ]);
     });
   }
 
@@ -384,9 +389,7 @@ class _KNotificationBannerHostState extends State<_KNotificationBannerHost>
   /// Splits digit runs onto the tabular-figure style so a count never changes
   /// glyph width as it changes value (Requirement 1.7).
   List<InlineSpan> _tabularSpans(String text, TextStyle base) {
-    final tabular = base.copyWith(
-      fontFeatures: context.kt.count.fontFeatures,
-    );
+    final tabular = base.copyWith(fontFeatures: context.kt.count.fontFeatures);
     final spans = <InlineSpan>[];
     final buffer = StringBuffer();
     var bufferIsDigits = false;
@@ -402,7 +405,8 @@ class _KNotificationBannerHostState extends State<_KNotificationBannerHost>
     }
 
     for (final rune in text.characters) {
-      final isDigit = rune.length == 1 &&
+      final isDigit =
+          rune.length == 1 &&
           rune.codeUnitAt(0) >= 0x30 &&
           rune.codeUnitAt(0) <= 0x39;
       if (isDigit != bufferIsDigits) {
@@ -416,9 +420,38 @@ class _KNotificationBannerHostState extends State<_KNotificationBannerHost>
   }
 
   Widget _line(String text, TextStyle style, int maxLines) => Text.rich(
-        TextSpan(children: _tabularSpans(text, style)),
-        style: style,
-        maxLines: maxLines,
+    TextSpan(children: _tabularSpans(text, style)),
+    style: style.copyWith(decoration: TextDecoration.none),
+    maxLines: maxLines,
+    overflow: TextOverflow.ellipsis,
+  );
+
+  Widget _compactLine(NotificationBannerData data, Color foreground) =>
+      Text.rich(
+        TextSpan(
+          children: <InlineSpan>[
+            TextSpan(
+              children: _tabularSpans(
+                data.title,
+                context.kt.bodyStrong.copyWith(
+                  color: foreground,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+            const TextSpan(text: '  '),
+            TextSpan(
+              children: _tabularSpans(
+                data.message,
+                context.kt.body.copyWith(
+                  color: foreground,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+        maxLines: 2,
         overflow: TextOverflow.ellipsis,
       );
 
@@ -427,6 +460,7 @@ class _KNotificationBannerHostState extends State<_KNotificationBannerHost>
     final colors = context.kc;
     final data = widget.data;
     final reduced = KMotion.reduced(context);
+    final scheme = Theme.of(context).colorScheme;
 
     final curved = CurvedAnimation(
       parent: _controller,
@@ -439,110 +473,162 @@ class _KNotificationBannerHostState extends State<_KNotificationBannerHost>
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: Blurs.chrome, sigmaY: Blurs.chrome),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(
-            Space.s3,
-            Space.s3,
-            Space.s2,
-            Space.s3,
-          ),
+          padding: data.compact
+              ? const EdgeInsets.symmetric(
+                  horizontal: Space.s3,
+                  vertical: Space.s2,
+                )
+              : const EdgeInsets.fromLTRB(
+                  Space.s3,
+                  Space.s3,
+                  Space.s2,
+                  Space.s3,
+                ),
           decoration: BoxDecoration(
-            color: colors.surfaceGlass,
-            borderRadius: BorderRadius.circular(Radii.lg),
+            color: data.compact ? scheme.inverseSurface : colors.surfaceGlass,
+            borderRadius: BorderRadius.circular(
+              data.compact ? Radii.xl : Radii.lg,
+            ),
             border: Border.all(
-              color: colors.borderSubtle,
+              color: data.compact ? Colors.transparent : colors.borderSubtle,
               width: Strokes.hairline,
             ),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
-              // 1 — actor avatar, category glyph badged on it.
-              Stack(
-                clipBehavior: Clip.none,
-                children: <Widget>[
-                  KAvatar(
-                    imageUrl: data.avatarUrl,
-                    name: data.avatarLabel ?? data.title,
-                    size: Space.s10,
+              if (data.compact) ...<Widget>[
+                KAvatar(
+                  imageUrl: data.avatarUrl,
+                  name: data.avatarLabel ?? data.title,
+                  size: Space.s10,
+                ),
+                const SizedBox(width: Space.s3),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _compactLine(data, scheme.onInverseSurface),
+                      if (data.actions.length > 1) ...<Widget>[
+                        const SizedBox(height: Space.s2),
+                        Wrap(
+                          spacing: Space.s2,
+                          runSpacing: Space.s1,
+                          children: <Widget>[
+                            for (final (index, action) in data.actions.indexed)
+                              _BannerActionButton(
+                                action: action,
+                                confirmed: _confirmed.contains(index),
+                                enabled: !_leaving && _busyAction == null,
+                                onActivate: () =>
+                                    unawaited(_activate(index, action)),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
-                  Positioned(
-                    right: -Space.s1,
-                    bottom: -Space.s1,
-                    child: Container(
-                      padding: const EdgeInsets.all(Space.s05),
-                      decoration: BoxDecoration(
-                        color: colors.surface3,
-                        shape: BoxShape.circle,
+                ),
+                if (data.actions.length == 1) ...<Widget>[
+                  const SizedBox(width: Space.s2),
+                  _BannerActionButton(
+                    action: data.actions.single,
+                    confirmed: _confirmed.contains(0),
+                    enabled: !_leaving && _busyAction == null,
+                    onActivate: () =>
+                        unawaited(_activate(0, data.actions.single)),
+                  ),
+                ],
+              ],
+              if (!data.compact) ...<Widget>[
+                // 1 — actor avatar, category glyph badged on it.
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    KAvatar(
+                      imageUrl: data.avatarUrl,
+                      name: data.avatarLabel ?? data.title,
+                      size: Space.s10,
+                    ),
+                    Positioned(
+                      right: -Space.s1,
+                      bottom: -Space.s1,
+                      child: Container(
+                        padding: const EdgeInsets.all(Space.s05),
+                        decoration: BoxDecoration(
+                          color: colors.surface3,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          data.glyph,
+                          size: Space.s3,
+                          color: data.glyphTint,
+                        ),
                       ),
-                      child: Icon(
-                        data.glyph,
-                        size: Space.s3,
-                        color: data.glyphTint,
+                    ),
+                  ],
+                ),
+                const SizedBox(width: Space.s3),
+                // 2 — title, message, actions.
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _line(data.title, context.kt.bodyStrong, 1),
+                      const SizedBox(height: Space.s05),
+                      _line(
+                        data.message,
+                        context.kt.callout.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                        2,
                       ),
+                      if (data.actions.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: Space.s2),
+                        Wrap(
+                          spacing: Space.s2,
+                          runSpacing: Space.s1,
+                          children: <Widget>[
+                            for (final (index, action) in data.actions.indexed)
+                              _BannerActionButton(
+                                action: action,
+                                confirmed: _confirmed.contains(index),
+                                enabled: !_leaving && _busyAction == null,
+                                onActivate: () =>
+                                    unawaited(_activate(index, action)),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                // 3 — optional square entity thumb.
+                if (data.hasThumb) ...<Widget>[
+                  const SizedBox(width: Space.s3),
+                  SizedBox(
+                    width: Space.s10,
+                    height: Space.s10,
+                    child: KBlurhashImage(
+                      url: data.thumbUrl,
+                      blurhash: data.thumbBlurhash,
+                      borderRadius: BorderRadius.circular(Radii.sm),
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(width: Space.s3),
-              // 2 — title, message, actions.
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    _line(data.title, context.kt.bodyStrong, 1),
-                    const SizedBox(height: Space.s05),
-                    _line(
-                      data.message,
-                      context.kt.callout.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                      2,
-                    ),
-                    if (data.actions.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Space.s2),
-                      Wrap(
-                        spacing: Space.s2,
-                        runSpacing: Space.s1,
-                        children: <Widget>[
-                          for (final (index, action)
-                              in data.actions.indexed)
-                            _BannerActionButton(
-                              action: action,
-                              confirmed: _confirmed.contains(index),
-                              enabled: !_leaving && _busyAction == null,
-                              onActivate: () =>
-                                  unawaited(_activate(index, action)),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              // 3 — optional square entity thumb.
-              if (data.hasThumb) ...<Widget>[
-                const SizedBox(width: Space.s3),
-                SizedBox(
-                  width: Space.s10,
-                  height: Space.s10,
-                  child: KBlurhashImage(
-                    url: data.thumbUrl,
-                    blurhash: data.thumbBlurhash,
-                    borderRadius: BorderRadius.circular(Radii.sm),
+                // 4 — dismiss.
+                const SizedBox(width: Space.s1),
+                KPressable(
+                  semanticLabel: 'Dismiss',
+                  onTap: _leaving ? null : widget.onDismiss,
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: Space.s4,
+                    color: colors.textTertiary,
                   ),
                 ),
               ],
-              // 4 — dismiss.
-              const SizedBox(width: Space.s1),
-              KPressable(
-                semanticLabel: 'Dismiss',
-                onTap: _leaving ? null : widget.onDismiss,
-                child: Icon(
-                  Icons.close_rounded,
-                  size: Space.s4,
-                  color: colors.textTertiary,
-                ),
-              ),
             ],
           ),
         ),
@@ -624,7 +710,9 @@ class _BannerActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    final label = confirmed ? (action.confirmedLabel ?? action.label) : action.label;
+    final label = confirmed
+        ? (action.confirmedLabel ?? action.label)
+        : action.label;
     return KPressable(
       semanticLabel: action.semanticLabel,
       enabled: enabled && !confirmed,

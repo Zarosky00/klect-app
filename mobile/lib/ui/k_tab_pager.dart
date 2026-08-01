@@ -435,6 +435,7 @@ class KTabPager extends StatefulWidget {
     super.key,
     this.routeParam,
     this.showRail = true,
+    this.onPageProgress,
   });
 
   /// The visible members, in order. Two to six.
@@ -457,6 +458,12 @@ class KTabPager extends StatefulWidget {
   /// False where the enclosing screen already renders the rail — a pinned
   /// sliver header, for instance — and only wants the body.
   final bool showRail;
+
+  /// Reports the live fractional page while a drag or tap animation moves.
+  ///
+  /// Parents with an external rail use this for immediate visual feedback
+  /// while [onSelected] remains the single committed-state callback.
+  final ValueChanged<double>? onPageProgress;
 
   @override
   State<KTabPager> createState() => _KTabPagerState();
@@ -482,6 +489,7 @@ class _KTabPagerState extends State<KTabPager> with WidgetsBindingObserver {
   int _target = 0;
 
   bool _reduced = false;
+  double? _lastPublishedPage;
 
   @override
   void initState() {
@@ -495,6 +503,10 @@ class _KTabPagerState extends State<KTabPager> with WidgetsBindingObserver {
     _target = initial;
     _originPage = initial.toDouble();
     _controller = PageController(initialPage: initial);
+    _controller.addListener(_publishPageProgress);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _publishPageProgress(force: true);
+    });
   }
 
   @override
@@ -529,6 +541,11 @@ class _KTabPagerState extends State<KTabPager> with WidgetsBindingObserver {
     // followed by the page.
     final wanted = widget.selectedIndex.clamp(0, _tabs.length - 1);
     if (wanted != _target) _animateTo(wanted, notify: false);
+    if (oldWidget.onPageProgress != widget.onPageProgress) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _publishPageProgress(force: true);
+      });
+    }
   }
 
   @override
@@ -559,6 +576,19 @@ class _KTabPagerState extends State<KTabPager> with WidgetsBindingObserver {
       return _target.toDouble();
     }
     return _controller.page ?? _target.toDouble();
+  }
+
+  void _publishPageProgress({bool force = false}) {
+    final callback = widget.onPageProgress;
+    if (callback == null || _length == 0) return;
+    final page = tabPagerIndicatorPage(page: _page, length: _length);
+    if (!force &&
+        _lastPublishedPage != null &&
+        (page - _lastPublishedPage!).abs() < 0.001) {
+      return;
+    }
+    _lastPublishedPage = page;
+    callback(page);
   }
 
   void _animateTo(int index, {bool notify = true}) {
@@ -648,17 +678,23 @@ class _KTabPagerState extends State<KTabPager> with WidgetsBindingObserver {
         child: LayoutBuilder(
           builder: (context, constraints) => Stack(
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  for (final (index, tab) in _tabs.indexed)
-                    Expanded(
-                      child: _TabLabel(
-                        tab: tab,
-                        selected: index == widget.selectedIndex,
-                        onTap: () => _animateTo(index),
+              AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) => Row(
+                  children: <Widget>[
+                    for (final (index, tab) in _tabs.indexed)
+                      Expanded(
+                        child: _TabLabel(
+                          tab: tab,
+                          selectionProgress: (1 - (_page - index).abs()).clamp(
+                            0.0,
+                            1.0,
+                          ),
+                          onTap: () => _animateTo(index),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
               Positioned(
                 left: 0,
@@ -778,17 +814,23 @@ class _KeepAliveTabPageState extends State<_KeepAliveTabPage>
 class _TabLabel extends StatelessWidget {
   const _TabLabel({
     required this.tab,
-    required this.selected,
+    required this.selectionProgress,
     required this.onTap,
   });
 
   final KTabPagerTab tab;
-  final bool selected;
+  final double selectionProgress;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
+    final selected = selectionProgress >= 0.5;
+    final foreground = Color.lerp(
+      colors.textTertiary,
+      colors.textPrimary,
+      selectionProgress,
+    )!;
     return Semantics(
       selected: selected,
       button: true,
@@ -804,9 +846,7 @@ class _TabLabel extends StatelessWidget {
               tab.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: context.kt.label.copyWith(
-                color: selected ? colors.textPrimary : colors.textTertiary,
-              ),
+              style: context.kt.label.copyWith(color: foreground),
             ),
           ),
         ),

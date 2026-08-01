@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -180,6 +181,7 @@ class _ProfileBody extends ConsumerStatefulWidget {
 
 class _ProfileBodyState extends ConsumerState<_ProfileBody> {
   final ScrollController _outerScroll = ScrollController();
+  late final ValueNotifier<double> _pageProgress;
 
   List<ProfileMode> get _tabs => <ProfileMode>[
     for (final candidate in ProfileMode.values)
@@ -187,8 +189,26 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    final initial = _tabs.indexOf(widget.mode);
+    _pageProgress = ValueNotifier<double>(
+      (initial < 0 ? 0 : initial).toDouble(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProfileBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mode == widget.mode && oldWidget.isMe == widget.isMe) return;
+    final index = _tabs.indexOf(widget.mode);
+    if (index >= 0) _pageProgress.value = index.toDouble();
+  }
+
+  @override
   void dispose() {
     _outerScroll.dispose();
+    _pageProgress.dispose();
     super.dispose();
   }
 
@@ -225,7 +245,11 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
             delegate: _TabBarDelegate(
               tabs: _tabs,
               selected: visibleTab,
-              onChanged: widget.onModeChanged,
+              pageProgress: _pageProgress,
+              onChanged: (mode) {
+                _pageProgress.value = _tabs.indexOf(mode).toDouble();
+                widget.onModeChanged(mode);
+              },
             ),
           ),
         ],
@@ -235,7 +259,11 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
               KTabPagerTab(id: tab.name, label: tab.label),
           ],
           selectedIndex: _tabs.indexOf(visibleTab),
-          onSelected: (index) => widget.onModeChanged(_tabs[index]),
+          onSelected: (index) {
+            _pageProgress.value = index.toDouble();
+            widget.onModeChanged(_tabs[index]);
+          },
+          onPageProgress: (page) => _pageProgress.value = page,
           showRail: false,
           builder: (context, index) => CustomScrollView(
             key: PageStorageKey<String>(
@@ -683,11 +711,13 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   const _TabBarDelegate({
     required this.tabs,
     required this.selected,
+    required this.pageProgress,
     required this.onChanged,
   });
 
   final List<ProfileMode> tabs;
   final ProfileMode selected;
+  final ValueListenable<double> pageProgress;
   final ValueChanged<ProfileMode> onChanged;
 
   static const double _height = Space.s12;
@@ -701,6 +731,7 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(covariant _TabBarDelegate oldDelegate) =>
       oldDelegate.selected != selected ||
+      oldDelegate.pageProgress != pageProgress ||
       oldDelegate.tabs.length != tabs.length;
 
   @override
@@ -724,36 +755,39 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
               ),
             ),
           ),
-          child: tabs.length <= 3
-              ? Row(
+          child: ValueListenableBuilder<double>(
+            valueListenable: pageProgress,
+            builder: (context, page, _) {
+              Widget button(ProfileMode tab) {
+                final index = tabs.indexOf(tab);
+                final progress = (1 - (page - index).abs()).clamp(0.0, 1.0);
+                return _TabButton(
+                  tab: tab,
+                  selected: tab == selected || progress >= 0.5,
+                  selectionProgress: progress,
+                  onTap: () => onChanged(tab),
+                );
+              }
+
+              if (tabs.length <= 3) {
+                return Row(
+                  children: <Widget>[
+                    for (final tab in tabs) Expanded(child: button(tab)),
+                  ],
+                );
+              }
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: Space.s2),
+                child: Row(
                   children: <Widget>[
                     for (final tab in tabs)
-                      Expanded(
-                        child: _TabButton(
-                          tab: tab,
-                          selected: tab == selected,
-                          onTap: () => onChanged(tab),
-                        ),
-                      ),
+                      SizedBox(width: Space.s24, child: button(tab)),
                   ],
-                )
-              : SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: Space.s2),
-                  child: Row(
-                    children: <Widget>[
-                      for (final tab in tabs)
-                        SizedBox(
-                          width: Space.s24,
-                          child: _TabButton(
-                            tab: tab,
-                            selected: tab == selected,
-                            onTap: () => onChanged(tab),
-                          ),
-                        ),
-                    ],
-                  ),
                 ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -764,16 +798,23 @@ class _TabButton extends StatelessWidget {
   const _TabButton({
     required this.tab,
     required this.selected,
+    required this.selectionProgress,
     required this.onTap,
   });
 
   final ProfileMode tab;
   final bool selected;
+  final double selectionProgress;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
+    final foreground = Color.lerp(
+      colors.textTertiary,
+      colors.textPrimary,
+      selectionProgress,
+    )!;
     return Semantics(
       selected: selected,
       button: true,
@@ -789,16 +830,14 @@ class _TabButton extends StatelessWidget {
               tab.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: context.kt.label.copyWith(
-                color: selected ? colors.textPrimary : colors.textTertiary,
-              ),
+              style: context.kt.label.copyWith(color: foreground),
             ),
             const SizedBox(height: Space.s15),
             AnimatedContainer(
               duration: KMotion.duration(context, KDurations.base),
               curve: Curves_.emphasized,
               height: Space.s05,
-              width: selected ? Space.s8 : Space.s0,
+              width: Space.s8 * selectionProgress,
               decoration: BoxDecoration(
                 color: colors.accentDefault,
                 borderRadius: BorderRadius.circular(Radii.full),

@@ -4,9 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:klect/core/models/models.dart';
 import 'package:klect/design/theme.dart';
 import 'package:klect/features/chat/chat_models.dart';
-import 'package:klect/features/chat/conversation_screen.dart';
 import 'package:klect/features/chat/thread_controller.dart';
 import 'package:klect/features/chat/widgets/chat_composer.dart';
+import 'package:klect/ui/ui.dart';
 
 void main() {
   for (final width in <double>[320, 360, 412]) {
@@ -43,7 +43,7 @@ void main() {
               theme: KlectThemeData.dark(),
               home: const Scaffold(
                 resizeToAvoidBottomInset: false,
-                body: ConversationKeyboardInset(
+                body: KKeyboardInset(
                   child: Column(
                     children: <Widget>[
                       Expanded(child: SizedBox.expand()),

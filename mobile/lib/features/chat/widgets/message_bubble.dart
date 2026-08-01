@@ -28,6 +28,7 @@ class MessageBubble extends StatelessWidget {
     required this.isMine,
     super.key,
     this.viewerId,
+    this.peerName,
     this.avatarUrl,
     this.isFirstOfGroup = true,
     this.isLastOfGroup = true,
@@ -53,6 +54,9 @@ class MessageBubble extends StatelessWidget {
 
   /// The viewer's id, so reaction pills know which are theirs.
   final String? viewerId;
+
+  /// The other participant in a DM, used by viewer-relative call history.
+  final String? peerName;
 
   /// Resolved avatar URL of the author, for the tail of an incoming run.
   final String? avatarUrl;
@@ -104,7 +108,11 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (message.message.kind == MessageKind.callEvent) {
-      return CallEventRow(message: message);
+      return CallEventRow(
+        message: message,
+        viewerId: viewerId,
+        peerName: peerName,
+      );
     }
     if (message.message.kind == MessageKind.system) {
       return SystemMessageRow(body: message.message.body ?? '');
@@ -518,20 +526,34 @@ class ChatDateSeparator extends StatelessWidget {
 /// declined.
 class CallEventRow extends StatelessWidget {
   /// Creates a call event row.
-  const CallEventRow({required this.message, super.key});
+  const CallEventRow({
+    required this.message,
+    this.viewerId,
+    this.peerName,
+    super.key,
+  });
 
   /// The `call_event` message.
   final ChatMessage message;
 
+  /// Signed-in viewer.
+  final String? viewerId;
+
+  /// The DM counterpart's display name.
+  final String? peerName;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    final body = message.message.body ?? 'Call';
-    final missed =
-        body.toLowerCase().contains('missed') ||
-        body.toLowerCase().contains('declined') ||
-        body.toLowerCase().contains('failed');
-    final tint = missed ? colors.semanticDanger : colors.textSecondary;
+    final presentation = CallEventPresentation.fromMessage(
+      message,
+      viewerId: viewerId,
+      peerName: peerName,
+    );
+    final tint = presentation.alert
+        ? colors.semanticDanger
+        : colors.textSecondary;
+    final time = TimeOfDay.fromDateTime(message.createdAt).format(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -553,17 +575,129 @@ class CallEventRow extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Icon(
-                missed ? Icons.call_end_rounded : Icons.call_rounded,
+                presentation.video
+                    ? Icons.videocam_outlined
+                    : presentation.alert
+                    ? Icons.call_end_rounded
+                    : Icons.call_outlined,
                 size: Space.s4,
                 color: tint,
               ),
               const SizedBox(width: Space.s15),
-              Text(body, style: context.kt.caption.copyWith(color: tint)),
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      presentation.primary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.kt.caption.copyWith(color: tint),
+                    ),
+                    Text(
+                      '${presentation.secondary}  $time',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.kt.micro.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+/// Viewer-relative copy for a hydrated call event.
+class CallEventPresentation {
+  /// Creates display copy for a call history row.
+  const CallEventPresentation({
+    required this.primary,
+    required this.secondary,
+    required this.video,
+    required this.alert,
+  });
+
+  /// Resolves direction, status and legacy fallbacks in one testable place.
+  factory CallEventPresentation.fromMessage(
+    ChatMessage message, {
+    String? viewerId,
+    String? peerName,
+  }) {
+    final call = message.call;
+    final callerId = call?.createdBy ?? message.authorId;
+    final outgoing = viewerId != null && callerId == viewerId;
+    final fallbackBody = (message.message.body ?? '').trim();
+    final callerName = message.message.author?.name;
+    final otherName = (peerName?.trim().isNotEmpty ?? false)
+        ? peerName!.trim()
+        : 'them';
+    final incomingName = (callerName?.trim().isNotEmpty ?? false)
+        ? callerName!.trim()
+        : otherName == 'them'
+        ? 'Someone'
+        : otherName;
+    final primary = outgoing
+        ? 'You called $otherName'
+        : '$incomingName called you';
+    final status = call?.status;
+    final statusLabel = switch (status) {
+      CallStatus.missed => outgoing ? 'No answer' : 'Missed',
+      CallStatus.declined => outgoing ? 'Declined' : 'You declined',
+      CallStatus.failed => 'Failed',
+      CallStatus.ringing => 'Ringing',
+      CallStatus.active => 'Ongoing',
+      CallStatus.ended => _endedLabel(call!),
+      null => fallbackBody.isEmpty ? 'Call' : fallbackBody,
+    };
+    final kindLabel = call?.kind == CallKind.video ? 'Video' : 'Audio';
+    return CallEventPresentation(
+      primary: primary,
+      secondary: '$kindLabel \u2022 $statusLabel',
+      video: call?.kind == CallKind.video,
+      alert:
+          status == CallStatus.missed ||
+          status == CallStatus.declined ||
+          status == CallStatus.failed ||
+          (status == null &&
+              RegExp(
+                'missed|declined|failed',
+                caseSensitive: false,
+              ).hasMatch(fallbackBody)),
+    );
+  }
+
+  /// Main call direction line.
+  final String primary;
+
+  /// Kind, outcome and duration line.
+  final String secondary;
+
+  /// Whether to use the video glyph.
+  final bool video;
+
+  /// Whether the outcome needs danger emphasis.
+  final bool alert;
+
+  static String _endedLabel(CallModel call) {
+    final duration = call.durationSeconds ?? 0;
+    if (duration > 0) {
+      final minutes = duration ~/ 60;
+      final seconds = duration % 60;
+      return minutes == 0
+          ? '${seconds}s'
+          : '$minutes:${seconds.toString().padLeft(2, '0')}';
+    }
+    final reason = (call.endReason ?? '').toLowerCase();
+    if (reason.contains('cancel')) return 'Cancelled';
+    if (reason.contains('busy')) return 'Busy';
+    return 'Ended';
   }
 }
 

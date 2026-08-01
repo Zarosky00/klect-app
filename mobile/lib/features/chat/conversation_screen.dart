@@ -14,6 +14,7 @@ import '../../design/motion.dart';
 import '../../design/theme.dart';
 import '../../router.dart';
 import '../../ui/ui.dart';
+import 'calls/android_call_bridge.dart';
 import 'calls/call_availability.dart';
 import 'calls/call_controller.dart';
 import 'calls/call_permissions.dart';
@@ -174,6 +175,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
         );
         return;
       }
+      await ref
+          .read(androidCallBridgeProvider)
+          .present(call, incoming: false, peerName: peer?.name);
     } finally {
       if (mounted) setState(() => _startInFlight = false);
     }
@@ -438,11 +442,21 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
     final api = ref.read(chatApiProvider);
     await KSheet.show<void>(
       context: context,
-      title: state.conversation?.displayTitle ?? 'Conversation',
+      title: isGroup
+          ? state.conversation?.displayTitle ?? 'Group'
+          : peer?.name ?? 'Conversation',
       builder: (sheetContext) => Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          _OverflowRow(
+            icon: Icons.search_rounded,
+            label: 'Search conversation',
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              _openSearch();
+            },
+          ),
           if (isGroup)
             _OverflowRow(
               icon: Icons.info_outline_rounded,
@@ -573,7 +587,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
             callsAvailable: callsEnabled,
             canCall: canCall,
             onCall: (kind) => _requestCall(kind, peer),
-            onSearch: _openSearch,
             onOverflow: () =>
                 unawaited(_openOverflow(state, peer, isGroup: isGroup)),
             onOpenInfo: isGroup ? _openGroupInfo : null,
@@ -585,7 +598,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
       // automatic resize prevents OEM edge-to-edge implementations from
       // applying the same keyboard space twice or not at all.
       resizeToAvoidBottomInset: false,
-      body: ConversationKeyboardInset(
+      body: KKeyboardInset(
         child: Column(
           children: <Widget>[
             Expanded(
@@ -642,25 +655,6 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen>
   }
 }
 
-/// Applies Android/iOS keyboard space exactly once around a conversation.
-/// Exposed for the small-viewport regression test; app routes use it directly.
-class ConversationKeyboardInset extends StatelessWidget {
-  /// Creates the keyboard-safe region.
-  const ConversationKeyboardInset({required this.child, super.key});
-
-  /// Thread list, typing row and composer.
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => AnimatedPadding(
-    key: const ValueKey<String>('conversation-keyboard-inset'),
-    duration: KMotion.duration(context, KDurations.fast),
-    curve: KMotion.curve(context, KCurves.emphasized),
-    padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-    child: child,
-  );
-}
-
 class _ComposerLock extends StatelessWidget {
   const _ComposerLock({required this.scopeLabel});
 
@@ -708,7 +702,6 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required this.callsAvailable,
     required this.canCall,
     required this.onCall,
-    required this.onSearch,
     required this.onOverflow,
     this.onOpenInfo,
   });
@@ -720,7 +713,6 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final bool callsAvailable;
   final bool canCall;
   final void Function(CallKind kind) onCall;
-  final VoidCallback onSearch;
   final VoidCallback onOverflow;
 
   /// Opens the group info screen — the header tap for groups, where a DM
@@ -741,8 +733,9 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
-    final title =
-        state.conversation?.displayTitle ?? peer?.name ?? 'Conversation';
+    final title = isGroup
+        ? state.conversation?.displayTitle ?? 'Group'
+        : peer?.name ?? 'Conversation';
     final avatarUrl = ref
         .watch(klectApiProvider)
         .publicUrl(
@@ -799,19 +792,6 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                    )
-                  else if (peer != null)
-                    Text(
-                      state.isPresent(peer!.id)
-                          ? 'Active now'
-                          : '@${peer!.username}',
-                      style: context.kt.micro.copyWith(
-                        color: state.isPresent(peer!.id)
-                            ? colors.semanticSuccess
-                            : colors.textTertiary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                 ],
               ),
@@ -822,25 +802,20 @@ class _ThreadAppBar extends ConsumerWidget implements PreferredSizeWidget {
       actions: <Widget>[
         if (showCallActions) ...<Widget>[
           KIconButton(
-            icon: Icons.call_rounded,
-            semanticLabel: callsAvailable
-                ? 'Start an audio call'
-                : 'Audio calls temporarily unavailable',
-            onPressed: canCall ? () => onCall(CallKind.audio) : null,
-          ),
-          KIconButton(
             icon: Icons.videocam_rounded,
             semanticLabel: callsAvailable
                 ? 'Start a video call'
                 : 'Video calls temporarily unavailable',
             onPressed: canCall ? () => onCall(CallKind.video) : null,
           ),
+          KIconButton(
+            icon: Icons.call_rounded,
+            semanticLabel: callsAvailable
+                ? 'Start an audio call'
+                : 'Audio calls temporarily unavailable',
+            onPressed: canCall ? () => onCall(CallKind.audio) : null,
+          ),
         ],
-        KIconButton(
-          icon: Icons.search_rounded,
-          semanticLabel: 'Search this conversation',
-          onPressed: onSearch,
-        ),
         KIconButton(
           icon: Icons.more_horiz_rounded,
           semanticLabel: 'More',
@@ -907,6 +882,9 @@ class _ThreadBody extends ConsumerWidget {
     final peerReadAt = state.peerReadAt(viewerId);
     final receiptId = _newestOwnMessageId(state.messages, viewerId);
     final isGroup = state.conversation?.kind == ConversationKind.group;
+    final peerName = isGroup
+        ? null
+        : state.otherMember(viewerId)?.profile?.name;
 
     return ListView.builder(
       controller: scroll,
@@ -943,6 +921,7 @@ class _ThreadBody extends ConsumerWidget {
           message: message,
           isMine: isMine,
           viewerId: viewerId,
+          peerName: peerName,
           avatarUrl: api.publicUrl(
             message.message.author?.avatarPath,
             bucket: StorageBucket.avatars,

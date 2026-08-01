@@ -466,6 +466,7 @@ class NotificationPresenter {
           thumbBlurhash: resolved.thumbBlurhash,
           actions: bannerActionsFor(model, decision.content),
           onTap: () => _open(decision.content.destination),
+          compact: true,
         ),
       );
     } finally {

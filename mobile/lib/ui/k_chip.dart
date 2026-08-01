@@ -11,6 +11,7 @@ class KChip extends StatelessWidget {
     super.key,
     this.icon,
     this.selected = false,
+    this.selectionProgress,
     this.onTap,
     this.onRemove,
     this.tint,
@@ -25,6 +26,12 @@ class KChip extends StatelessWidget {
 
   /// Selected chips take the oxblood accent.
   final bool selected;
+
+  /// Fractional selected state used by swipe-driven rails.
+  ///
+  /// `0` is fully idle and `1` is fully selected. When absent, [selected]
+  /// keeps the existing binary behavior.
+  final double? selectionProgress;
 
   /// Tap handler.
   final VoidCallback? onTap;
@@ -42,9 +49,17 @@ class KChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.kc;
     final accent = tint ?? colors.accentDefault;
-    final foreground = selected ? accent : colors.textSecondary;
-    final background = selected ? colors.accentSubtle : colors.surface2;
-    final border = selected ? accent : colors.borderSubtle;
+    final progress = (selectionProgress ?? (selected ? 1.0 : 0.0)).clamp(
+      0.0,
+      1.0,
+    );
+    final foreground = Color.lerp(colors.textSecondary, accent, progress)!;
+    final background = Color.lerp(
+      colors.surface2,
+      colors.accentSubtle,
+      progress,
+    )!;
+    final border = Color.lerp(colors.borderSubtle, accent, progress)!;
 
     final content = Container(
       padding: EdgeInsets.symmetric(
@@ -90,7 +105,7 @@ class KChip extends StatelessWidget {
     return KPressable(
       onTap: onTap,
       enforceMinTapTarget: false,
-      semanticLabel: selected ? '$label, selected' : label,
+      semanticLabel: progress >= 0.5 ? '$label, selected' : label,
       child: content,
     );
   }
