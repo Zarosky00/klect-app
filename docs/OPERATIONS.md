@@ -145,8 +145,8 @@ these two names in **Supabase Dashboard → Edge Functions → Secrets** (or wit
 
 | secret | source |
 |---|---|
-| `CLOUDFLARE_TURN_KEY_ID` | Cloudflare Realtime TURN key identifier |
-| `CLOUDFLARE_TURN_API_TOKEN` | Cloudflare token allowed to generate TURN credentials |
+| `CLOUDFLARE_TURN_KEY_ID` | The TURN key `uid`/ID shown when the Cloudflare TURN key is created (32 characters) |
+| `CLOUDFLARE_TURN_API_TOKEN` | The TURN key's generated `key`/Bearer token (the long secret, not a browser/client key) |
 
 Never put either raw value in source, documentation, shell history, a GitHub secret intended for
 the client, or chat. Verify only the secret **names** with:
