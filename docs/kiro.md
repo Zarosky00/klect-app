@@ -50,11 +50,15 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
   verified with the permanent signing certificate, installed in place over v1.6.4 on the attached
   RMX3771, and rendered the Surf screen successfully. Vercel production was redeployed with the
   matching web version.
-- The v1.6.6 stabilization candidate keeps Surf/Pulse chrome outside horizontal pages, coordinates
+- The v1.6.6 stabilization work keeps Surf/Pulse chrome outside horizontal pages, coordinates
   Profile scrolling, removes shell-bar overlap, protects reply text from large keyboards, keeps
   gated DM call actions visible, and normalizes foreground FCM through the existing banner
-  presenter. Analysis, 281 tests, the arm64 APK build and all web gates pass; physical QA remains
-  pending because no Android device or AVD is available.
+  presenter. Analysis, 281 tests, the arm64 APK build and all web gates pass.
+- PR #15 merged and tag `v1.6.6` published the permanent-signed `klect.apk`. The RMX3771 upgraded
+  from v1.6.5 in place, preserved its original install timestamp, launched without a white screen
+  and rendered fixed Surf/Pulse chrome. Vercel production deployment
+  `dpl_Hs3W8DvZcB7LWpS3D5pf8BbeZhyK` is READY with the stable latest-APK link. OEM keyboard/tray and
+  two-phone call validation remain pending.
 
 ## Remaining outside the required implementation
 

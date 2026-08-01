@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-08-01 · Session: v1.6.6 mobile stabilization release candidate verified
+> Last updated: 2026-08-01 · Session: v1.6.6 released, deployed and installed in place
 
 ---
 
@@ -12,9 +12,9 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 38 tables, 93 RLS policies, 14 realtime tables, 4 storage buckets and 37 applied migrations. The live chat/calls/notifications contract now includes synced notification preferences, private message hides, call diagnostics/reasons, 256-member group enforcement, 60/500-character identity validation and identity system messages. `pg_net` is enabled and `notifications_push_fanout_webhook` fires push delivery from an `after insert` trigger. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | `pulse_feed_v2`, `social_engagement_v1`, `profile_pulse_activity_v1`, `profile_discussion_activity_v1`, `my_profile_reactions_v1` and owner-only `delete_post` are live alongside the completed notification/message/group/call RPC contract. Calls remain feature-gated off. |
-| 4 | Flutter mobile app (`mobile/`) | 🟡 **v1.6.6 RELEASE CANDIDATE** | Surf/Pulse headers are fixed outside the pager, Profile uses coordinated nested scrolling, shell navigation no longer covers content, reply composition owns the keyboard inset, DM call controls stay visible behind the honest reliability gate, and foreground FCM shares the Editorial Noir presenter. Analysis is clean and all 281 local tests pass. |
-| 5 | Next.js web + admin (`web/`) | 🟡 **v1.6.6 READY TO DEPLOY** | Matching version source passes TypeScript, 15 Vitest tests and the 31-route production build. Production remains on the verified v1.6.5 deployment until the v1.6.6 signed APK is published. |
-| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / physical QA pending** | 2026-08-01: Flutter analysis, 281 tests including two Windows goldens, focused pager/navigation/keyboard/call/push regressions, arm64 release APK compilation, web typecheck, 15 Vitest tests and the 31-route Next build pass. No phone or Android emulator is available for OEM keyboard/tray/install verification. |
+| 4 | Flutter mobile app (`mobile/`) | ✅ **v1.6.6 SHIPPED** | Surf/Pulse headers are fixed outside the pager, Profile uses coordinated nested scrolling, shell navigation no longer covers content, reply composition owns the keyboard inset, DM call controls stay visible behind the honest reliability gate, and foreground FCM shares the Editorial Noir presenter. The public APK is permanently signed and installed in place over v1.6.5 on the RMX3771. |
+| 5 | Next.js web + admin (`web/`) | ✅ **v1.6.6 DEPLOYED** | Production deployment `dpl_Hs3W8DvZcB7LWpS3D5pf8BbeZhyK` is READY at `https://klect-web.vercel.app`. The home page returns HTTP 200 and its Android button uses the stable latest-release `klect.apk` URL. |
+| 6 | Test / build / bug sweep | 🟡 **automated gates ✅ / targeted device QA ✅ / full physical matrix pending** | 2026-08-01: PR #15 and tagged-release CI are green; Flutter analysis, 281 tests including two Windows goldens, universal signed APK compilation, web typecheck, 15 Vitest tests and the 31-route Next build pass. RMX3771 in-place install, launch, version retention and fixed Surf/Pulse rendering pass. OEM keyboard/tray and two-phone call matrices remain. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **KIRO REQUIRED WORK COMPLETE** | All 49 required implementation tasks in `chat-calls-notifications-overhaul/tasks.md` ship in v1.6.4. The 73 remaining `*` entries are explicitly optional property/widget/SQL proof tasks. Group reporting, send-scope lockout, tombstones/delete-for-me, call pill/system actions and sibling-tab paging are released. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
@@ -666,12 +666,17 @@ on the attached phone, and the matching web build is deployed to Vercel.
   `2839b20a0caac219c2eb205082ad8d082538ad9d19be6d7fb684714de332d5ae`; it carries the expected
   local debug certificate, while the tag workflow owns permanent signing. Web typecheck, **15/15**
   Vitest tests and the 31-route production build pass.
-- No Supabase schema, policy, function or production feature-flag change was required. Physical
-  Android installation, OEM notification appearance and two-phone call validation remain pending
-  because no phone or AVD is available.
+- No Supabase schema, policy, function or production feature-flag change was required. The public
+  APK installed in place over v1.6.5 on the RMX3771 without changing its first-install timestamp,
+  launched without a white screen and rendered the fixed Surf/Pulse chrome. OEM keyboard/tray and
+  two-phone call validation remain pending.
 
-**Version bookkeeping:** mobile/web source is `1.6.6` (`versionCode 16`). GitHub PR, permanent-signed
-tagged APK and matching Vercel deployment are the remaining release operations.
+**Version bookkeeping:** PR #15 merged as `e9fd21f`; tag/release `v1.6.6` published `klect.apk`
+(`versionCode 16`, 103,980,415 bytes, SHA-256
+`d8b2a3c93032df83405a82b0a91bc5a8d049f470c84f0ea72b1b46fb945ef24d`) with permanent certificate
+SHA-256 `460d934bcca98539907f82259f803080be55b153e7df0edec5878d4bf11b334f`.
+Vercel production deployment `dpl_Hs3W8DvZcB7LWpS3D5pf8BbeZhyK` is READY and the stable APK URL
+returns HTTP 200.
 
 ---
 
