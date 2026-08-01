@@ -66,7 +66,7 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
 - Production migration `android_reliable_calling_v170` is applied and `push-fanout` v5 is ACTIVE.
   A rolled-back authenticated test proved transactional one-call/one-notification delivery. Global
   calling remains disabled, the QA allowlist remains empty, and both Cloudflare TURN secret names
-  are absent, so no real-call success or v1.7.0 release is claimed yet.
+  are absent, so real-call validation remains pending.
 - Candidate gates pass: Flutter analysis and the complete **291-test** suite including version
   lockstep and forced-relay configuration, Deno
   payload tests/typecheck, Android Kotlin/native-payload tests and merged manifest, and web
@@ -74,6 +74,10 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
 - A compile-time QA build switch (`KLECT_FORCE_TURN_RELAY=true`) now forces WebRTC relay-only
   candidate selection; it is covered by ICE configuration tests and stays absent from normal
   production builds.
+- PR #17 merged to `main` as `f61be20`; GitHub release/tag `v1.7.0` publishes the permanent-signed
+  `klect.apk`, and Vercel production deployment `dpl_JB9huV83RS46iUC9bLjDfRLucyxh` is READY at
+  `https://klect-web.vercel.app`. The stable download URL is
+  `https://github.com/Zarosky00/klect-app/releases/latest/download/klect.apk`.
 
 ## Remaining outside the required implementation
 

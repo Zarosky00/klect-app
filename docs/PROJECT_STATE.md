@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-08-01 · Session: v1.7.0 Android stabilization and reliable calling in progress
+> Last updated: 2026-08-01 · Session: v1.7.0 released; device QA and reliable-calling validation pending
 
 ---
 
@@ -12,9 +12,9 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 38 tables, 93 RLS policies, 14 realtime tables, 4 storage buckets and 38 applied migrations. `android_reliable_calling_v170` is live with transactional call notifications, a private QA allowlist, 15-second ringing expiry and signal cleanup. Global calling remains disabled. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | Call creation now atomically creates one `notifications.call_id` row; `push-fanout` v5 sends a versioned high-priority data-only call envelope. QA accounts can be allowed without global enablement. Cloudflare TURN secrets are still absent. |
-| 4 | Flutter mobile app (`mobile/`) | 🟡 **v1.7.0 CANDIDATE** | Live pager feedback, compact notices, keyboard-safe comments, peer-first DM identity, directional call history and Android Core-Telecom/CallStyle are implemented. Physical device evidence remains before release. |
-| 5 | Next.js web + admin (`web/`) | ✅ **v1.6.6 DEPLOYED** | Production deployment `dpl_Hs3W8DvZcB7LWpS3D5pf8BbeZhyK` is READY at `https://klect-web.vercel.app`. The home page returns HTTP 200 and its Android button uses the stable latest-release `klect.apk` URL. |
-| 6 | Test / build / bug sweep | 🟡 **automated green / physical blocked** | Flutter analysis is clean, 288 tests pass, Android native compilation and manifest validation pass, Edge Function tests/typecheck pass, and web typecheck/15 tests/build pass. No ADB device is attached and TURN secrets are absent, so the mandatory two-phone matrix is still blocked. |
+| 4 | Flutter mobile app (`mobile/`) | 🟡 **v1.7.0 RELEASED / DEVICE QA PENDING** | Live pager feedback, compact notices, keyboard-safe comments, peer-first DM identity, directional call history and Android Core-Telecom/CallStyle are shipped in `1.7.0+17`. Physical device evidence remains pending. |
+| 5 | Next.js web + admin (`web/`) | ✅ **v1.7.0 DEPLOYED** | Production deployment `dpl_JB9huV83RS46iUC9bLjDfRLucyxh` is READY at `https://klect-web.vercel.app`. The home page returns HTTP 200 and its Android button uses the stable latest-release `klect.apk` URL. |
+| 6 | Test / build / bug sweep | 🟡 **automated green / device QA pending** | Flutter analysis/tests, Android native checks, Edge Function checks, and web typecheck/tests/build are green. No ADB device is currently attached and TURN secrets are absent, so the mandatory two-phone matrix remains pending. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **KIRO REQUIRED WORK COMPLETE** | All 49 required implementation tasks in `chat-calls-notifications-overhaul/tasks.md` ship in v1.6.4. The 73 remaining `*` entries are explicitly optional property/widget/SQL proof tasks. Group reporting, send-scope lockout, tombstones/delete-for-me, call pill/system actions and sibling-tab paging are released. |
 | 9 | Round 3 (`ROUND3_PLAN.md`) | ✅ **DONE & VERIFIED — v1.3.0** | **P0s**: 0019 slug autogen + 0020 RLS insert-returning (onboarding shelf creation was broken since 0001/0008 — fixed live, no app update needed); 7 phantom seed covers repaired. **0021 applied** (preflight caught+fixed a private-account search leak): `get_post_thread`, `user_posts`, comment save/repost counters, composite feed cursor + has_more, For-you window ladder, post search. Web perf overhaul (next/image, windowed masonry, glass-per-tile removed, ref-driven viewer). Thread-first Pulse both clients (X thread pages, comment action bars, filter drawer + post search, profile Posts tabs, Pulse/Surf gesture split). Share chooser w/ Send-to-a-friend both clients; dead `klect.app` links fixed via KLECT_WEB_ORIGIN dart-define. Notifications: shell-level realtime + banners + tray (desugaring) + live badges; push-fanout edge fn source recovered; FCM gated on user's Firebase project. K+shelf app icon all densities. Web Create = PICK→FRAME→FILE with canvas cropper (1:1 crop math with mobile). verify.sh all green; APK v1.3.0 released; Vercel deployed. |
 | 8 | Redesign (`REDESIGN_PLAN.md`) | ✅ **DONE & VERIFIED** | **0018 applied** (post_media, `create_post`, For-you feed, LIMIT/empty-repost fixes, counter INSERT hardening; 6 smoke assertions green). Oxblood rebrand + bundled Fraunces/Instrument Sans. Mobile: header/bleed/image bugs fixed, settings depth, media-first Create + cropper, Pulse X-parity. Web: create_post composer (fixed live 42501), quote chooser, For-you tabs, full mobile-responsiveness pass. All verify.sh phases green 2026-07-27. |
@@ -680,7 +680,7 @@ returns HTTP 200.
 
 ---
 
-### 2026-08-01 — v1.7.0 Android calling implementation candidate
+### 2026-08-01 — v1.7.0 Android stabilization release
 
 - Added fractional pager progress to Surf, Pulse and Profile rails so chip emphasis follows the
   finger while committed selection changes only after the page settles. Compact foreground notices
@@ -705,9 +705,12 @@ returns HTTP 200.
   SDK 36, 59,761,769 bytes, SHA-256
   `6746d9ecb54278024f3ef09af65a333c00a616519b3de9590be84492d56ff43a`, with release
   certificate SHA-256 `460d934bcca98539907f82259f803080be55b153e7df0edec5878d4bf11b334f`.
-- Release remains intentionally blocked: neither Android phone is attached to ADB and Supabase does
-  not yet contain `CLOUDFLARE_TURN_KEY_ID` or `CLOUDFLARE_TURN_API_TOKEN`. No PR merge, tag, global
-  enablement, GitHub APK publication or Vercel deployment is claimed yet.
+- PR #17 merged to `main` as `f61be20`; tag/release `v1.7.0` is published with the permanent-signed
+  `klect.apk` (SHA-256 `6746d9ecb54278024f3ef09af65a333c00a616519b3de9590be84492d56ff43a`).
+  The stable URL is `https://github.com/Zarosky00/klect-app/releases/latest/download/klect.apk`.
+- Vercel production deployment `dpl_JB9huV83RS46iUC9bLjDfRLucyxh` is READY at
+  `https://klect-web.vercel.app` and points to the stable APK URL. Global calling remains disabled;
+  TURN secrets and physical two-phone validation are still pending.
 
 ---
 
@@ -722,8 +725,8 @@ returns HTTP 200.
 3. Store the two Cloudflare TURN values securely as Supabase Edge Function secrets, connect both
    Android phones over ADB, populate only the two-account QA allowlist, and run the required
    Wi-Fi/carrier/background/terminated/locked/permission-denied/forced-relay matrix.
-4. If every mandatory case passes, publish the draft PR, wait for CI, merge/tag `v1.7.0`, verify the
-   permanent-signed `klect.apk`, deploy the matching web build, and validate the stable download URL.
+4. After device QA, update this record with physical evidence. Keep global calling disabled until the
+   mandatory TURN/background/locked two-phone matrix passes.
 5. Walk through manual sections A–H of `CHECKLIST.md` (63 items — gestures, optimistic social
    mechanics, messaging/groups, moderation, two-account RLS and craft). Automated gates are green.
 6. Triage the current production `npm audit --omit=dev` result (3 high, 0 critical; `next`,
