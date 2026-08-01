@@ -524,6 +524,7 @@ class CallModel {
     this.kind = CallKind.audio,
     this.status = CallStatus.ringing,
     this.createdBy,
+    this.expiresAt,
     this.startedAt,
     this.endedAt,
     this.durationSeconds,
@@ -539,6 +540,7 @@ class CallModel {
     kind: CallKind.parse(json['kind']),
     status: CallStatus.parse(json['status']),
     createdBy: asStringOrNull(json['created_by']),
+    expiresAt: asDateOrNull(json['expires_at']),
     startedAt: asDateOrNull(json['started_at']),
     endedAt: asDateOrNull(json['ended_at']),
     durationSeconds: asIntOrNull(json['duration_seconds']),
@@ -566,6 +568,9 @@ class CallModel {
 
   /// Caller.
   final String? createdBy;
+
+  /// Server deadline after which a ringing call is stale.
+  final DateTime? expiresAt;
 
   /// When the call connected.
   final DateTime? startedAt;

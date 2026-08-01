@@ -168,6 +168,7 @@ void main() {
     List<KTabPagerTab> members = tabs,
     int initial = 0,
     bool reduced = false,
+    List<double>? progress,
   }) async {
     final selections = <int>[];
     var selected = initial;
@@ -184,6 +185,7 @@ void main() {
               selections.add(index);
               setState(() => selected = index);
             },
+            onPageProgress: progress?.add,
             builder: (context, index) => SizedBox.expand(
               key: ValueKey<String>('page-$index'),
               child: Center(child: Text('page-$index')),
@@ -254,6 +256,37 @@ void main() {
       tester.getTopLeft(find.byKey(const ValueKey<String>('page-1'))).dx,
       closeTo(tester.getTopLeft(find.byType(PageView)).dx, 0.5),
     );
+  });
+
+  testWidgets(
+    'publishes finger-tracking progress before committing selection',
+    (tester) async {
+      final progress = <double>[];
+      final selections = await pumpPager(tester, progress: progress);
+      final gesture = await dragBy(tester, -200, steps: 10, release: false);
+
+      expect(selections, isEmpty);
+      expect(progress.last, closeTo(0.5, 0.04));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(selections, <int>[1]);
+      expect(progress.last, closeTo(1, 0.001));
+    },
+  );
+
+  testWidgets('cancelled swipe restores progress to the committed member', (
+    tester,
+  ) async {
+    final progress = <double>[];
+    final selections = await pumpPager(tester, initial: 1, progress: progress);
+    final gesture = await dragBy(tester, -80, steps: 8, release: false);
+    expect(progress.last, greaterThan(1));
+
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(selections, isEmpty);
+    expect(progress.last, closeTo(1, 0.001));
   });
 
   testWidgets('an interrupted drag cannot leave a fractional page at rest', (

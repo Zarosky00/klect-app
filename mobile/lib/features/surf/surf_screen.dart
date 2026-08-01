@@ -47,14 +47,24 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
         for (final filter in SurfFilter.values) filter: ScrollController(),
       };
   final ValueNotifier<bool> _revealed = ValueNotifier<bool>(true);
+  late final ValueNotifier<double> _pageProgress;
 
   Timer? _idleTimer;
   DateTime _pageStamp = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
+  void initState() {
+    super.initState();
+    _pageProgress = ValueNotifier<double>(
+      ref.read(surfFilterProvider).index.toDouble(),
+    );
+  }
+
+  @override
   void dispose() {
     _idleTimer?.cancel();
     _revealed.dispose();
+    _pageProgress.dispose();
     for (final scroll in _scrolls.values) {
       scroll.dispose();
     }
@@ -97,6 +107,7 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
   }
 
   void _selectFilter(SurfFilter filter) {
+    _pageProgress.value = filter.index.toDouble();
     if (filter == _filter) return;
     ref.read(surfFilterProvider.notifier).select(filter);
     _revealed.value = true;
@@ -183,7 +194,14 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
               ),
             ),
           ),
-          _FilterBar(selected: filter, onSelect: _selectFilter),
+          ValueListenableBuilder<double>(
+            valueListenable: _pageProgress,
+            builder: (context, page, _) => _FilterBar(
+              selected: filter,
+              pageProgress: page,
+              onSelect: _selectFilter,
+            ),
+          ),
           Expanded(
             child: KTabPager(
               tabs: <KTabPagerTab>[
@@ -192,6 +210,7 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
               ],
               selectedIndex: filter.index,
               onSelected: (index) => _selectFilter(SurfFilter.values[index]),
+              onPageProgress: (page) => _pageProgress.value = page,
               showRail: false,
               builder: (context, index) => _page(
                 context,
@@ -357,9 +376,14 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
 }
 
 class _FilterBar extends StatelessWidget implements PreferredSizeWidget {
-  const _FilterBar({required this.selected, required this.onSelect});
+  const _FilterBar({
+    required this.selected,
+    required this.pageProgress,
+    required this.onSelect,
+  });
 
   final SurfFilter selected;
+  final double pageProgress;
   final void Function(SurfFilter) onSelect;
 
   @override
@@ -388,7 +412,11 @@ class _FilterBar extends StatelessWidget implements PreferredSizeWidget {
           for (final filter in SurfFilter.values) ...<Widget>[
             KChip(
               label: filter.label,
-              selected: filter == selected,
+              selected:
+                  filter == selected ||
+                  (1 - (pageProgress - filter.index).abs()) >= 0.5,
+              selectionProgress: (1 - (pageProgress - filter.index).abs())
+                  .clamp(0.0, 1.0),
               onTap: () => onSelect(filter),
             ),
             const SizedBox(width: Space.s2),

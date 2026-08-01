@@ -59,10 +59,27 @@ and SQL proof tasks; `tasks.md` explicitly permits skipping them for the faster 
   and rendered fixed Surf/Pulse chrome. Vercel production deployment
   `dpl_Hs3W8DvZcB7LWpS3D5pf8BbeZhyK` is READY with the stable latest-APK link. OEM keyboard/tray and
   two-phone call validation remain pending.
+- The v1.7.0 candidate adds live finger-tracking rail state, minimal foreground notices, one
+  keyboard-inset owner, peer-first DM chrome and hydrated viewer-relative call events. Android now
+  owns Core-Telecom registration, CallStyle surfaces, the phone-call foreground service and durable
+  system actions; Flutter reconciles every native action against authoritative Supabase state.
+- Production migration `android_reliable_calling_v170` is applied and `push-fanout` v5 is ACTIVE.
+  A rolled-back authenticated test proved transactional one-call/one-notification delivery. Global
+  calling remains disabled, the QA allowlist remains empty, and both Cloudflare TURN secret names
+  are absent, so no real-call success or v1.7.0 release is claimed yet.
+- Candidate gates pass: Flutter analysis and the complete **291-test** suite including version
+  lockstep and forced-relay configuration, Deno
+  payload tests/typecheck, Android Kotlin/native-payload tests and merged manifest, and web
+  typecheck/15 tests/31-route build. Two attached phones and forced-relay evidence remain required.
+- A compile-time QA build switch (`KLECT_FORCE_TURN_RELAY=true`) now forces WebRTC relay-only
+  candidate selection; it is covered by ICE configuration tests and stays absent from normal
+  production builds.
 
 ## Remaining outside the required implementation
 
 - Optional `*` tasks: 73 property/widget/SQL proof tasks, beginning with task 1.3 (`glados` and shared
   generators). These improve proof depth but are not required by the task runner's MVP path.
 - Operator setup already called out by the spec: enable `reliable_calls` and configure Cloudflare TURN
-  secrets when production infrastructure is ready.
+  secrets when production infrastructure is ready. For v1.7.0, enter the secrets securely, test
+  only the two-account QA allowlist, and keep the global flag off unless every mandatory physical
+  Android case passes.

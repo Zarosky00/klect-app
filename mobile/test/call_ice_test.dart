@@ -21,6 +21,23 @@ void main() {
   });
 
   group('KlectCallIce.resolutionFrom', () {
+    test('QA relay mode forces relay candidates only', () {
+      final configuration = KlectCallIce.peerConnectionConfiguration(
+        KlectCallIce.stunServers,
+        forceRelay: true,
+      );
+
+      expect(configuration['iceTransportPolicy'], 'relay');
+    });
+
+    test('normal builds allow every ICE candidate type', () {
+      final configuration = KlectCallIce.peerConnectionConfiguration(
+        KlectCallIce.stunServers,
+      );
+
+      expect(configuration['iceTransportPolicy'], 'all');
+    });
+
     test('orders every STUN entry before every relay entry', () {
       final resolution = KlectCallIce.resolutionFrom(<String, dynamic>{
         'iceServers': <Map<String, dynamic>>[

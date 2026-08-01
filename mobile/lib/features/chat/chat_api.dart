@@ -478,7 +478,9 @@ class ChatApi {
     final rows = await _guard(
       () => query.order('created_at', ascending: false).limit(limit),
     );
-    return <ChatMessage>[for (final row in rows) ChatMessage.fromJson(row)];
+    return _hydrateCalls(<ChatMessage>[
+      for (final row in rows) ChatMessage.fromJson(row),
+    ]);
   }
 
   /// One message in the thread shape — used to hydrate a realtime INSERT,
@@ -494,7 +496,35 @@ class ChatApi {
           .eq('id', messageId)
           .maybeSingle(),
     );
-    return row == null ? null : ChatMessage.fromJson(row);
+    if (row == null) return null;
+    final hydrated = await _hydrateCalls(<ChatMessage>[
+      ChatMessage.fromJson(row),
+    ]);
+    return hydrated.single;
+  }
+
+  /// Loads every call referenced by a message page in one query. Keeping this
+  /// separate from the PostgREST embed avoids one lookup per call event while
+  /// preserving the existing message select contract.
+  Future<List<ChatMessage>> _hydrateCalls(List<ChatMessage> messages) async {
+    final callIds = messages
+        .map((message) => message.message.callId)
+        .nonNulls
+        .toSet();
+    if (callIds.isEmpty) return messages;
+
+    final rows = await _guard(
+      () => _client.from('calls').select().inFilter('id', callIds.toList()),
+    );
+    final calls = <String, CallModel>{
+      for (final row in rows)
+        if (asString(row['id']).isNotEmpty)
+          asString(row['id']): CallModel.fromJson(row),
+    };
+    return <ChatMessage>[
+      for (final message in messages)
+        message.copyWith(call: calls[message.message.callId]),
+    ];
   }
 
   /// Sends a message by **inserting** it — triggers then write the conversation

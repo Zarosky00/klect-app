@@ -7,26 +7,11 @@ import '../../../core/models/models.dart';
 import '../../../router.dart';
 import '../../notifications/notification_surfaces.dart';
 import '../chat_api.dart';
+import 'android_call_bridge.dart';
 import 'call_controller.dart';
+import 'call_notification_message.dart';
 
-/// One message emitted by a guarded notification action.
-class CallNotificationMessage extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  /// Publishes one message for the overlay host to surface.
-  void publish(String message) => state = message;
-
-  /// Clears a message after it has been shown once.
-  void clear() => state = null;
-}
-
-/// Messages raised by notification actions, consumed once by CallOverlayHost.
-final callNotificationMessageProvider =
-    NotifierProvider<CallNotificationMessage, String?>(
-      CallNotificationMessage.new,
-      name: 'callNotificationMessage',
-    );
+export 'call_notification_message.dart';
 
 /// Owns the high-priority incoming-call system notification and its guarded
 /// Accept/Decline actions.
@@ -43,6 +28,7 @@ class CallNotifications with WidgetsBindingObserver {
   /// Starts action handling and lifecycle tracking once.
   void ensureStarted() {
     if (_actions != null) return;
+    _ref.read(androidCallBridgeProvider).ensureStarted();
     WidgetsBinding.instance.addObserver(this);
     _actions = _ref.read(localNotificationsProvider).actions.listen((event) {
       unawaited(_handleAction(event.id, event.payload));
@@ -60,6 +46,11 @@ class CallNotifications with WidgetsBindingObserver {
     String? callerName,
   }) async {
     ensureStarted();
+    final native = _ref.read(androidCallBridgeProvider);
+    if (native.supported) {
+      await native.present(call, incoming: true, peerName: callerName);
+      return;
+    }
     if (_lifecycle == AppLifecycleState.resumed || !_shown.add(call.id)) return;
     await _ref
         .read(localNotificationsProvider)
@@ -75,6 +66,24 @@ class CallNotifications with WidgetsBindingObserver {
   Future<void> cancelCall(String callId) async {
     _shown.remove(callId);
     await _ref.read(localNotificationsProvider).cancel(_notificationId(callId));
+  }
+
+  /// Mirrors Flutter's authoritative phase to Core-Telecom.
+  Future<void> syncPhase(String callId, CallPhase phase) async {
+    final native = _ref.read(androidCallBridgeProvider);
+    if (!native.supported) return;
+    switch (phase) {
+      case CallPhase.connecting:
+      case CallPhase.active:
+      case CallPhase.reconnecting:
+        await native.setState(callId, 'active');
+      case CallPhase.ended:
+      case CallPhase.idle:
+        await native.setState(callId, 'ended');
+      case CallPhase.dialing:
+      case CallPhase.incoming:
+        break;
+    }
   }
 
   Future<void> _handleAction(String actionId, String? callId) async {

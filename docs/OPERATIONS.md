@@ -30,9 +30,14 @@ re-authoring values by hand.
 
 **✅ LIVE as of 2026-07-30.** Configured and verified end to end — no action required.
 
-**Edge function:** `push-fanout` (deployed, `verify_jwt = false`)
+**Edge function:** `push-fanout` v5 (deployed, `verify_jwt = false`)
 Handles FCM v1 for both Android and iOS, composes per-type copy, respects muted conversations,
 emits a `klect://` deep link, and prunes tokens FCM reports as permanently dead.
+
+Call rows are the exception to the normal display notification: v5 sends a versioned,
+high-priority **data-only** Android payload. `KlectFirebaseMessagingService` validates the call,
+expiry and payload version, then starts the native Core-Telecom foreground service and CallStyle
+surface before Flutter is warm. Routine notifications continue through the `social` channel.
 
 ### How it is wired (for reference / disaster recovery)
 
@@ -127,9 +132,51 @@ SDK, so it proves real push rather than the app's stage-1 local-notification pat
 
 ---
 
-## 3. Scheduled work
+## 3. Reliable Android calling
 
-One `pg_cron` job, `klect-nightly`, at **03:17 UTC** → `public.nightly_maintenance()`:
+The production flag remains globally disabled while physical QA is incomplete. Migration
+`android_reliable_calling_v170` adds a private `qa_allowlist` to the existing `reliable_calls`
+configuration; use only the two test account UUIDs there. Do not enable the global boolean until
+the complete phone matrix is recorded.
+
+`turn-credentials` is JWT-protected and issues one-hour Cloudflare TURN credentials. Store only
+these two names in **Supabase Dashboard → Edge Functions → Secrets** (or with a temporary local
+`--env-file` that is deleted immediately):
+
+| secret | source |
+|---|---|
+| `CLOUDFLARE_TURN_KEY_ID` | The TURN key `uid`/ID shown when the Cloudflare TURN key is created (32 characters) |
+| `CLOUDFLARE_TURN_API_TOKEN` | The TURN key's generated `key`/Bearer token (the long secret, not a browser/client key) |
+
+Never put either raw value in source, documentation, shell history, a GitHub secret intended for
+the client, or chat. Verify only the secret **names** with:
+
+```bash
+npx supabase secrets list --project-ref dikhuygcwxnrsckqglzg
+```
+
+As of the v1.7.0 implementation pass, these two names were not yet present, so TURN and forced-relay
+physical QA remain blocked. FCM secrets are present and `push-fanout` v5 is ACTIVE.
+
+For the mandatory relay-only case, build the same release source with the compile-time QA switch:
+
+```bash
+flutter build apk --release --target-platform android-arm64 \
+  --dart-define=KLECT_FORCE_TURN_RELAY=true
+```
+
+That candidate sets WebRTC `iceTransportPolicy` to `relay`; normal production builds omit the
+define and accept direct or relayed candidates. The switch is compile-time only and is not exposed
+to users or remote notification payloads.
+
+## 4. Scheduled work
+
+The existing `klect-nightly` job remains at **03:17 UTC**. Calling also owns two additive jobs:
+
+- `klect-call-expiry` every 15 seconds → `public.expire_ringing_calls()`;
+- `klect-call-signal-cleanup` every 15 minutes → `public.cleanup_call_signals()`.
+
+Nightly maintenance continues to perform:
 
 | step | why |
 |---|---|
@@ -147,13 +194,15 @@ select jobname, schedule, active from cron.job;
 
 ---
 
-## 4. Before you go live
+## 5. Before you go live
 
 - [ ] Enable leaked-password protection (§1a)
 - [x] Configure FCM + the webhook (§2) — **done 2026-07-30**, verified end to end
 - [x] Real-device delivery confirmed on RMX3771 / Android 15 with `1.6.4+14` (§2)
-- [ ] Add a **TURN server** — WebRTC calls will fail across most mobile NATs with STUN alone.
-      The ICE config location is marked in the mobile call service.
+- [ ] Store both Cloudflare TURN secrets, verify a short-lived credential response, and pass forced
+      relay on two physical Android phones before globally enabling `reliable_calls`.
+- [ ] Record foreground/background/swiped-away/locked, Wi-Fi/cellular, audio/video, decline/missed/
+      cancel/busy, permission denial, Bluetooth and network-handoff evidence for both QA accounts.
 - [ ] Set Auth → URL Configuration → Site URL and redirect allow-list to your real domains
 - [ ] Remove the demo content: `delete from auth.users where email like '%@klect.test';`
 - [ ] Re-run `get_advisors` for both `security` and `performance` and re-check the `unused_index`

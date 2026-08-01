@@ -43,6 +43,15 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
 
   /// Whether the filter drawer is unfolded under the tabs.
   bool _filtersOpen = false;
+  late final ValueNotifier<double> _pageProgress;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageProgress = ValueNotifier<double>(
+      ref.read(pulseModeProvider).index.toDouble(),
+    );
+  }
 
   PulseMode get _mode => ref.read(pulseModeProvider);
 
@@ -51,6 +60,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     for (final controller in _scrolls.values) {
       controller.dispose();
     }
+    _pageProgress.dispose();
     super.dispose();
   }
 
@@ -76,6 +86,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
   }
 
   void _selectMode(PulseMode mode) {
+    _pageProgress.value = mode.index.toDouble();
     if (mode == _mode) return;
     ref.read(pulseModeProvider.notifier).select(mode);
   }
@@ -136,12 +147,17 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       ),
       body: Column(
         children: <Widget>[
-          _PulseTabs(
-            selected: mode,
-            onSelect: _selectMode,
-            filtersOpen: _filtersOpen,
-            filtersActive: filters.isActive,
-            onToggleFilters: () => setState(() => _filtersOpen = !_filtersOpen),
+          ValueListenableBuilder<double>(
+            valueListenable: _pageProgress,
+            builder: (context, page, _) => _PulseTabs(
+              selected: mode,
+              pageProgress: page,
+              onSelect: _selectMode,
+              filtersOpen: _filtersOpen,
+              filtersActive: filters.isActive,
+              onToggleFilters: () =>
+                  setState(() => _filtersOpen = !_filtersOpen),
+            ),
           ),
           _PulsePrompt(onPressed: () => unawaited(_compose())),
           AnimatedSize(
@@ -160,6 +176,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
               ],
               selectedIndex: mode.index,
               onSelected: (index) => _selectMode(PulseMode.values[index]),
+              onPageProgress: (page) => _pageProgress.value = page,
               showRail: false,
               builder: (context, index) => _page(
                 context,
@@ -319,6 +336,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
 class _PulseTabs extends StatelessWidget implements PreferredSizeWidget {
   const _PulseTabs({
     required this.selected,
+    required this.pageProgress,
     required this.onSelect,
     required this.filtersOpen,
     required this.filtersActive,
@@ -326,6 +344,7 @@ class _PulseTabs extends StatelessWidget implements PreferredSizeWidget {
   });
 
   final PulseMode selected;
+  final double pageProgress;
   final void Function(PulseMode) onSelect;
 
   /// Whether the drawer is currently unfolded.
@@ -361,7 +380,11 @@ class _PulseTabs extends StatelessWidget implements PreferredSizeWidget {
               Expanded(
                 child: _PulseTab(
                   mode: mode,
-                  selected: mode == selected,
+                  selected:
+                      mode == selected ||
+                      (1 - (pageProgress - mode.index).abs()) >= 0.5,
+                  selectionProgress: (1 - (pageProgress - mode.index).abs())
+                      .clamp(0.0, 1.0),
                   onSelect: onSelect,
                 ),
               ),
@@ -412,16 +435,23 @@ class _PulseTab extends StatelessWidget {
   const _PulseTab({
     required this.mode,
     required this.selected,
+    required this.selectionProgress,
     required this.onSelect,
   });
 
   final PulseMode mode;
   final bool selected;
+  final double selectionProgress;
   final void Function(PulseMode) onSelect;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
+    final foreground = Color.lerp(
+      colors.textSecondary,
+      colors.textPrimary,
+      selectionProgress,
+    )!;
     return KPressable(
       onTap: () => onSelect(mode),
       enforceMinTapTarget: false,
@@ -433,19 +463,21 @@ class _PulseTab extends StatelessWidget {
             child: Center(
               child: Text(
                 mode.label,
-                style: context.kt.label.copyWith(
-                  color: selected ? colors.textPrimary : colors.textSecondary,
-                ),
+                style: context.kt.label.copyWith(color: foreground),
               ),
             ),
           ),
           AnimatedContainer(
             duration: KMotion.duration(context, KDurations.fast),
             curve: KMotion.curve(context, KCurves.emphasized),
-            width: selected ? Space.s8 : Space.s0,
+            width: Space.s8 * selectionProgress,
             height: Strokes.thick,
             decoration: BoxDecoration(
-              color: selected ? colors.accentDefault : Colors.transparent,
+              color: Color.lerp(
+                Colors.transparent,
+                colors.accentDefault,
+                selectionProgress,
+              ),
               borderRadius: BorderRadius.circular(Radii.full),
             ),
           ),

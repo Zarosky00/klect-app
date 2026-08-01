@@ -146,6 +146,7 @@ class ChatMessage {
     required this.message,
     this.reactions = const <MessageReaction>[],
     this.replyTo,
+    this.call,
     this.pending = false,
     this.failed = false,
   });
@@ -160,6 +161,9 @@ class ChatMessage {
           MessageReaction.fromJson(row),
       ],
       replyTo: parent.isEmpty ? null : MessageModel.fromJson(parent),
+      call: asMap(json['call']).isEmpty
+          ? null
+          : CallModel.fromJson(asMap(json['call'])),
     );
   }
 
@@ -171,6 +175,9 @@ class ChatMessage {
 
   /// The message this one replies to, when the query embedded it.
   final MessageModel? replyTo;
+
+  /// The linked call row for a `call_event` message, hydrated in one batch.
+  final CallModel? call;
 
   /// Client-only: inserted optimistically, no server acknowledgement yet.
   final bool pending;
@@ -251,6 +258,7 @@ class ChatMessage {
     MessageModel? message,
     List<MessageReaction>? reactions,
     MessageModel? replyTo,
+    CallModel? call,
     bool? pending,
     bool? failed,
     bool? hiddenForMe,
@@ -260,6 +268,7 @@ class ChatMessage {
         : (message ?? this.message).copyWith(hiddenForMe: hiddenForMe),
     reactions: reactions ?? this.reactions,
     replyTo: replyTo ?? this.replyTo,
+    call: call ?? this.call,
     pending: pending ?? this.pending,
     failed: failed ?? this.failed,
   );

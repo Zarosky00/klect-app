@@ -54,8 +54,8 @@ class CallOverlayHost extends ConsumerWidget {
     });
     ref.listen(activeCallProvider.select((state) => state.phase), (_, phase) {
       final callId = ref.read(activeCallProvider).call?.id;
-      if (callId != null && phase != CallPhase.incoming) {
-        unawaited(notifications.cancelCall(callId));
+      if (callId != null) {
+        unawaited(notifications.syncPhase(callId, phase));
       }
     });
     ref.listen<String?>(callNotificationMessageProvider, (_, message) {
