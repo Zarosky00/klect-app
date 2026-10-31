@@ -815,7 +815,13 @@ Kiro session in worktree `../klect-v17x-setup-shelves-nav`, branched from
   text; visitors' "Collections" count still includes hidden empty shelves; `get_closeup` lists a
   shelf's items without per-item visibility, so a private item on a public shelf is listed to
   visitors. Web has no owner-side empty-shelf UI yet (the server rule covers visitors).
-- Not yet checked on a device.
+- Device: merged `agent/v170-pulse-fixes` (`2f09591`) in first so the phone kept that fix. The
+  permanent-signed arm64 APK (`1.7.0+17`, cert `460d934b…f11b334f`, SHA-256 `FD5E41FE…EF1A4960`)
+  was installed on the RMX3771 with `adb install -r`. First-install time unchanged, account still
+  signed in, cold start went straight to Surf with no setup page. A visitor profile showed the lens
+  dock (Surf icon, Pulse lens, no Activity), the Posts/Replies/Media control and the All/Surf/Pulse
+  scope row; no Flutter errors in logcat. The phone was being used by hand during the check, so
+  the owner's empty-shelf tiles, tuck/return and sign-out → sign-in still need a hand check.
 
 ---
 
