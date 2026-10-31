@@ -269,6 +269,7 @@ class _ChangeEmailSheet extends ConsumerStatefulWidget {
       KSheet.show<void>(
         context: context,
         title: 'Change email',
+        avoidKeyboard: true,
         builder: (sheetContext) => _ChangeEmailSheet(current: current),
       );
 
@@ -362,6 +363,7 @@ class _ChangePasswordSheet extends ConsumerStatefulWidget {
   static Future<void> show(BuildContext context) => KSheet.show<void>(
         context: context,
         title: 'Change password',
+        avoidKeyboard: true,
         builder: (sheetContext) => const _ChangePasswordSheet(),
       );
 
@@ -427,6 +429,7 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
             obscureText: _obscure,
             autofocus: true,
             autofillHints: const <String>[AutofillHints.newPassword],
+            textInputAction: TextInputAction.next,
             errorText: _error,
             suffix: KIconButton(
               icon: _obscure
@@ -442,6 +445,8 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
             label: 'Confirm password',
             obscureText: _obscure,
             autofillHints: const <String>[AutofillHints.newPassword],
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => unawaited(_submit()),
           ),
           const SizedBox(height: Space.s5),
           KButton(

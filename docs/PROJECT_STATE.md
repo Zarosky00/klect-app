@@ -762,6 +762,43 @@ work. Version is still `1.7.0+17`; no release, tag or APK was produced.
   sets of v1.7.0 fixes. The code merged without conflicts; only this log needed both entries kept.
 - Not yet checked on a device.
 
+### 2026-10-31 — v1.7.x engagement sheet, Alerts redesign, keyboard-safe settings sheets (branch `agent/v17x-engagement-notifications`)
+
+Branched from `agent/v17x-setup-shelves-nav` at `09de0e9` in its own worktree
+(`klect-v17x-engagement`), so the setup/shelves/profile-nav session's uncommitted
+`profile_screen.dart` / `router.dart` edits were not touched. Neither file is changed here.
+Version is still `1.7.0+17`; no release, tag or APK was produced.
+
+- **Engagement sheet rebuilt** (`features/pulse/engagement/engagement_sheet.dart`). Likes ·
+  Reposts · Quotes are now pages of a `KTabPager` (swipe sideways or tap the rail). The filled
+  "selected box" is gone: labels brighten with the swipe and one capsule indicator glides and
+  stretches under them, blending between the like/repost/quote action colours. Likes and Reposts
+  list accounts only (avatar with action glyph, name, verified mark, `@handle · 2h`, follow
+  button). Quotes list the full quote posts edge to edge (`KSheet` now accepts `padding`, so the
+  cards are no longer double-inset). All three tabs load together so swiping lands on rows, counts
+  are seeded from the action bar so the rail never shows zeros, rows stagger in once, the next page
+  loads automatically near the end, and each tab has pull-to-refresh. The controller and the
+  `social_engagement_v1` contract are unchanged.
+- **Alerts redesign** (`features/notifications/notifications_screen.dart`). Title shows a live
+  "N new" pill; Mark-all-read only appears while something is unread. The filter rail uses quiet
+  chips (`KChip.quiet`) with one pill that glides and resizes between them, and opens on the
+  restored filter instead of `All`. Rows drop the tinted unread background for an animated unread
+  dot, a coloured type glyph on the avatar, time on the first line and a quote-bar preview.
+  Filter changes cross-fade, the first screenful staggers in, and realtime arrivals slide in.
+  Shared entrance widget: `ui/k_reveal.dart` (`KReveal`).
+- **Keyboard fix:** `KSheet.show(avoidKeyboard: true)` lifts the sheet by the IME inset and makes
+  its body scrollable. Used by Change password, Change email and Delete account, whose fields were
+  hidden under the keyboard. The password fields now go Next → Done → submit.
+- Found while testing: `FollowButton(initiallyFollowing: …)` writes a provider inside
+  `initState`, which Riverpod rejects when it happens during a list build. The engagement rows
+  therefore use the cached follow state like `PersonRow`. The Closeup still passes
+  `initiallyFollowing`, so its existing behaviour is unchanged.
+- Verification: Flutter analysis 0 issues; **291/291** Flutter tests. A scratch widget test (not
+  committed) opened the sheet, swiped Likes → Reposts → Quotes and tapped back, rendered and
+  filtered Alerts, and confirmed a password field sits above a 340pt keyboard with
+  `avoidKeyboard` (y ≤ 504) and under it without (y = 824).
+- Not yet checked on a device.
+
 ---
 
 ## Next actions

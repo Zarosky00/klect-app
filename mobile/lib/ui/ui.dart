@@ -19,6 +19,7 @@ export 'k_keyboard_inset.dart';
 export 'k_pin_refresh.dart';
 export 'k_pressable.dart';
 export 'k_report_sheet.dart';
+export 'k_reveal.dart';
 export 'k_scaffold.dart';
 export 'k_share_sheet.dart';
 export 'k_sheet.dart';

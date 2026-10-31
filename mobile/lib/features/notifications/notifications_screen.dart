@@ -87,6 +87,10 @@ Future<void> openNotificationSettings(BuildContext context) =>
 ///
 /// Grouped by day, live over realtime, and every row routes to the thing it is
 /// actually about. Reading a row marks it read and the tab badge follows.
+///
+/// Kept deliberately quiet: one title with a live "new" count, one rail whose
+/// selection pill glides between filters, and rows that carry their meaning in
+/// a single coloured glyph rather than a tinted background.
 class NotificationsScreen extends ConsumerStatefulWidget {
   /// Creates the screen.
   const NotificationsScreen({super.key});
@@ -144,6 +148,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     final loaded = currentRows ?? _lastRows ?? const <NotificationModel>[];
     final underAll = filterNotifications(loaded, null, preferences);
     final counts = unreadCountsByCategory(underAll);
+    final unread = counts.values.fold<int>(0, (sum, count) => sum + count);
 
     ref.listen<NotificationCategory?>(notificationFilterProvider, (
       previous,
@@ -155,18 +160,22 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
     return KScaffold(
       appBar: KFixedAppBar(
-        title: 'Alerts',
+        titleWidget: _AlertsTitle(unread: unread),
         actions: <Widget>[
+          _FadeScale(
+            visible: unread > 0,
+            child: KIconButton(
+              icon: Icons.done_all_rounded,
+              semanticLabel: 'Mark all as read',
+              color: colors.textSecondary,
+              onPressed: controller.markAllRead,
+            ),
+          ),
           KIconButton(
             icon: Icons.tune_rounded,
             semanticLabel: 'Notification settings',
-            onPressed: () => openNotificationSettings(context),
-          ),
-          KIconButton(
-            icon: Icons.done_all_rounded,
-            semanticLabel: 'Mark all as read',
             color: colors.textSecondary,
-            onPressed: controller.markAllRead,
+            onPressed: () => openNotificationSettings(context),
           ),
         ],
       ),
@@ -183,7 +192,26 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             child: const SizedBox.shrink(),
           ),
           Expanded(
-            child: _body(context, ref, notifications, preferences, selection),
+            // Changing the filter cross-fades the list instead of snapping it,
+            // and every list state lands the same way.
+            child: AnimatedSwitcher(
+              duration: KMotion.duration(context, KDurations.medium),
+              switchInCurve: KMotion.curve(context, KCurves.emphasized),
+              switchOutCurve: KMotion.curve(context, KCurves.accelerate),
+              child: KeyedSubtree(
+                key: ValueKey<String>(
+                  '${notifications.isLoading && _lastRows == null}'
+                  ':${selection?.wire ?? 'all'}',
+                ),
+                child: _body(
+                  context,
+                  ref,
+                  notifications,
+                  preferences,
+                  selection,
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -197,8 +225,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     NotificationPreferenceSet preferences,
     NotificationCategory? selection,
   ) => notifications.when(
-    loading: () =>
-        const FillViewport(child: KSkeletonList(rows: 6, showMedia: false)),
+    loading: () => const FillViewport(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: Space.s5),
+        child: KSkeletonList(rows: 7, showMedia: false),
+      ),
+    ),
     error: (error, _) {
       final previous = _lastRows;
       if (previous == null) {
@@ -238,19 +270,86 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     if (visible.isEmpty) {
       return FillViewport(
         child: KEmptyState(
-          title: selection == null ? 'Nothing yet' : 'Nothing here yet',
+          title: selection == null ? 'All caught up' : 'Nothing here yet',
           message: selection == null
-              ? 'Your alerts will appear here as soon as something happens.'
+              ? 'Likes, follows, replies and messages will land here.'
               : '${selection.label} alerts will show up here.',
-          icon: Icons.notifications_none_rounded,
-          actionLabel: 'Show all',
-          onAction: () =>
-              ref.read(notificationFilterProvider.notifier).select(null),
+          icon: selection == null
+              ? Icons.notifications_none_rounded
+              : selection.style(context.kc).glyph,
+          actionLabel: selection == null ? null : 'Show all',
+          onAction: selection == null
+              ? null
+              : () =>
+                    ref.read(notificationFilterProvider.notifier).select(null),
         ),
       );
     }
     return _GroupedList(entries: visible);
   }
+}
+
+/// "Alerts" with a small live count of what is still unread beside it.
+class _AlertsTitle extends StatelessWidget {
+  const _AlertsTitle({required this.unread});
+
+  final int unread;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final label = notificationCountLabel(unread);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text('Alerts', style: context.kt.title2),
+        const SizedBox(width: Space.s2),
+        _FadeScale(
+          visible: label != null,
+          child: Semantics(
+            label: '$unread unread',
+            excludeSemantics: true,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Space.s2,
+                vertical: Space.s05,
+              ),
+              decoration: BoxDecoration(
+                color: colors.accentSubtle,
+                borderRadius: BorderRadius.circular(Radii.full),
+              ),
+              child: Text(
+                '${label ?? ''} new',
+                style: context.kt.count.copyWith(color: colors.accentHover),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Grows and fades [child] in and out instead of popping it.
+class _FadeScale extends StatelessWidget {
+  const _FadeScale({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+    duration: KMotion.duration(context, KDurations.base),
+    switchInCurve: KMotion.curve(context, KCurves.overshoot),
+    switchOutCurve: KMotion.curve(context, KCurves.accelerate),
+    transitionBuilder: (child, animation) => FadeTransition(
+      opacity: animation,
+      child: ScaleTransition(scale: animation, child: child),
+    ),
+    child: visible
+        ? KeyedSubtree(key: const ValueKey<bool>(true), child: child)
+        : const SizedBox.shrink(key: ValueKey<bool>(false)),
+  );
 }
 
 /// The pinned category rail: `All` plus the eleven categories.
@@ -259,6 +358,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 /// there is nothing to swipe between. The rail scrolls horizontally when the
 /// twelve chips exceed the width, every chip carries a [Layout.tapTargetMin]
 /// hit target, and the activated chip is scrolled fully into view (4.1).
+///
+/// The chips themselves are bare labels; one soft pill glides behind the
+/// selected chip and resizes to fit it, and the labels cross-fade with it.
 class NotificationFilterRail extends ConsumerStatefulWidget {
   /// Creates the rail.
   const NotificationFilterRail({
@@ -271,7 +373,7 @@ class NotificationFilterRail extends ConsumerStatefulWidget {
   /// no badge at all.
   final Map<NotificationCategory, int> unreadCounts;
 
-  /// One 44 pt chip row plus the indicator gutter beneath it.
+  /// One 44 pt chip row plus the gutter beneath it.
   static const double height = Layout.tapTargetMin + Space.s2;
 
   @override
@@ -283,8 +385,6 @@ class NotificationFilterRail extends ConsumerStatefulWidget {
 /// is otherwise impossible to assert on from the tree.
 class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
     with SingleTickerProviderStateMixin {
-  static const double _indicatorHeight = Space.s05;
-
   final GlobalKey _contentKey = GlobalKey();
   final List<GlobalKey> _chipKeys = List<GlobalKey>.generate(
     notificationFilterOptions.length,
@@ -304,11 +404,17 @@ class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
   /// with the text scale.
   Rect? _from;
   Rect? _to;
+  int _fromIndex = 0;
   int _targetIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    final selected = notificationFilterOptions.indexOf(
+      ref.read(notificationFilterProvider),
+    );
+    _targetIndex = selected < 0 ? 0 : selected;
+    _fromIndex = _targetIndex;
     WidgetsBinding.instance.addPostFrameCallback((_) => _settleIndicator());
   }
 
@@ -337,6 +443,14 @@ class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
     return Rect.lerp(from, to, _progress);
   }
 
+  /// How selected chip [index] looks right now, `0..1`, following the pill.
+  double _selectionProgress(int index) {
+    if (_fromIndex == _targetIndex) return index == _targetIndex ? 1 : 0;
+    if (index == _targetIndex) return _progress;
+    if (index == _fromIndex) return 1 - _progress;
+    return 0;
+  }
+
   Rect? _rectFor(int index) {
     final content = _contentKey.currentContext?.findRenderObject();
     final chip = _chipKeys[index].currentContext?.findRenderObject();
@@ -360,6 +474,7 @@ class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
     setState(() {
       _from = rect;
       _to = rect;
+      _fromIndex = _targetIndex;
       // Settled, not mid-travel: a re-measure is not an animation.
       _controller.value = 1;
     });
@@ -370,6 +485,7 @@ class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
   /// It restarts from zero even when [index] is already the target, so a tap on
   /// the selected chip is still confirmed (4.8).
   void _animateIndicatorTo(int index) {
+    _fromIndex = _targetIndex;
     _targetIndex = index;
     final target = _rectFor(index);
     if (target == null) return;
@@ -387,8 +503,8 @@ class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
       Scrollable.ensureVisible(
         chipContext,
         alignment: 0.5,
-        duration: KMotion.duration(context, KDurations.base),
-        curve: KMotion.curve(context, KCurves.standard),
+        duration: KMotion.duration(context, KDurations.medium),
+        curve: KMotion.curve(context, KCurves.emphasized),
       ),
     );
   }
@@ -423,49 +539,50 @@ class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
     // moved when it has actually drifted.
     WidgetsBinding.instance.addPostFrameCallback((_) => _settleIndicator());
 
-    return SizedBox(
+    return Container(
       height: NotificationFilterRail.height,
+      // Painted over rather than laid out, so the hairline never eats into
+      // the 44 pt hit targets above it.
+      foregroundDecoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: colors.borderSubtle, width: Strokes.thin),
+        ),
+      ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: Space.s5),
-        child: Stack(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(bottom: Space.s2),
-              child: Row(
-                key: _contentKey,
-                children: <Widget>[
-                  for (final (index, option)
-                      in notificationFilterOptions.indexed) ...<Widget>[
-                    if (index > 0) const SizedBox(width: Space.s2),
-                    _railChip(index, option, option == selected),
-                  ],
-                ],
-              ),
-            ),
-            Positioned(
-              left: 0,
-              bottom: 0,
-              child: AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) {
-                  final rect = _currentRect;
-                  if (rect == null) return const SizedBox.shrink();
-                  return Transform.translate(
-                    offset: Offset(rect.left, 0),
-                    child: Container(
-                      width: rect.width,
-                      height: _indicatorHeight,
+        padding: const EdgeInsets.fromLTRB(
+          Space.s3,
+          Space.s0,
+          Space.s3,
+          Space.s2,
+        ),
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final rect = _currentRect;
+            return Stack(
+              children: <Widget>[
+                if (rect != null)
+                  Positioned.fromRect(
+                    rect: rect,
+                    child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: colors.accentDefault,
+                        color: colors.surface3,
                         borderRadius: BorderRadius.circular(Radii.full),
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
-          ],
+                  ),
+                Row(
+                  key: _contentKey,
+                  children: <Widget>[
+                    for (final (index, option)
+                        in notificationFilterOptions.indexed)
+                      _railChip(index, option, option == selected),
+                  ],
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -486,21 +603,29 @@ class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
     ].join(', ');
 
     return KPressable(
-      key: _chipKeys[index],
       onTap: () => _activate(index),
       semanticLabel: semantics,
-      child: SizedBox(
-        height: Layout.tapTargetMin,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints.tightFor(
+          height: Layout.tapTargetMin,
+        ).copyWith(minWidth: Layout.tapTargetMin),
         child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              KChip(label: label, selected: selected),
-              if (badge != null) ...<Widget>[
-                const SizedBox(width: Space.s1),
-                _UnreadBadge(label: badge, selected: selected),
+          // The pill is measured off this box, so it hugs the label and its
+          // badge rather than the taller hit target around them.
+          child: Padding(
+            key: _chipKeys[index],
+            padding: EdgeInsets.only(right: badge == null ? 0 : Space.s15),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                KChip(
+                  label: label,
+                  quiet: true,
+                  selectionProgress: _selectionProgress(index),
+                ),
+                if (badge != null) _UnreadBadge(label: badge),
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -513,29 +638,25 @@ class NotificationFilterRailState extends ConsumerState<NotificationFilterRail>
 /// Digits are drawn in `context.kt.count`, whose tabular figures keep the badge
 /// from twitching as the count climbs from 9 to 10 (Requirements 4.7, 1.7).
 class _UnreadBadge extends StatelessWidget {
-  const _UnreadBadge({required this.label, required this.selected});
+  const _UnreadBadge({required this.label});
 
   final String label;
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: Space.s15,
-        vertical: Space.s05,
-      ),
+      constraints: const BoxConstraints(minWidth: Space.s5),
+      padding: const EdgeInsets.symmetric(horizontal: Space.s15),
       decoration: BoxDecoration(
-        color: selected ? colors.accentSubtle : colors.surface2,
+        color: colors.accentDefault,
         borderRadius: BorderRadius.circular(Radii.full),
       ),
+      alignment: Alignment.center,
       child: ExcludeSemantics(
         child: Text(
           label,
-          style: context.kt.count.copyWith(
-            color: selected ? colors.accentDefault : colors.textSecondary,
-          ),
+          style: context.kt.count.copyWith(color: colors.textOnAccent),
           maxLines: 1,
         ),
       ),
@@ -543,10 +664,26 @@ class _UnreadBadge extends StatelessWidget {
   }
 }
 
-class _GroupedList extends StatelessWidget {
+class _GroupedList extends StatefulWidget {
   const _GroupedList({required this.entries});
 
   final List<NotificationModel> entries;
+
+  @override
+  State<_GroupedList> createState() => _GroupedListState();
+}
+
+class _GroupedListState extends State<_GroupedList> {
+  /// How many of the first rows stagger in when the list appears.
+  static const int _staggered = 10;
+
+  /// Rows on screen when this list was built; only these stagger.
+  late final Set<String> _initial = <String>{
+    for (final entry in widget.entries) entry.id,
+  };
+
+  /// Rows that already played (or skipped) their entrance.
+  final Set<String> _shown = <String>{};
 
   @override
   Widget build(BuildContext context) {
@@ -554,16 +691,33 @@ class _GroupedList extends StatelessWidget {
     // in order without sorting anything.
     final rows = <Widget>[];
     String? currentDay;
-    for (final entry in entries) {
+    var position = 0;
+    for (final entry in widget.entries) {
       final label = dayLabel(entry.createdAt);
       if (label != currentDay) {
         currentDay = label;
-        rows.add(_DayHeader(label: label));
+        rows.add(_DayHeader(label: label, first: rows.isEmpty));
       }
-      rows.add(NotificationRow(notification: entry));
+      final fresh = _shown.add(entry.id);
+      // A realtime arrival slides in wherever it lands; the first screenful
+      // staggers in once; anything reached later by scrolling just appears.
+      final arriving = fresh && !_initial.contains(entry.id);
+      final opening = fresh && position < _staggered;
+      rows.add(
+        KReveal(
+          key: ValueKey<String>(entry.id),
+          animate: arriving || opening,
+          delay: opening
+              ? KMotion.staggerDelay(position, grid: false)
+              : Duration.zero,
+          child: NotificationRow(notification: entry),
+        ),
+      );
+      position++;
     }
 
     return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: Space.s20),
       itemCount: rows.length,
       itemBuilder: (context, index) => rows[index],
@@ -572,16 +726,25 @@ class _GroupedList extends StatelessWidget {
 }
 
 class _DayHeader extends StatelessWidget {
-  const _DayHeader({required this.label});
+  const _DayHeader({required this.label, required this.first});
 
   final String label;
+  final bool first;
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(Space.s5, Space.s5, Space.s5, Space.s2),
-    child: Text(
-      label.toUpperCase(),
-      style: context.kt.micro.copyWith(color: context.kc.textTertiary),
+    padding: EdgeInsets.fromLTRB(
+      Space.s5,
+      first ? Space.s4 : Space.s6,
+      Space.s5,
+      Space.s1,
+    ),
+    child: Semantics(
+      header: true,
+      child: Text(
+        label,
+        style: context.kt.label.copyWith(color: context.kc.textTertiary),
+      ),
     ),
   );
 }
@@ -601,6 +764,9 @@ class NotificationRow extends ConsumerWidget {
     final style = notificationStyle(colors, notification.type);
     final actor = notification.actor;
     final preview = _preview();
+    final unread = notification.isUnread;
+    final createdAt = notification.createdAt;
+    final duration = KMotion.duration(context, KDurations.base);
 
     return KPressable(
       onTap: () => _open(context, ref),
@@ -609,10 +775,7 @@ class NotificationRow extends ConsumerWidget {
           : () => UserActions.showOverflow(context, profile: actor),
       enforceMinTapTarget: false,
       semanticLabel: _semanticLabel(),
-      child: Container(
-        color: notification.isUnread
-            ? colors.accentSubtle
-            : colors.bgBase.withValues(alpha: 0),
+      child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: Space.s5,
           vertical: Space.s3,
@@ -620,87 +783,101 @@ class NotificationRow extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                KAvatar(
-                  imageUrl: avatarUrlOf(api, actor?.avatarPath),
-                  name: actor?.name ?? 'KLECT',
-                  size: Space.s12,
-                ),
-                Positioned(
-                  right: -Space.s1,
-                  bottom: -Space.s1,
-                  child: Container(
-                    padding: const EdgeInsets.all(Space.s1),
-                    decoration: BoxDecoration(
-                      color: colors.bgBase,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(style.icon, size: Space.s3, color: style.tint),
-                  ),
-                ),
-              ],
+            _GlyphAvatar(
+              imageUrl: avatarUrlOf(api, actor?.avatarPath),
+              name: actor?.name ?? 'KLECT',
+              icon: style.icon,
+              tint: style.tint,
             ),
             const SizedBox(width: Space.s3),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text.rich(
-                    TextSpan(
-                      children: <InlineSpan>[
-                        TextSpan(
-                          text: _actorLabel(),
-                          style: context.kt.bodyStrong,
-                        ),
-                        TextSpan(
-                          text: ' ${_phrase()}',
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(
+                        child: AnimatedDefaultTextStyle(
+                          duration: duration,
                           style: context.kt.body.copyWith(
-                            color: colors.textSecondary,
+                            color: unread
+                                ? colors.textPrimary
+                                : colors.textSecondary,
+                          ),
+                          child: Text.rich(
+                            TextSpan(
+                              children: <InlineSpan>[
+                                TextSpan(
+                                  text: _actorLabel(),
+                                  style: context.kt.bodyStrong.copyWith(
+                                    color: colors.textPrimary,
+                                  ),
+                                ),
+                                TextSpan(text: ' ${_phrase()}'),
+                              ],
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ],
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(width: Space.s2),
+                      Padding(
+                        padding: const EdgeInsets.only(top: Space.s05),
+                        child: Text(
+                          createdAt == null
+                              ? ''
+                              : timeago.format(createdAt, locale: 'en_short'),
+                          style: context.kt.caption.copyWith(
+                            color: colors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   if (preview != null) ...<Widget>[
-                    const SizedBox(height: Space.s1),
-                    Text(
-                      preview,
-                      style: context.kt.callout.copyWith(
-                        color: colors.textTertiary,
+                    const SizedBox(height: Space.s15),
+                    Container(
+                      padding: const EdgeInsets.only(left: Space.s25),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                            color: colors.borderDefault,
+                            width: Strokes.thick,
+                          ),
+                        ),
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      child: Text(
+                        preview,
+                        style: context.kt.callout.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
-                  const SizedBox(height: Space.s1),
-                  Text(
-                    notification.createdAt == null
-                        ? ''
-                        : timeago.format(
-                            notification.createdAt!,
-                            locale: 'en_short',
-                          ),
-                    style: context.kt.caption.copyWith(
-                      color: colors.textTertiary,
-                    ),
-                  ),
                 ],
               ),
             ),
-            if (notification.isUnread)
-              Container(
-                margin: const EdgeInsets.only(top: Space.s2, left: Space.s2),
-                width: Space.s2,
-                height: Space.s2,
-                decoration: BoxDecoration(
-                  color: colors.accentDefault,
-                  shape: BoxShape.circle,
+            const SizedBox(width: Space.s2),
+            Padding(
+              padding: const EdgeInsets.only(top: Space.s2),
+              child: AnimatedScale(
+                duration: duration,
+                curve: KMotion.curve(context, KCurves.emphasized),
+                scale: unread ? 1 : 0,
+                child: Container(
+                  width: Space.s2,
+                  height: Space.s2,
+                  decoration: BoxDecoration(
+                    color: colors.accentDefault,
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -727,6 +904,49 @@ class NotificationRow extends ConsumerWidget {
     final destination = notificationDestination(notification);
     if (destination == null) return;
     await context.push(destination);
+  }
+}
+
+/// The actor's avatar with the notification's type glyph on its corner.
+class _GlyphAvatar extends StatelessWidget {
+  const _GlyphAvatar({
+    required this.imageUrl,
+    required this.name,
+    required this.icon,
+    required this.tint,
+  });
+
+  final String? imageUrl;
+  final String name;
+  final IconData icon;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        KAvatar(imageUrl: imageUrl, name: name, size: Space.s12),
+        Positioned(
+          right: -Space.s05,
+          bottom: -Space.s05,
+          child: Container(
+            padding: const EdgeInsets.all(Space.s05),
+            decoration: BoxDecoration(
+              color: colors.bgBase,
+              shape: BoxShape.circle,
+            ),
+            child: Container(
+              width: Space.s5,
+              height: Space.s5,
+              decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+              child: Icon(icon, size: Space.s3, color: colors.textOnAccent),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

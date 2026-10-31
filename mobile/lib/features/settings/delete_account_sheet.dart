@@ -27,6 +27,7 @@ abstract final class DeleteAccountFlow {
       KSheet.show<void>(
         context: context,
         title: 'Delete account',
+        avoidKeyboard: true,
         isDismissible: false,
         builder: (sheetContext) => _DeleteAccountBody(profile: profile),
       );

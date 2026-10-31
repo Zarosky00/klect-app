@@ -16,6 +16,7 @@ class KChip extends StatelessWidget {
     this.onRemove,
     this.tint,
     this.dense = false,
+    this.quiet = false,
   });
 
   /// Chip text. Tags are rendered with a leading `#` by the caller.
@@ -45,21 +46,28 @@ class KChip extends StatelessWidget {
   /// Tighter padding for inline metadata rows.
   final bool dense;
 
+  /// Draws only the label: no fill and no outline.
+  ///
+  /// For rails that paint one shared selection pill behind their chips, so the
+  /// highlight can glide between them instead of jumping. The selected label
+  /// takes [tint], or `text.primary` when none is given.
+  final bool quiet;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    final accent = tint ?? colors.accentDefault;
+    final accent = tint ?? (quiet ? colors.textPrimary : colors.accentDefault);
     final progress = (selectionProgress ?? (selected ? 1.0 : 0.0)).clamp(
       0.0,
       1.0,
     );
     final foreground = Color.lerp(colors.textSecondary, accent, progress)!;
-    final background = Color.lerp(
-      colors.surface2,
-      colors.accentSubtle,
-      progress,
-    )!;
-    final border = Color.lerp(colors.borderSubtle, accent, progress)!;
+    final background = quiet
+        ? Colors.transparent
+        : Color.lerp(colors.surface2, colors.accentSubtle, progress)!;
+    final border = quiet
+        ? Colors.transparent
+        : Color.lerp(colors.borderSubtle, accent, progress)!;
 
     final content = Container(
       padding: EdgeInsets.symmetric(

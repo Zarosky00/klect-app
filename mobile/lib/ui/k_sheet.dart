@@ -20,6 +20,8 @@ abstract final class KSheet {
     bool isScrollControlled = true,
     bool useSafeArea = true,
     double? maxHeightFraction,
+    EdgeInsetsGeometry? padding,
+    bool avoidKeyboard = false,
   }) {
     final colors = KlectTheme.of(context).colors;
     final reduced = KMotion.reduced(context);
@@ -35,8 +37,7 @@ abstract final class KSheet {
       constraints: maxHeightFraction == null
           ? null
           : BoxConstraints(
-              maxHeight:
-                  MediaQuery.sizeOf(context).height * maxHeightFraction,
+              maxHeight: MediaQuery.sizeOf(context).height * maxHeightFraction,
             ),
       sheetAnimationStyle: AnimationStyle(
         curve: reduced ? Curves_.linear : Curves_.emphasized,
@@ -44,13 +45,49 @@ abstract final class KSheet {
         reverseCurve: reduced ? Curves_.linear : Curves_.accelerate,
         reverseDuration: reduced ? KDurations.instant : KDurations.base,
       ),
-      builder: (sheetContext) => KSheetShell(
-        title: title,
-        showHandle: showHandle,
-        child: Builder(builder: builder),
-      ),
+      builder: (sheetContext) {
+        final shell = KSheetShell(
+          title: title,
+          showHandle: showHandle,
+          padding: padding,
+          child: avoidKeyboard
+              ? SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.manual,
+                  child: Builder(builder: builder),
+                )
+              : Builder(builder: builder),
+        );
+        if (!avoidKeyboard) return shell;
+        // A modal sheet is not resized by the keyboard. Lift the whole sheet
+        // by the IME inset so the focused field stays on screen; the scroll
+        // view keeps a tall form reachable when the lifted sheet runs out of
+        // room.
+        return KSheetKeyboardLift(child: shell);
+      },
     );
   }
+}
+
+/// Lifts a bottom sheet above the software keyboard.
+///
+/// Used by [KSheet.show] when `avoidKeyboard` is set. Sheets that pad
+/// themselves by `MediaQuery.viewInsetsOf` must not also use this, or the inset
+/// would be applied twice.
+class KSheetKeyboardLift extends StatelessWidget {
+  /// Wraps [child] so it rides on top of the keyboard.
+  const KSheetKeyboardLift({required this.child, super.key});
+
+  /// The sheet chrome and content.
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnimatedPadding(
+    duration: KMotion.duration(context, KDurations.fast),
+    curve: KMotion.curve(context, KCurves.emphasized),
+    padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+    child: child,
+  );
 }
 
 /// The chrome of a sheet: grabber, optional title, rounded surface.
@@ -135,7 +172,8 @@ class KSheetShell extends StatelessWidget {
               ),
             Flexible(
               child: Padding(
-                padding: padding ??
+                padding:
+                    padding ??
                     const EdgeInsets.fromLTRB(
                       Space.s5,
                       Space.s2,
