@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -27,29 +28,13 @@ import 'entity_tile.dart';
 import 'fill_viewport.dart';
 import 'follow_button.dart';
 import 'follow_list_sheet.dart';
+import 'profile_filters.dart';
+import 'profile_nav.dart';
 import 'profile_queries.dart';
 import 'user_actions.dart';
 import 'user_posts_controller.dart';
 
-/// Which slice of a profile is on screen.
-enum ProfileMode {
-  /// The shelves this account owns.
-  surf('Surf'),
-
-  /// Posts, quotes and reposts — `user_posts` (0021).
-  pulse('Pulse'),
-
-  /// Every item, newest first.
-  activity('Activity');
-
-  const ProfileMode(this.label);
-
-  /// Tab label.
-  final String label;
-
-  /// Whether only the account owner may see this tab.
-  bool get isPrivate => this == ProfileMode.activity;
-}
+export 'profile_filters.dart' show ProfileMode;
 
 /// A collector's profile.
 ///
@@ -218,9 +203,21 @@ class _ProfileBody extends ConsumerStatefulWidget {
   ConsumerState<_ProfileBody> createState() => _ProfileBodyState();
 }
 
-class _ProfileBodyState extends ConsumerState<_ProfileBody> {
+class _ProfileBodyState extends ConsumerState<_ProfileBody>
+    with SingleTickerProviderStateMixin {
   final ScrollController _outerScroll = ScrollController();
   late final ValueNotifier<double> _pageProgress;
+
+  /// Every section's filters, shared by the dock's shelf and the tab content.
+  final ProfileFilterController _filters = ProfileFilterController();
+
+  /// 1 while the dock's filter shelf is out, 0 while it is tucked away.
+  ///
+  /// Created in [initState], not lazily: the classic design never reads it,
+  /// and a lazy controller first built inside dispose() throws.
+  late final AnimationController _shelf;
+  bool _shelfOut = true;
+  ScrollDirection _innerDirection = ScrollDirection.idle;
 
   List<ProfileMode> get _tabs => <ProfileMode>[
     for (final candidate in ProfileMode.values)
@@ -234,21 +231,71 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
     _pageProgress = ValueNotifier<double>(
       (initial < 0 ? 0 : initial).toDouble(),
     );
+    _shelf = AnimationController(vsync: this, value: 1);
   }
 
   @override
   void didUpdateWidget(covariant _ProfileBody oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mode == widget.mode && oldWidget.isMe == widget.isMe) return;
-    final index = _tabs.indexOf(widget.mode);
-    if (index >= 0) _pageProgress.value = index.toDouble();
+    // The dock follows the pager's own progress, so a tap morphs the lens
+    // instead of jumping it; only the classic underline snaps here.
+    if (kProfileNavStyle == ProfileNavStyle.classic) {
+      final index = _tabs.indexOf(widget.mode);
+      if (index >= 0) _pageProgress.value = index.toDouble();
+    }
+    _setShelf(out: true);
   }
 
   @override
   void dispose() {
     _outerScroll.dispose();
     _pageProgress.dispose();
+    _filters.dispose();
+    _shelf.dispose();
     super.dispose();
+  }
+
+  ProfileFilterSpec _specFor(int index, ProfileFilters filters) =>
+      profileFilterSpec(_tabs[index], filters, _filters);
+
+  void _setShelf({required bool out}) {
+    if (_shelfOut == out) return;
+    _shelfOut = out;
+    unawaited(
+      _shelf.animateTo(
+        out ? 1 : 0,
+        duration: KMotion.duration(context, KDurations.medium),
+        curve: KMotion.curve(context, KCurves.emphasized),
+      ),
+    );
+  }
+
+  /// Tucks the filter shelf away while the user reads down a tab and brings
+  /// it back the moment they scroll up, or when the list is near its top.
+  bool _onInnerScroll(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    if (notification is UserScrollNotification) {
+      _innerDirection = notification.direction;
+    } else if (notification is! ScrollUpdateNotification) {
+      return false;
+    }
+    final pixels = notification.metrics.pixels;
+    if (pixels <= ProfileDockMetrics.revealExtent) {
+      _setShelf(out: true);
+    } else if (_innerDirection == ScrollDirection.reverse) {
+      _setShelf(out: false);
+    } else if (_innerDirection == ScrollDirection.forward) {
+      _setShelf(out: true);
+    }
+    return false;
+  }
+
+  void _selectTab(int index) {
+    if (kProfileNavStyle == ProfileNavStyle.classic) {
+      _pageProgress.value = index.toDouble();
+    }
+    widget.onModeChanged(_tabs[index]);
   }
 
   /// Lets the tab lists inside the pager drive pull-to-refresh.
@@ -273,6 +320,7 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
 
     ref.listen<RootTabReselectEvent?>(rootTabReselectProvider, (_, event) {
       if (event?.index != 4 || !_outerScroll.hasClients) return;
+      _setShelf(out: true);
       unawaited(
         _outerScroll.animateTo(
           0,
@@ -299,45 +347,87 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
           ),
           SliverPersistentHeader(
             pinned: true,
-            delegate: _TabBarDelegate(
-              tabs: _tabs,
-              selected: visibleTab,
-              pageProgress: _pageProgress,
-              onChanged: (mode) {
-                _pageProgress.value = _tabs.indexOf(mode).toDouble();
-                widget.onModeChanged(mode);
-              },
-            ),
+            delegate: switch (kProfileNavStyle) {
+              ProfileNavStyle.dock => ProfileDockDelegate(
+                sections: <ProfileNavOption>[
+                  for (final tab in _tabs) tab.option,
+                ],
+                selectedIndex: _tabs.indexOf(visibleTab),
+                pageProgress: _pageProgress,
+                onSelected: _selectTab,
+                shelfVisibility: _shelf,
+                filters: _filters,
+                selectedSpec: (filters) =>
+                    _specFor(_tabs.indexOf(visibleTab), filters),
+                onShowFilters: () => _setShelf(out: true),
+              ),
+              ProfileNavStyle.classic => _TabBarDelegate(
+                tabs: _tabs,
+                selected: visibleTab,
+                pageProgress: _pageProgress,
+                onChanged: (mode) => _selectTab(_tabs.indexOf(mode)),
+              ),
+            },
           ),
         ],
-        body: KTabPager(
-          tabs: <KTabPagerTab>[
-            for (final tab in _tabs)
-              KTabPagerTab(id: tab.name, label: tab.label),
-          ],
-          selectedIndex: _tabs.indexOf(visibleTab),
-          onSelected: (index) {
-            _pageProgress.value = index.toDouble();
-            widget.onModeChanged(_tabs[index]);
-          },
-          onPageProgress: (page) => _pageProgress.value = page,
-          showRail: false,
-          builder: (context, index) => CustomScrollView(
-            key: PageStorageKey<String>(
-              'profile-${profile.id}-${_tabs[index].name}',
-            ),
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: <Widget>[
-              _ProfileModeContent(
-                profile: profile,
-                mode: _tabs[index],
-                isMe: widget.isMe,
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: Space.s20)),
-            ],
+        body: _buildBody(profile, visibleTab),
+      ),
+    );
+  }
+
+  Widget _buildBody(Profile profile, ProfileMode visibleTab) {
+    final pager = KTabPager(
+      tabs: <KTabPagerTab>[
+        for (final tab in _tabs) KTabPagerTab(id: tab.name, label: tab.label),
+      ],
+      selectedIndex: _tabs.indexOf(visibleTab),
+      onSelected: (index) {
+        _pageProgress.value = index.toDouble();
+        widget.onModeChanged(_tabs[index]);
+      },
+      onPageProgress: (page) => _pageProgress.value = page,
+      showRail: false,
+      builder: (context, index) => CustomScrollView(
+        key: PageStorageKey<String>(
+          'profile-${profile.id}-${_tabs[index].name}',
+        ),
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: <Widget>[
+          _ProfileModeContent(
+            profile: profile,
+            mode: _tabs[index],
+            isMe: widget.isMe,
+            filters: _filters,
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: Space.s20)),
+        ],
+      ),
+    );
+    if (kProfileNavStyle == ProfileNavStyle.classic) return pager;
+
+    // The shelf floats over the top of the tab lists, so content scrolls
+    // under its glass and it can tuck away without moving the list.
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _onInnerScroll,
+            child: pager,
           ),
         ),
-      ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: ProfileFilterShelf(
+            sectionCount: _tabs.length,
+            specFor: _specFor,
+            filters: _filters,
+            pageProgress: _pageProgress,
+            visibility: _shelf,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -907,58 +997,75 @@ class _TabButton extends StatelessWidget {
   }
 }
 
-class _ProfileModeContent extends ConsumerWidget {
+class _ProfileModeContent extends StatelessWidget {
   const _ProfileModeContent({
     required this.profile,
     required this.mode,
     required this.isMe,
+    required this.filters,
   });
 
   final Profile profile;
   final ProfileMode mode;
   final bool isMe;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return switch (mode) {
-      ProfileMode.surf => _SurfSliver(profile: profile),
-      ProfileMode.pulse => _PostsSliver(userId: profile.id),
-      ProfileMode.activity =>
-        isMe
-            ? const _ActivitySliver()
-            : const SliverToBoxAdapter(child: SizedBox.shrink()),
-    };
-  }
-}
-
-/// The Posts tab — `user_posts` (0021) rendered with the exact stream row
-/// the Pulse feed uses, so a post reads identically on both surfaces.
-enum _SurfSection {
-  collections('Collections'),
-  items('Items');
-
-  const _SurfSection(this.label);
-  final String label;
-}
-
-class _SurfSliver extends ConsumerStatefulWidget {
-  const _SurfSliver({required this.profile});
-
-  final Profile profile;
-
-  @override
-  ConsumerState<_SurfSliver> createState() => _SurfSliverState();
-}
-
-class _SurfSliverState extends ConsumerState<_SurfSliver> {
-  _SurfSection _section = _SurfSection.collections;
+  final ProfileFilterController filters;
 
   @override
   Widget build(BuildContext context) {
-    final userId = widget.profile.id;
+    if (mode == ProfileMode.activity && !isMe) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return ValueListenableBuilder<ProfileFilters>(
+      valueListenable: filters,
+      builder: (context, value, _) {
+        final content = switch (mode) {
+          ProfileMode.surf => _SurfSliver(
+            profile: profile,
+            section: value.surfSection,
+          ),
+          ProfileMode.pulse => _PostsSliver(
+            userId: profile.id,
+            tab: value.pulseTab,
+            postView: value.postView,
+            replySurface: value.replySurface,
+          ),
+          ProfileMode.activity => _ReactionItemsSliver(
+            action: value.activityAction,
+            surface: value.activitySurface,
+          ),
+        };
+        final spec = profileFilterSpec(mode, value, filters);
+
+        return SliverMainAxisGroup(
+          slivers: <Widget>[
+            if (kProfileNavStyle == ProfileNavStyle.dock)
+              ProfileShelfSpacer(spec: spec)
+            else ...<Widget>[
+              _ProfileFilterRail(row: spec.primary),
+              if (spec.scope case final scope?)
+                _ProfileFilterRail(row: scope, compact: true),
+            ],
+            content,
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A profile's Surf tab: its shelves, or every item on them.
+class _SurfSliver extends ConsumerWidget {
+  const _SurfSliver({required this.profile, required this.section});
+
+  final Profile profile;
+  final ProfileSurfSection section;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userId = profile.id;
     final isMe = userId == ref.watch(currentUserIdProvider);
-    final content = switch (_section) {
-      _SurfSection.collections => _CardsSliver(
+    return switch (section) {
+      ProfileSurfSection.collections => _CardsSliver(
         value: ref
             .watch(profileCollectionsProvider(userId))
             .whenData(
@@ -975,7 +1082,7 @@ class _SurfSliverState extends ConsumerState<_SurfSliver> {
         onEmptyAction: () => context.push('/create/collection'),
         showEmptyAction: isMe,
       ),
-      _SurfSection.items => _CardsSliver(
+      ProfileSurfSection.items => _CardsSliver(
         value: ref
             .watch(profileItemsProvider(userId))
             .whenData(
@@ -991,117 +1098,50 @@ class _SurfSliverState extends ConsumerState<_SurfSliver> {
         showEmptyAction: isMe,
       ),
     };
-
-    return SliverMainAxisGroup(
-      slivers: <Widget>[
-        _ProfileFilterRail(
-          labels: <String>[
-            for (final value in _SurfSection.values) value.label,
-          ],
-          selected: _section.index,
-          onSelected: (index) =>
-              setState(() => _section = _SurfSection.values[index]),
-        ),
-        content,
-      ],
-    );
   }
 }
 
-enum _ProfilePulseTab {
-  posts('Posts'),
-  replies('Replies'),
-  media('Media');
-
-  const _ProfilePulseTab(this.label);
-
-  final String label;
-}
-
-class _PostsSliver extends ConsumerStatefulWidget {
-  const _PostsSliver({required this.userId});
-
-  final String userId;
-
-  @override
-  ConsumerState<_PostsSliver> createState() => _PostsSliverState();
-}
-
-class _PostsSliverState extends ConsumerState<_PostsSliver> {
-  _ProfilePulseTab _tab = _ProfilePulseTab.posts;
-  ProfilePulseView _postView = ProfilePulseView.all;
-  ProfileSurface _replySurface = ProfileSurface.all;
-
-  @override
-  Widget build(BuildContext context) {
-    return _buildPulse(context);
-  }
-
-  Widget _buildPulse(BuildContext context) {
-    return SliverMainAxisGroup(
-      slivers: <Widget>[
-        _ProfileFilterRail(
-          labels: <String>[
-            for (final value in _ProfilePulseTab.values) value.label,
-          ],
-          selected: _tab.index,
-          onSelected: (index) =>
-              setState(() => _tab = _ProfilePulseTab.values[index]),
-        ),
-        if (_tab == _ProfilePulseTab.posts) ...<Widget>[
-          _ProfileFilterRail(
-            labels: const <String>['All', 'Originals', 'Reposts', 'Quotes'],
-            selected: <ProfilePulseView>[
-              ProfilePulseView.all,
-              ProfilePulseView.originals,
-              ProfilePulseView.reposts,
-              ProfilePulseView.quotes,
-            ].indexOf(_postView),
-            compact: true,
-            onSelected: (index) => setState(
-              () => _postView = <ProfilePulseView>[
-                ProfilePulseView.all,
-                ProfilePulseView.originals,
-                ProfilePulseView.reposts,
-                ProfilePulseView.quotes,
-              ][index],
-            ),
-          ),
-          _PulseItemsSliver(userId: widget.userId, view: _postView),
-        ] else if (_tab == _ProfilePulseTab.media)
-          _PulseItemsSliver(userId: widget.userId, view: ProfilePulseView.media)
-        else ...<Widget>[
-          _ProfileFilterRail(
-            labels: const <String>['All', 'Surf', 'Pulse'],
-            selected: _replySurface.index,
-            compact: true,
-            onSelected: (index) =>
-                setState(() => _replySurface = ProfileSurface.values[index]),
-          ),
-          _DiscussionSliver(userId: widget.userId, surface: _replySurface),
-        ],
-      ],
-    );
-  }
-}
-
-/// A uniform, virtualised gallery grid.
-///
-/// The ragged masonry belongs to Surf; a library reads better — and scrolls
-/// cheaper — as an even gallery, because [SliverGrid] only builds the tiles
-/// actually on screen.
-class _ProfileFilterRail extends StatelessWidget {
-  const _ProfileFilterRail({
-    required this.labels,
-    required this.selected,
-    required this.onSelected,
-    this.compact = false,
+/// A profile's Pulse tab — `user_posts` (0021) rendered with the exact stream
+/// row the Pulse feed uses, so a post reads identically on both surfaces.
+class _PostsSliver extends StatelessWidget {
+  const _PostsSliver({
+    required this.userId,
+    required this.tab,
+    required this.postView,
+    required this.replySurface,
   });
 
-  final List<String> labels;
-  final int selected;
-  final ValueChanged<int> onSelected;
+  final String userId;
+  final ProfilePulseTab tab;
+  final ProfilePulseView postView;
+  final ProfileSurface replySurface;
+
+  @override
+  Widget build(BuildContext context) => switch (tab) {
+    ProfilePulseTab.posts => _PulseItemsSliver(userId: userId, view: postView),
+    ProfilePulseTab.media => _PulseItemsSliver(
+      userId: userId,
+      view: ProfilePulseView.media,
+    ),
+    ProfilePulseTab.replies => _DiscussionSliver(
+      userId: userId,
+      surface: replySurface,
+    ),
+  };
+}
+
+/// The v1.7.0 chip row, used only by [ProfileNavStyle.classic].
+class _ProfileFilterRail extends StatelessWidget {
+  const _ProfileFilterRail({required this.row, this.compact = false});
+
+  final ProfileFilterRow row;
   final bool compact;
+
+  List<String> get labels => <String>[
+    for (final option in row.options) option.label,
+  ];
+  int get selected => row.selected;
+  ValueChanged<int> get onSelected => row.onSelected;
 
   @override
   Widget build(BuildContext context) => SliverToBoxAdapter(
@@ -1497,41 +1537,7 @@ class _SourceBadge extends StatelessWidget {
   }
 }
 
-class _ActivitySliver extends ConsumerStatefulWidget {
-  const _ActivitySliver();
-
-  @override
-  ConsumerState<_ActivitySliver> createState() => _ActivitySliverState();
-}
-
-class _ActivitySliverState extends ConsumerState<_ActivitySliver> {
-  ProfileReactionAction _action = ProfileReactionAction.like;
-  ProfileSurface _surface = ProfileSurface.surf;
-
-  @override
-  Widget build(BuildContext context) => SliverMainAxisGroup(
-    slivers: <Widget>[
-      _ProfileFilterRail(
-        labels: const <String>['Likes', 'Saves'],
-        selected: _action.index,
-        onSelected: (index) =>
-            setState(() => _action = ProfileReactionAction.values[index]),
-      ),
-      _ProfileFilterRail(
-        labels: const <String>['Surf', 'Pulse'],
-        selected: _surface == ProfileSurface.surf ? 0 : 1,
-        compact: true,
-        onSelected: (index) => setState(
-          () => _surface = index == 0
-              ? ProfileSurface.surf
-              : ProfileSurface.pulse,
-        ),
-      ),
-      _ReactionItemsSliver(action: _action, surface: _surface),
-    ],
-  );
-}
-
+/// A profile's Activity tab (owner only): what they liked or saved.
 class _ReactionItemsSliver extends ConsumerWidget {
   const _ReactionItemsSliver({required this.action, required this.surface});
 

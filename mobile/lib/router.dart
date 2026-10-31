@@ -160,7 +160,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Signed in: wait for this account's profile before deciding between
       // onboarding and the app, otherwise a slow network flashes the wrong
       // screen. See [profileGate] for why a stale or failed read never counts.
-      switch (profileGate(userId: userId, profile: ref.read(myProfileProvider))) {
+      switch (profileGate(
+        userId: userId,
+        profile: ref.read(myProfileProvider),
+      )) {
         case ProfileGate.wait:
           return path == Routes.splash ? null : Routes.splash;
         case ProfileGate.onboarding:
