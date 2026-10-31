@@ -140,6 +140,10 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
 
   PulseAttachment? _attachment;
   bool _preparing = false;
+
+  /// The photo being re-prepared after an edit; it shows its own spinner
+  /// instead of the tray growing an extra "adding" tile.
+  String? _editingId;
   bool _busy = false;
   String? _progress;
   String? _error;
@@ -249,6 +253,7 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
 
     setState(() {
       _preparing = true;
+      _editingId = photo.id;
       _error = null;
     });
     try {
@@ -271,7 +276,12 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
         setState(() => _error = 'Could not apply those photo edits.');
       }
     } finally {
-      if (mounted) setState(() => _preparing = false);
+      if (mounted) {
+        setState(() {
+          _preparing = false;
+          _editingId = null;
+        });
+      }
     }
   }
 
@@ -499,7 +509,8 @@ class _ComposerBodyState extends ConsumerState<_ComposerBody> {
                                 const SizedBox(height: Space.s3),
                                 _PhotoTray(
                                   photos: _photos,
-                                  preparing: _preparing,
+                                  adding: _preparing && _editingId == null,
+                                  editingId: _editingId,
                                   onEdit: _busy || _preparing
                                       ? null
                                       : (photo) => unawaited(_editPhoto(photo)),
@@ -690,154 +701,273 @@ class _ComposerSubjectPreview extends ConsumerWidget {
   }
 }
 
-/// The horizontal strip of prepared photos, with remove buttons.
+/// The composer's prepared photos, shown big enough to judge.
+///
+/// One photo fills the text column at its own (bounded) ratio, the way it
+/// will read in the stream. Two to four become a horizontal strip of tall
+/// tiles that can be dragged to reorder. Every photo carries a real **Edit**
+/// button (crop · aspect · rotate) and a remove button; tapping the photo
+/// itself also opens the editor.
 class _PhotoTray extends StatelessWidget {
   const _PhotoTray({
     required this.photos,
-    required this.preparing,
+    required this.adding,
+    required this.editingId,
     required this.onEdit,
     required this.onRemove,
     required this.onReorder,
   });
 
   final List<_DraftPhoto> photos;
-  final bool preparing;
+
+  /// A newly picked photo is still being prepared.
+  final bool adding;
+
+  /// The photo whose edit is being applied right now, if any.
+  final String? editingId;
   final ValueChanged<_DraftPhoto>? onEdit;
   final void Function(String id)? onRemove;
   final ReorderCallback? onReorder;
 
-  static const double _tile = Space.s20;
+  /// Height ceiling of a lone photo — the stream's own photo ceiling.
+  static const double _singleMaxHeight = Space.s24 * 4;
+
+  /// Height of the placeholder shown while the first photo is prepared.
+  static const double _placeholderHeight = Space.s24 * 2;
+
+  /// Tile size once there are several photos.
+  static const double _tileHeight = Space.s24 * 2;
+  static const double _tileWidth = Space.s24 * 1.5;
+
+  @override
+  Widget build(BuildContext context) {
+    if (photos.isEmpty) {
+      return const _PhotoPlaceholder(height: _placeholderHeight);
+    }
+    if (photos.length == 1 && !adding) {
+      return _single(context, photos.single);
+    }
+    return _strip(context);
+  }
+
+  Widget _single(BuildContext context, _DraftPhoto photo) => LayoutBuilder(
+    builder: (context, constraints) {
+      final prepared = photo.prepared;
+      final intrinsic = prepared.height > 0
+          ? prepared.width / prepared.height
+          : Aspect.cover;
+      final clamped = intrinsic
+          .clamp(Aspect.gridMin, Aspect.gridMax)
+          .toDouble();
+      // Widen the box until it fits under the height ceiling.
+      final floor = constraints.maxWidth / _singleMaxHeight;
+      final aspect = clamped < floor ? floor : clamped;
+      return AspectRatio(
+        aspectRatio: aspect,
+        child: _PhotoTile(
+          key: ValueKey<String>('pulse-photo-${photo.id}'),
+          photo: photo,
+          index: 0,
+          working: editingId == photo.id,
+          onEdit: onEdit,
+          onRemove: onRemove,
+        ),
+      );
+    },
+  );
+
+  Widget _strip(BuildContext context) {
+    return SizedBox(
+      height: _tileHeight,
+      child: ReorderableListView.builder(
+        scrollDirection: Axis.horizontal,
+        buildDefaultDragHandles: onReorder != null,
+        itemCount: photos.length,
+        onReorderItem: onReorder ?? (_, _) {},
+        footer: adding
+            ? const _PhotoPlaceholder(width: _tileWidth, height: _tileHeight)
+            : null,
+        proxyDecorator: (child, _, animation) => FadeTransition(
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: KCurves.emphasized,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            elevation: Elevation.mid.y,
+            borderRadius: BorderRadius.circular(Radii.lg),
+            child: child,
+          ),
+        ),
+        itemBuilder: (context, index) {
+          final photo = photos[index];
+          return Padding(
+            key: ValueKey<String>(photo.id),
+            padding: const EdgeInsets.only(right: Space.s2),
+            child: SizedBox(
+              width: _tileWidth,
+              height: _tileHeight,
+              child: _PhotoTile(
+                key: ValueKey<String>('pulse-photo-${photo.id}'),
+                photo: photo,
+                index: index,
+                working: editingId == photo.id,
+                onEdit: onEdit,
+                onRemove: onRemove,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// One photo in the tray: the image, an Edit button and a remove button.
+class _PhotoTile extends StatelessWidget {
+  const _PhotoTile({
+    required this.photo,
+    required this.index,
+    required this.working,
+    required this.onEdit,
+    required this.onRemove,
+    super.key,
+  });
+
+  final _DraftPhoto photo;
+  final int index;
+
+  /// An edit is being applied: dim the photo and show a spinner.
+  final bool working;
+  final ValueChanged<_DraftPhoto>? onEdit;
+  final void Function(String id)? onRemove;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    return SizedBox(
-      height: _tile,
-      child: Row(
-        children: <Widget>[
-          if (photos.isNotEmpty)
-            Expanded(
-              child: ReorderableListView.builder(
-                scrollDirection: Axis.horizontal,
-                buildDefaultDragHandles: onReorder != null,
-                itemCount: photos.length,
-                onReorderItem: onReorder ?? (_, _) {},
-                proxyDecorator: (child, _, animation) => FadeTransition(
-                  opacity: CurvedAnimation(
-                    parent: animation,
-                    curve: KCurves.emphasized,
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    elevation: Elevation.mid.y,
-                    borderRadius: BorderRadius.circular(Radii.md),
-                    child: child,
-                  ),
+    final edit = onEdit == null ? null : () => onEdit!(photo);
+
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        KPressable(
+          semanticLabel: photo.edited
+              ? 'Edit cropped photo ${index + 1}'
+              : 'Edit photo ${index + 1}',
+          onTap: edit,
+          enforceMinTapTarget: false,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(Radii.lg),
+            child: Image.memory(
+              photo.prepared.bytes,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+            ),
+          ),
+        ),
+        if (working)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.surfaceScrim,
+              borderRadius: BorderRadius.circular(Radii.lg),
+            ),
+            child: Center(
+              child: SizedBox(
+                width: Space.s6,
+                height: Space.s6,
+                child: CircularProgressIndicator(
+                  strokeWidth: Strokes.thick,
+                  color: colors.accentDefault,
                 ),
-                itemBuilder: (context, index) {
-                  final photo = photos[index];
-                  return Padding(
-                    key: ValueKey<String>(photo.id),
-                    padding: const EdgeInsets.only(right: Space.s2),
-                    child: SizedBox(
-                      width: _tile,
-                      height: _tile,
-                      child: Stack(
-                        children: <Widget>[
-                          Positioned.fill(
-                            child: KPressable(
-                              semanticLabel: photo.edited
-                                  ? 'Edit cropped photo ${index + 1}'
-                                  : 'Edit photo ${index + 1}',
-                              onTap: onEdit == null
-                                  ? null
-                                  : () => onEdit!(photo),
-                              enforceMinTapTarget: false,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(Radii.md),
-                                child: Image.memory(
-                                  photo.prepared.bytes,
-                                  width: _tile,
-                                  height: _tile,
-                                  fit: BoxFit.cover,
-                                  gaplessPlayback: true,
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: Space.s1,
-                            bottom: Space.s1,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: Space.s2,
-                                vertical: Space.s05,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colors.surfaceScrim,
-                                borderRadius: BorderRadius.circular(Radii.full),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  Icon(
-                                    photo.edited
-                                        ? Icons.crop_rounded
-                                        : Icons.edit_rounded,
-                                    size: Space.s3,
-                                    color: colors.textPrimary,
-                                  ),
-                                  const SizedBox(width: Space.s1),
-                                  Text(
-                                    photo.edited ? 'Edited' : 'Edit',
-                                    style: context.kt.micro.copyWith(
-                                      color: colors.textPrimary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (onRemove != null)
-                            Positioned(
-                              top: Space.s05,
-                              right: Space.s05,
-                              child: KIconButton(
-                                icon: Icons.close_rounded,
-                                semanticLabel: 'Remove photo ${index + 1}',
-                                size: Space.s4,
-                                color: colors.textPrimary,
-                                background: colors.surfaceScrim,
-                                onPressed: () => onRemove!(photo.id),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
               ),
             ),
-          if (preparing)
-            Container(
-              width: _tile,
-              height: _tile,
+          ),
+        // The Edit button is its own tap target, on top of the photo, so a
+        // tap on it always opens the editor.
+        Positioned(
+          left: Space.s2,
+          bottom: Space.s2,
+          child: KPressable(
+            key: ValueKey<String>('pulse-photo-edit-$index'),
+            onTap: edit,
+            enabled: edit != null,
+            semanticLabel: 'Edit photo ${index + 1}',
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Space.s3,
+                vertical: Space.s15,
+              ),
               decoration: BoxDecoration(
-                color: colors.surface2,
-                borderRadius: BorderRadius.circular(Radii.md),
-              ),
-              child: Center(
-                child: SizedBox(
-                  width: Space.s5,
-                  height: Space.s5,
-                  child: CircularProgressIndicator(
-                    strokeWidth: Strokes.thick,
-                    color: colors.accentDefault,
-                  ),
+                color: colors.surfaceScrim,
+                borderRadius: BorderRadius.circular(Radii.full),
+                border: Border.all(
+                  color: colors.borderSubtle,
+                  width: Strokes.hairline,
                 ),
               ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    photo.edited ? Icons.crop_rounded : Icons.tune_rounded,
+                    size: Space.s4,
+                    color: colors.textPrimary,
+                  ),
+                  const SizedBox(width: Space.s15),
+                  Text(
+                    photo.edited ? 'Edited' : 'Edit',
+                    style: context.kt.label.copyWith(color: colors.textPrimary),
+                  ),
+                ],
+              ),
             ),
-        ],
+          ),
+        ),
+        if (onRemove != null)
+          Positioned(
+            top: Space.s1,
+            right: Space.s1,
+            child: KIconButton(
+              icon: Icons.close_rounded,
+              semanticLabel: 'Remove photo ${index + 1}',
+              size: Space.s4,
+              color: colors.textPrimary,
+              background: colors.surfaceScrim,
+              onPressed: () => onRemove!(photo.id),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The box a photo will occupy while it is still being prepared.
+class _PhotoPlaceholder extends StatelessWidget {
+  const _PhotoPlaceholder({required this.height, this.width});
+
+  final double height;
+  final double? width;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: colors.surface2,
+        borderRadius: BorderRadius.circular(Radii.lg),
+        border: Border.all(color: colors.borderSubtle, width: Strokes.hairline),
+      ),
+      child: Center(
+        child: SizedBox(
+          width: Space.s6,
+          height: Space.s6,
+          child: CircularProgressIndicator(
+            strokeWidth: Strokes.thick,
+            color: colors.accentDefault,
+          ),
+        ),
       ),
     );
   }
@@ -931,6 +1061,12 @@ class _ComposerPhotoEditorState extends State<_ComposerPhotoEditor> {
       };
     });
   }
+
+  void _reset() => setState(() {
+    _cropRect = null;
+    _turns = 0;
+    _preset = CropPreset.original;
+  });
 
   void _finish() {
     Navigator.of(
@@ -1032,6 +1168,13 @@ class _ComposerPhotoEditorState extends State<_ComposerPhotoEditor> {
                     ),
                   ),
                   KIconButton(
+                    key: const ValueKey<String>('composer-photo-edit-reset'),
+                    icon: Icons.restart_alt_rounded,
+                    semanticLabel: 'Reset photo edits',
+                    onPressed: _cropRect == null && _turns == 0 ? null : _reset,
+                  ),
+                  KIconButton(
+                    key: const ValueKey<String>('composer-photo-edit-rotate'),
                     icon: Icons.rotate_90_degrees_cw_rounded,
                     semanticLabel: 'Rotate a quarter turn',
                     onPressed: _rotate,

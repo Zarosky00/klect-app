@@ -123,56 +123,24 @@ class _KActionBarState extends ConsumerState<KActionBar> {
       );
 
   /// The X-style repost chooser: Repost / Quote / Undo repost.
-  ///
-  /// A bare repost is the idempotent `toggle_repost`; Quote opens the Pulse
-  /// composer with this entity embedded as the subject (`create_post` with
-  /// `entity_type = 'post'` for posts, an entity share card otherwise).
-  /// Comments cannot be quoted as posts — for them the chooser is
-  /// Repost / Undo only.
   Future<void> _repostChooser() async {
-    final reposted = ref.read(interactionProvider(widget.entity)).reposted;
-    final quotable = widget.entity.type != EntityType.comment;
-    final choice = await KSheet.show<_RepostChoice>(
-      context: context,
-      builder: (sheetContext) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _RepostOption(
-            icon: reposted ? Icons.undo_rounded : Icons.repeat_rounded,
-            label: reposted ? 'Undo repost' : 'Repost',
-            detail: reposted
-                ? 'Take it back out of your followers’ Pulse.'
-                : 'Put this in front of your followers as-is.',
-            onTap: () => Navigator.of(sheetContext).pop(_RepostChoice.repost),
-          ),
-          if (quotable)
-            _RepostOption(
-              icon: Icons.format_quote_rounded,
-              label: 'Quote',
-              detail: 'Say something about it in a post of your own.',
-              onTap: () => Navigator.of(sheetContext).pop(_RepostChoice.quote),
-            ),
-        ],
-      ),
+    final choice = await KRepostChooser.pick(
+      context,
+      entity: widget.entity,
+      reposted: ref.read(interactionProvider(widget.entity)).reposted,
     );
     if (choice == null || !mounted) return;
 
     switch (choice) {
-      case _RepostChoice.repost:
+      case KRepostChoice.repost:
         unawaited(_controller.toggleRepost());
-      case _RepostChoice.quote:
-        final entry = await PulseComposer.show(
+      case KRepostChoice.quote:
+        await KRepostChooser.quote(
           context,
-          subject: PulseComposerSubject(
-            entity: widget.entity,
-            preview: widget.quotePreview,
-            media: widget.quoteMedia,
-          ),
+          entity: widget.entity,
+          quotePreview: widget.quotePreview,
+          quoteMedia: widget.quoteMedia,
         );
-        if (entry != null && mounted) {
-          KToast.success(context, 'Shared to Pulse');
-        }
     }
   }
 
@@ -271,7 +239,77 @@ class _KActionBarState extends ConsumerState<KActionBar> {
 }
 
 /// What the repost chooser resolved to.
-enum _RepostChoice { repost, quote }
+enum KRepostChoice {
+  /// Toggle the bare repost (repost, or undo an existing one).
+  repost,
+
+  /// Open the Pulse composer with the entity embedded.
+  quote,
+}
+
+/// The X-style repost chooser shared by the action bar and the long-press
+/// peek, so both offer the same Repost / Quote / Undo repost choice.
+///
+/// A bare repost is the idempotent `toggle_repost`; Quote opens the Pulse
+/// composer with the entity embedded as the subject (`create_post` with
+/// `entity_type = 'post'` for posts, an entity share card otherwise).
+/// Comments cannot be quoted as posts — for them the chooser is
+/// Repost / Undo only.
+abstract final class KRepostChooser {
+  /// Shows the chooser sheet over [context]'s navigator and resolves with the
+  /// picked option, or null when it was dismissed.
+  static Future<KRepostChoice?> pick(
+    BuildContext context, {
+    required EntityRef entity,
+    required bool reposted,
+  }) {
+    final quotable = entity.type != EntityType.comment;
+    return KSheet.show<KRepostChoice>(
+      context: context,
+      builder: (sheetContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _RepostOption(
+            icon: reposted ? Icons.undo_rounded : Icons.repeat_rounded,
+            label: reposted ? 'Undo repost' : 'Repost',
+            detail: reposted
+                ? 'Take it back out of your followers’ Pulse.'
+                : 'Put this in front of your followers as-is.',
+            onTap: () => Navigator.of(sheetContext).pop(KRepostChoice.repost),
+          ),
+          if (quotable)
+            _RepostOption(
+              icon: Icons.format_quote_rounded,
+              label: 'Quote',
+              detail: 'Say something about it in a post of your own.',
+              onTap: () => Navigator.of(sheetContext).pop(KRepostChoice.quote),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Opens the quote composer for [entity] and toasts when it was published.
+  static Future<void> quote(
+    BuildContext context, {
+    required EntityRef entity,
+    PulseTarget? quotePreview,
+    List<ItemMedia> quoteMedia = const <ItemMedia>[],
+  }) async {
+    final entry = await PulseComposer.show(
+      context,
+      subject: PulseComposerSubject(
+        entity: entity,
+        preview: quotePreview,
+        media: quoteMedia,
+      ),
+    );
+    if (entry != null && context.mounted) {
+      KToast.success(context, 'Shared to Pulse');
+    }
+  }
+}
 
 /// One row of the repost chooser sheet.
 class _RepostOption extends StatelessWidget {

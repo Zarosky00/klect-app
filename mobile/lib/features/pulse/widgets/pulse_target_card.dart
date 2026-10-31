@@ -10,6 +10,7 @@ import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
 import '../../surf/surf.dart';
+import 'comment_author.dart';
 
 /// Renders the 0018 envelope's server-embedded `target` block: the quoted
 /// post, or the shared collection / shelf / thing, or the tombstone when the
@@ -61,7 +62,10 @@ class PulseTargetCard extends ConsumerWidget {
     final resolvedMedia = media.isEmpty ? target.media : media;
     final card = switch (target.type!) {
       EntityType.post => _QuotedPostBody(target: target, media: resolvedMedia),
-      EntityType.comment => _CommentBody(target: target),
+      EntityType.comment => _CommentBody(
+        target: target,
+        interactive: interactive,
+      ),
       _ => _EntityBody(target: target),
     };
 
@@ -361,15 +365,21 @@ class _QuotedMediaGrid extends ConsumerWidget {
 /// the discussion it came from. Before 0021 this fell through to the entity
 /// card and rendered an empty title — now the body *is* the card.
 class _CommentBody extends ConsumerWidget {
-  const _CommentBody({required this.target});
+  const _CommentBody({required this.target, required this.interactive});
 
   final PulseTarget target;
+
+  /// Off inside the composer: the author must not navigate away from a draft.
+  final bool interactive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
     final text = context.kt;
     final author = target.author;
+    final openProfile = interactive
+        ? commentAuthorProfileTap(context, author)
+        : null;
     final avatarUrl = ref
         .watch(klectApiProvider)
         .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
@@ -405,14 +415,22 @@ class _CommentBody extends ConsumerWidget {
                   name: author?.name,
                   size: Space.s6,
                   isVerified: author?.isVerified ?? false,
+                  onTap: openProfile,
                 ),
                 const SizedBox(width: Space.s2),
                 Flexible(
-                  child: Text(
-                    author?.name ?? 'Someone',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.label,
+                  child: KPressable(
+                    onTap: openProfile,
+                    enforceMinTapTarget: false,
+                    semanticLabel: openProfile == null
+                        ? null
+                        : 'Open ${author?.name ?? 'their'} profile',
+                    child: Text(
+                      author?.name ?? 'Someone',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.label,
+                    ),
                   ),
                 ),
                 if (author != null && author.username.isNotEmpty) ...<Widget>[

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/interactions/interactions.dart';
+import '../../../core/models/models.dart';
 import '../../../design/motion.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
@@ -19,9 +20,13 @@ import '../../../ui/ui.dart';
 abstract final class KPeekMenu {
   /// Opens the peek over the whole app.
   ///
-  /// Returns when the peek closes. The toggles it fires go through the
-  /// optimistic engine, so the underlying card is already correct by the time
-  /// the peek has finished dismissing.
+  /// Returns when the peek closes. Like and Save toggle in place and leave the
+  /// peek open so the new state is visible; Repost opens the same
+  /// Repost / Quote chooser as the action bar. Tap outside to dismiss.
+  ///
+  /// When neither [imageUrl] nor [blurhash] is given the preview is a text
+  /// card built from [title] / [subtitle] instead of an empty cover.
+  /// [quotePreview] / [quoteMedia] pre-fill the quote composer.
   static Future<void> show(
     BuildContext context, {
     required EntityRef entity,
@@ -30,6 +35,8 @@ abstract final class KPeekMenu {
     String? imageUrl,
     String? blurhash,
     double? aspectRatio,
+    PulseTarget? quotePreview,
+    List<ItemMedia> quoteMedia = const <ItemMedia>[],
   }) => Navigator.of(context, rootNavigator: true).push<void>(
     _PeekRoute(
       entity: entity,
@@ -38,6 +45,8 @@ abstract final class KPeekMenu {
       imageUrl: imageUrl,
       blurhash: blurhash,
       aspectRatio: aspectRatio,
+      quotePreview: quotePreview,
+      quoteMedia: quoteMedia,
       scrim: KlectTheme.of(context).colors.surfaceScrim,
     ),
   );
@@ -47,11 +56,13 @@ class _PeekRoute extends PopupRoute<void> {
   _PeekRoute({
     required this.entity,
     required this.scrim,
+    required this.quoteMedia,
     this.title,
     this.subtitle,
     this.imageUrl,
     this.blurhash,
     this.aspectRatio,
+    this.quotePreview,
   });
 
   final EntityRef entity;
@@ -61,6 +72,8 @@ class _PeekRoute extends PopupRoute<void> {
   final String? imageUrl;
   final String? blurhash;
   final double? aspectRatio;
+  final PulseTarget? quotePreview;
+  final List<ItemMedia> quoteMedia;
 
   @override
   Color get barrierColor => scrim;
@@ -90,6 +103,8 @@ class _PeekRoute extends PopupRoute<void> {
     imageUrl: imageUrl,
     blurhash: blurhash,
     aspectRatio: aspectRatio,
+    quotePreview: quotePreview,
+    quoteMedia: quoteMedia,
   );
 }
 
@@ -115,11 +130,13 @@ class _PeekBody extends ConsumerWidget {
   const _PeekBody({
     required this.entity,
     required this.animation,
+    required this.quoteMedia,
     this.title,
     this.subtitle,
     this.imageUrl,
     this.blurhash,
     this.aspectRatio,
+    this.quotePreview,
   });
 
   final EntityRef entity;
@@ -129,6 +146,10 @@ class _PeekBody extends ConsumerWidget {
   final String? imageUrl;
   final String? blurhash;
   final double? aspectRatio;
+  final PulseTarget? quotePreview;
+  final List<ItemMedia> quoteMedia;
+
+  bool get _hasImage => imageUrl != null || blurhash != null;
 
   /// How far the outermost action sits below the middle one. A fan, not a row.
   static const double _arcDepth = Space.s5;
@@ -166,6 +187,41 @@ class _PeekBody extends ConsumerWidget {
     );
   }
 
+  /// Opens the shared Repost / Quote chooser *over* the peek, so the peek is
+  /// still there behind the sheet. A bare repost toggles in place and leaves
+  /// the peek open; Quote closes the peek and opens the composer.
+  Future<void> _repost(
+    BuildContext context,
+    InteractionController controller, {
+    required bool reposted,
+  }) async {
+    // Take the navigator before any await: the composer has to outlive the
+    // peek, so it is opened from the navigator's own context.
+    final navigator = Navigator.of(context);
+    final choice = await KRepostChooser.pick(
+      context,
+      entity: entity,
+      reposted: reposted,
+    );
+    if (choice == null || !context.mounted) return;
+    switch (choice) {
+      case KRepostChoice.repost:
+        unawaited(controller.toggleRepost());
+      case KRepostChoice.quote:
+        navigator.pop();
+        final host = navigator.context;
+        if (!host.mounted) return;
+        unawaited(
+          KRepostChooser.quote(
+            host,
+            entity: entity,
+            quotePreview: quotePreview,
+            quoteMedia: quoteMedia,
+          ),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
@@ -173,9 +229,13 @@ class _PeekBody extends ConsumerWidget {
     final social = ref.watch(interactionProvider(entity));
     final controller = ref.read(interactionProvider(entity).notifier);
     final reduced = KMotion.reduced(context);
+    final hasImage = _hasImage;
 
     void close() => Navigator.of(context).pop();
 
+    // Like and Save toggle in place: the peek stays open and the watched
+    // state above flips the label/icon, so the user sees the result. Tapping
+    // outside the actions dismisses.
     final actions = <_PeekAction>[
       _PeekAction(
         icon: Icons.favorite_border_rounded,
@@ -183,10 +243,7 @@ class _PeekBody extends ConsumerWidget {
         label: social.liked ? 'Liked' : 'Like',
         color: colors.actionLike,
         active: social.liked,
-        onTap: () {
-          unawaited(controller.toggleLike());
-          close();
-        },
+        onTap: () => unawaited(controller.toggleLike()),
       ),
       _PeekAction(
         icon: Icons.bookmark_border_rounded,
@@ -194,10 +251,7 @@ class _PeekBody extends ConsumerWidget {
         label: social.saved ? 'Saved' : 'Save',
         color: colors.actionSave,
         active: social.saved,
-        onTap: () {
-          unawaited(controller.toggleSave());
-          close();
-        },
+        onTap: () => unawaited(controller.toggleSave()),
       ),
       _PeekAction(
         icon: Icons.repeat_rounded,
@@ -205,10 +259,8 @@ class _PeekBody extends ConsumerWidget {
         label: social.reposted ? 'Reposted' : 'Repost',
         color: colors.actionRepost,
         active: social.reposted,
-        onTap: () {
-          unawaited(controller.toggleRepost());
-          close();
-        },
+        onTap: () =>
+            unawaited(_repost(context, controller, reposted: social.reposted)),
       ),
       _PeekAction(
         icon: Icons.ios_share_rounded,
@@ -251,14 +303,24 @@ class _PeekBody extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    _PeekPreview(
-                      animation: curved,
-                      reduced: reduced,
-                      imageUrl: imageUrl,
-                      blurhash: blurhash,
-                      aspectRatio: aspectRatio,
-                    ),
-                    if (title != null) ...<Widget>[
+                    if (hasImage)
+                      _PeekPreview(
+                        animation: curved,
+                        reduced: reduced,
+                        imageUrl: imageUrl,
+                        blurhash: blurhash,
+                        aspectRatio: aspectRatio,
+                      )
+                    else if (title != null || subtitle != null)
+                      // No cover to show: preview the words instead of an
+                      // empty placeholder square.
+                      _PeekTextPreview(
+                        animation: curved,
+                        reduced: reduced,
+                        title: title,
+                        subtitle: subtitle,
+                      ),
+                    if (hasImage && title != null) ...<Widget>[
                       const SizedBox(height: Space.s4),
                       Padding(
                         padding: const EdgeInsets.symmetric(
@@ -273,7 +335,7 @@ class _PeekBody extends ConsumerWidget {
                         ),
                       ),
                     ],
-                    if (subtitle != null) ...<Widget>[
+                    if (hasImage && subtitle != null) ...<Widget>[
                       const SizedBox(height: Space.s1),
                       Text(
                         subtitle!,
@@ -362,6 +424,79 @@ class _PeekPreview extends StatelessWidget {
         end: 1,
       ).animate(CurvedAnimation(parent: animation, curve: KCurves.overshoot)),
       child: preview,
+    );
+  }
+}
+
+/// The peek preview for something with no cover (a text-only post, a
+/// cover-less shelf): the words on a card, never an empty image box.
+class _PeekTextPreview extends StatelessWidget {
+  const _PeekTextPreview({
+    required this.animation,
+    required this.reduced,
+    this.title,
+    this.subtitle,
+  });
+
+  final Animation<double> animation;
+  final bool reduced;
+  final String? title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final text = context.kt;
+    final card = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - Space.s20,
+        maxHeight: MediaQuery.sizeOf(context).height / 2,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(Space.s5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Radii.xl),
+          boxShadow: KlectTheme.shadow(Elevation.high),
+          color: colors.surface2,
+          border: Border.all(
+            color: colors.borderSubtle,
+            width: Strokes.hairline,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (subtitle != null)
+              Text(
+                subtitle!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.caption.copyWith(color: colors.textSecondary),
+              ),
+            if (subtitle != null && title != null)
+              const SizedBox(height: Space.s2),
+            if (title != null)
+              Flexible(
+                child: Text(
+                  title!,
+                  maxLines: 8,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.body,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (reduced) return card;
+    return ScaleTransition(
+      scale: Tween<double>(
+        begin: KMotion.pressScale,
+        end: 1,
+      ).animate(CurvedAnimation(parent: animation, curve: KCurves.overshoot)),
+      child: card,
     );
   }
 }

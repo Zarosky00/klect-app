@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/models/models.dart';
 import '../../../core/supabase.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
 import '../../pulse/widgets/comment_action_bar.dart';
+import '../../pulse/widgets/comment_author.dart';
 import '../data/comments_controller.dart';
 
 /// Shared draft and reply target for a comment thread.
@@ -406,9 +406,6 @@ class _CommentRow extends ConsumerWidget {
     final colors = context.kc;
     final text = context.kt;
     final comment = row.comment;
-    final avatarUrl = ref
-        .watch(klectApiProvider)
-        .publicUrl(comment.author?.avatarPath, bucket: StorageBucket.avatars);
 
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -417,13 +414,9 @@ class _CommentRow extends ConsumerWidget {
         Row(
           children: <Widget>[
             Flexible(
-              child: Text(
-                comment.tombstone
-                    ? 'Deleted'
-                    : comment.author?.name ?? 'Someone',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: text.label,
+              child: CommentAuthorName(
+                author: comment.author,
+                tombstone: comment.tombstone,
               ),
             ),
             const SizedBox(width: Space.s2),
@@ -505,14 +498,10 @@ class _CommentRow extends ConsumerWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              KAvatar(
-                imageUrl: comment.tombstone ? null : avatarUrl,
-                name: comment.tombstone ? null : comment.author?.name,
-                size: Space.s8,
-                isVerified:
-                    !comment.tombstone && (comment.author?.isVerified ?? false),
+              CommentAuthorAvatar(
+                author: comment.author,
+                tombstone: comment.tombstone,
               ),
-              const SizedBox(width: Space.s3),
               Expanded(child: body),
             ],
           ),

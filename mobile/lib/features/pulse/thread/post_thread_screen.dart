@@ -17,6 +17,7 @@ import '../../../ui/ui.dart';
 import '../../profile/follow_button.dart';
 import '../data/pulse_entry_view.dart';
 import '../widgets/comment_action_bar.dart';
+import '../widgets/comment_author.dart';
 import '../widgets/entity_attachment_card.dart';
 import '../widgets/pulse_card.dart';
 import '../widgets/pulse_target_card.dart';
@@ -564,9 +565,6 @@ class _ThreadCommentRow extends ConsumerWidget {
     final colors = context.kc;
     final text = context.kt;
     final author = comment.author;
-    final avatarUrl = ref
-        .watch(klectApiProvider)
-        .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
     final indent =
         (comment.depth > _maxIndent ? _maxIndent : comment.depth) * Space.s6;
 
@@ -593,16 +591,7 @@ class _ThreadCommentRow extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            KAvatar(
-              imageUrl: avatarUrl,
-              name: author?.name,
-              size: Space.s8,
-              isVerified: author?.isVerified ?? false,
-              onTap: author == null || author.username.isEmpty
-                  ? null
-                  : () => context.push(KlectLinks.profilePath(author.username)),
-            ),
-            const SizedBox(width: Space.s3),
+            CommentAuthorAvatar(author: author),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -610,14 +599,7 @@ class _ThreadCommentRow extends ConsumerWidget {
                 children: <Widget>[
                   Row(
                     children: <Widget>[
-                      Flexible(
-                        child: Text(
-                          author?.name ?? 'Someone',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.label,
-                        ),
-                      ),
+                      Flexible(child: CommentAuthorName(author: author)),
                       const SizedBox(width: Space.s2),
                       Text(
                         comment.isPending

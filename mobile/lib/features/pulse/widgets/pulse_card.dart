@@ -8,6 +8,7 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
+import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/links.dart';
 import '../../../core/models/models.dart';
@@ -216,152 +217,223 @@ class PulseCard extends ConsumerWidget {
         ? PostMediaGrid.streamMaxHeight
         : Space.s24 * 2.5;
 
-    return KGestureRegion(
-      semanticLabel: body ?? presenter?.name,
-      onTap: destination == null ? null : () => context.push(destination),
-      onLongPress: () => unawaited(
+    // The peek previews the post's own photo — its first photo, or the
+    // inline reposted post's — and falls back to a text card when the post
+    // has none, never an empty cover.
+    final visibleInline = inlinePost != null && !inlinePost.unavailable
+        ? inlinePost
+        : null;
+    final peekMedia = item.kind != PulseKind.repost && item.media.isNotEmpty
+        ? item.media.first
+        : (visibleInline != null && visibleInline.media.isNotEmpty
+              ? visibleInline.media.first
+              : null);
+    final peekPath = peekMedia?.storagePath ?? visibleInline?.coverPath;
+    final peekBlurhash = peekMedia != null
+        ? peekMedia.blurhash
+        : visibleInline?.coverBlurhash;
+    final peekWidth = peekMedia?.width;
+    final peekHeight = peekMedia?.height;
+    final peekAspect = peekWidth != null && peekHeight != null && peekHeight > 0
+        ? peekWidth / peekHeight
+        : visibleInline?.coverAspect;
+    final peekUrl = peekPath == null
+        ? null
+        : ref.watch(klectApiProvider).publicUrl(peekPath);
+
+    void openPeek() {
+      triggerInteractionTapFeedback(context);
+      unawaited(
         KPeekMenu.show(
           context,
           entity: item.entity,
           title: body ?? presenter?.name,
           subtitle: presenter?.handle,
+          imageUrl: peekUrl,
+          blurhash: peekUrl == null ? null : peekBlurhash,
+          aspectRatio: peekUrl == null
+              ? null
+              : (peekAspect ?? Aspect.cover)
+                    .clamp(Aspect.gridMin, Aspect.gridMax)
+                    .toDouble(),
+          quotePreview: quotePreview,
+          quoteMedia: quoteMedia,
         ),
-      ),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(
-          Space.s4,
-          Space.s4,
-          Space.s4,
-          Space.s3,
-        ),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: colors.borderSubtle,
-              width: Strokes.hairline,
+      );
+    }
+
+    // Only a tap belongs to the whole row. The long-press peek is scoped to
+    // the post's actual content (text, photos, embedded card) below, so
+    // holding the padding or the blank space beside a short post does
+    // nothing instead of peeking an empty cover.
+    return KGestureRegion(
+      semanticLabel: body ?? presenter?.name,
+      onTap: destination == null ? null : () => context.push(destination),
+      // A hold on blank space is claimed here and dropped, so releasing it
+      // does not count as a tap that opens the thread. Holds on the content
+      // reach the deeper peek detector first and win.
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onLongPress: () {},
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(
+            Space.s4,
+            Space.s4,
+            Space.s4,
+            Space.s3,
+          ),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: colors.borderSubtle,
+                width: Strokes.hairline,
+              ),
             ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (reposter != null) ...<Widget>[
-              Padding(
-                padding: const EdgeInsets.only(
-                  left: Space.s12,
-                  bottom: Space.s2,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Icon(
-                      Icons.repeat_rounded,
-                      size: Space.s4,
-                      color: colors.actionRepost,
-                    ),
-                    const SizedBox(width: Space.s15),
-                    Flexible(
-                      child: Text(
-                        '${reposter.name} reposted',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: text.micro.copyWith(color: colors.textSecondary),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                KAvatar(
-                  imageUrl: avatarUrl,
-                  name: presenter?.name,
-                  size: Space.s10,
-                  isVerified: presenter?.isVerified ?? false,
-                  onTap: presenter == null || presenter.username.isEmpty
-                      ? null
-                      : () => context.push(
-                          KlectLinks.profilePath(presenter.username),
-                        ),
-                ),
-                const SizedBox(width: Space.s3),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (reposter != null) ...<Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: Space.s12,
+                    bottom: Space.s2,
+                  ),
+                  child: Row(
                     children: <Widget>[
-                      _Byline(
-                        presenter: presenter,
-                        at: item.sortAt,
-                        onMore: showOwnerActions
-                            ? () => unawaited(_ownerMenu(context, ref))
-                            : null,
+                      Icon(
+                        Icons.repeat_rounded,
+                        size: Space.s4,
+                        color: colors.actionRepost,
                       ),
-                      if (body != null && body.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: Space.s1),
-                        Text(body, style: text.body),
-                      ],
-                      if (item.kind != PulseKind.repost &&
-                          item.media.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: Space.s3),
-                        // Bounded in the stream: a tall photo previews inside
-                        // the row instead of masquerading as a masonry tile.
-                        PostMediaGrid(
-                          media: item.media,
-                          maxHeight: streamMediaHeight,
-                        ),
-                      ],
-                      if (inlinePost != null) ...<Widget>[
-                        if (inlinePost.unavailable) ...<Widget>[
-                          const SizedBox(height: Space.s3),
-                          PulseTargetCard(target: inlinePost),
-                        ] else if (inlinePost.media.isNotEmpty) ...<Widget>[
-                          const SizedBox(height: Space.s3),
-                          PostMediaGrid(
-                            media: inlinePost.media,
-                            maxHeight: streamMediaHeight,
+                      const SizedBox(width: Space.s15),
+                      Flexible(
+                        child: Text(
+                          '${reposter.name} reposted',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text.micro.copyWith(
+                            color: colors.textSecondary,
                           ),
-                        ] else if (inlinePost.coverPath != null) ...<Widget>[
-                          const SizedBox(height: Space.s3),
-                          _InlinePostCover(target: inlinePost),
-                        ],
-                        if (inlinePost.attachedTarget
-                            case final attached?) ...<Widget>[
-                          const SizedBox(height: Space.s3),
-                          PulseTargetCard(target: attached),
-                        ],
-                      ],
-                      if (target != null) ...<Widget>[
-                        const SizedBox(height: Space.s3),
-                        PulseTargetCard(target: target),
-                      ] else if (inlinePost == null &&
-                          item.attachment != null) ...<Widget>[
-                        // Legacy fallback: an envelope without an embedded
-                        // target still gets a client-resolved entity card.
-                        const SizedBox(height: Space.s3),
-                        EntityAttachmentCard(entity: item.attachment!),
-                      ],
-                      const SizedBox(height: Space.s2),
-                      KActionBar(
-                        entity: actionEntity,
-                        seed: item.seed,
-                        compact: true,
-                        alignment: MainAxisAlignment.start,
-                        shareTitle: body ?? presenter?.name,
-                        quotePreview: quotePreview,
-                        quoteMedia: quoteMedia,
-                        onComment: destination == null
-                            ? null
-                            : () => context.push(destination),
+                        ),
                       ),
                     ],
                   ),
                 ),
               ],
-            ),
-          ],
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  KAvatar(
+                    imageUrl: avatarUrl,
+                    name: presenter?.name,
+                    size: Space.s10,
+                    isVerified: presenter?.isVerified ?? false,
+                    onTap: presenter == null || presenter.username.isEmpty
+                        ? null
+                        : () => context.push(
+                            KlectLinks.profilePath(presenter.username),
+                          ),
+                  ),
+                  const SizedBox(width: Space.s3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        _Byline(
+                          presenter: presenter,
+                          at: item.sortAt,
+                          onMore: showOwnerActions
+                              ? () => unawaited(_ownerMenu(context, ref))
+                              : null,
+                        ),
+                        // deferToChild: only pixels a child actually paints
+                        // (text glyph boxes, photos, cards) start the peek —
+                        // the gaps and the blank space beside a short line do
+                        // not. No onTap here, so a plain tap still reaches the
+                        // row and opens the thread.
+                        GestureDetector(
+                          behavior: HitTestBehavior.deferToChild,
+                          onLongPress: openPeek,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              if (body != null && body.isNotEmpty) ...<Widget>[
+                                const SizedBox(height: Space.s1),
+                                Text(body, style: text.body),
+                              ],
+                              if (item.kind != PulseKind.repost &&
+                                  item.media.isNotEmpty) ...<Widget>[
+                                const SizedBox(height: Space.s3),
+                                // Bounded in the stream: a tall photo previews
+                                // inside the row instead of masquerading as a
+                                // masonry tile.
+                                PostMediaGrid(
+                                  media: item.media,
+                                  maxHeight: streamMediaHeight,
+                                ),
+                              ],
+                              if (inlinePost != null) ...<Widget>[
+                                if (inlinePost.unavailable) ...<Widget>[
+                                  const SizedBox(height: Space.s3),
+                                  PulseTargetCard(target: inlinePost),
+                                ] else if (inlinePost
+                                    .media
+                                    .isNotEmpty) ...<Widget>[
+                                  const SizedBox(height: Space.s3),
+                                  PostMediaGrid(
+                                    media: inlinePost.media,
+                                    maxHeight: streamMediaHeight,
+                                  ),
+                                ] else if (inlinePost.coverPath !=
+                                    null) ...<Widget>[
+                                  const SizedBox(height: Space.s3),
+                                  _InlinePostCover(target: inlinePost),
+                                ],
+                                if (inlinePost.attachedTarget
+                                    case final attached?) ...<Widget>[
+                                  const SizedBox(height: Space.s3),
+                                  PulseTargetCard(target: attached),
+                                ],
+                              ],
+                              if (target != null) ...<Widget>[
+                                const SizedBox(height: Space.s3),
+                                PulseTargetCard(target: target),
+                              ] else if (inlinePost == null &&
+                                  item.attachment != null) ...<Widget>[
+                                // Legacy fallback: an envelope without an
+                                // embedded target still gets a client-resolved
+                                // entity card.
+                                const SizedBox(height: Space.s3),
+                                EntityAttachmentCard(entity: item.attachment!),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: Space.s2),
+                        KActionBar(
+                          entity: actionEntity,
+                          seed: item.seed,
+                          compact: true,
+                          alignment: MainAxisAlignment.start,
+                          shareTitle: body ?? presenter?.name,
+                          quotePreview: quotePreview,
+                          quoteMedia: quoteMedia,
+                          onComment: destination == null
+                              ? null
+                              : () => context.push(destination),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -712,6 +712,33 @@ returns HTTP 200.
   `https://klect-web.vercel.app` and points to the stable APK URL. Global calling remains disabled;
   TURN secrets and physical two-phone validation are still pending.
 
+### 2026-10-31 — v1.7.0 Pulse interaction fixes (branch `agent/v170-pulse-fixes`)
+
+Worked from the `v1.7.0` commit `8407774` in its own worktree, separate from the pull-to-refresh
+work. Version is still `1.7.0+17`; no release, tag or APK was produced.
+
+- Comment authors open their profile. The shared `CommentAuthorAvatar` / `CommentAuthorName`
+  (`features/pulse/widgets/comment_author.dart`) are used by the Surf closeup thread (whose
+  avatar had no tap at all) and the post thread (whose name was not tappable and whose 32pt avatar
+  was a tiny target). Reposted-comment cards in Pulse also link the author. Deleted comments stay
+  inert.
+- The long-press peek keeps itself open on Like and Save so the new state is visible. Repost now
+  opens the same Repost / Quote / Undo chooser as the action bar (`KRepostChooser`, extracted from
+  `KActionBar`) instead of silently toggling and closing. Quote closes the peek and opens the
+  composer with the post embedded.
+- Pulse rows only peek from the post's content (text, photos, embedded cards). Holding the padding
+  or the blank space beside a short post does nothing and no longer opens the thread on release.
+  The peek shows the post's real photo, and a text card when there is none, never an empty cover.
+- Composer photos: a single photo fills the text column at its own ratio (capped at the stream's
+  384pt ceiling); 2–4 photos form a strip of 144×192 tiles. The Edit pill is now its own tap target
+  (before, it covered the photo's tap area and did nothing). The editor gained Reset, and an edit
+  in progress shows a spinner on that photo.
+- Verification: Flutter analysis 0 issues; **291/291** Flutter tests. Separate scratch widget tests
+  (not committed) also passed: blank-space hold, text peek + Like/Save/Repost/Quote, comment
+  avatar/name navigation and composer add → Edit → rotate → Done.
+- Not yet checked on a device. The profile Activity reply row still sends taps on its avatar to
+  the comment, because `profile_screen.dart` is being changed by the pull-to-refresh work.
+
 ---
 
 ## Next actions
