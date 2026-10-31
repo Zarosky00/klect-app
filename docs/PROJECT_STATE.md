@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-10-31 · Session: Profile pull fix + Pinterest-style Surf/Pulse pull on `agent/profile-pull-refresh`; v1.7.0 is the latest release
+> Last updated: 2026-10-31 · Session: setup-page race fix, private empty shelves (live migration) and profile lens dock on `agent/v17x-setup-shelves-nav`; v1.7.0 is the latest release
 
 ---
 
@@ -762,10 +762,67 @@ work. Version is still `1.7.0+17`; no release, tag or APK was produced.
   sets of v1.7.0 fixes. The code merged without conflicts; only this log needed both entries kept.
 - Not yet checked on a device.
 
+### 2026-10-31 — Setup-page race, private empty shelves, profile lens dock (branch `agent/v17x-setup-shelves-nav`)
+
+Kiro session in worktree `../klect-v17x-setup-shelves-nav`, branched from
+`agent/v170-pulse-fixes` at `d20cf61` so the v1.7.x line was not disturbed. Version stays
+`1.7.0+17`; no release, tag or APK.
+
+- **Setup page after sign-in (`c60b815`).** The router read `myProfileProvider` as "not
+  onboarded" whenever it had no current value. Riverpod 3.3.2 keeps the previous value while a
+  provider reloads, so straight after an in-app sign-in it reported loading with the signed-out
+  `null` attached, and a failed read had no value at all. All 12 live profiles have
+  `onboarded_at` set, so every report was this client race. `profileGate()` in `router.dart` now
+  trusts only a profile row whose id is the signed-in user, holds the splash while that is unknown,
+  and lets the account in when the read fails (the next successful read still redirects to setup if
+  it is really unfinished). `app.dart` retries a failed profile read on resume and on a new session.
+- **Empty shelves private to their owner (`09de0e9`).** Migrations
+  `20261031141050_hide_empty_shelves_from_visitors` and
+  `20261031141158_restrict_subcollection_has_content` are **live on `new_klect`**. New helpers
+  `collection_has_content` / `subcollection_has_content` (a live item the caller may see, mirroring
+  `can_view_entity('item')`). `collections_read`, `can_view_entity` (collection and subcollection
+  branches), `get_closeup`'s group list and `get_matches` previews hide a shelf or group from
+  everybody but its owner and staff until it holds such an item. `surf_feed` already required
+  `item_count > 0`. Like/save/repost/comment/view writes all gate on `can_view_entity`, so they
+  follow. Rolled-back impersonation check before applying: a visitor went from 16 to 9 visible
+  shelves (the 7 empty public ones gone), groups 16 → 16 and items 56 → 56 unchanged, the owner
+  still sees all 5 of theirs, anon matches the visitor. Security advisors list only the expected
+  definer-executable WARN for `collection_has_content` (the RLS policy calls it as the caller).
+  Rollback: `docs/rollbacks/hide_empty_shelves_from_visitors.rollback.sql`.
+  Mobile: an empty shelf shows "Only you can see this shelf until you add something to it" instead
+  of the like/comment bar, and its empty state offers **Add an item** first (the item flow can make
+  a group inline) with New group second. Empty profile tiles open the shelf directly, drop
+  double-tap and social actions, and their peek offers Add an item. Onboarding copy says new shelves
+  stay private until filled.
+- **Profile lens dock (`62270a8`).** The Surf | Pulse | Activity underline tabs and two chip rows
+  are replaced. The pinned dock shows each section as an icon; an accent lens carries the active
+  section's name and morphs with the pager's live page on tap, swipe, or a drag along the lens. A
+  glass filter shelf under the dock holds a sliding-thumb primary control (icon + name) and a text
+  scope row with a gliding underline. It cross-fades with the swipe, eases when the scope row comes
+  or goes, tucks under the dock while reading, and returns on scroll up or from the filter chip that
+  appears in the dock. Filter state moved into `ProfileFilterController`
+  (`features/profile/profile_filters.dart`). **Revert switch:** set `kProfileNavStyle` in
+  `features/profile/profile_nav.dart` to `ProfileNavStyle.classic` to bring back the v1.7.0 design
+  exactly; both designs share the same filter state.
+- Verification: `flutter analyze --no-pub` 0 issues; `flutter test --exclude-tags golden` 289/289.
+  Scratch tests (kept outside the repo) passed: the gate under real Riverpod sign-in, failure,
+  account-switch and refresh transitions; the full ProfileScreen dock (tap/swipe/drag sections,
+  every filter reaching its RPC, scope row add/remove, tuck/return, dock chip, 320 dp, text scale
+  1.6 and 2.2, reduced motion, RTL); and the classic design with the switch flipped.
+- Found, not changed: the profile header row (avatar + Edit profile) overflows at 320 dp or large
+  text; visitors' "Collections" count still includes hidden empty shelves; `get_closeup` lists a
+  shelf's items without per-item visibility, so a private item on a public shelf is listed to
+  visitors. Web has no owner-side empty-shelf UI yet (the server rule covers visitors).
+- Not yet checked on a device.
+
 ---
 
 ## Next actions
 
+0. Merge `agent/v17x-setup-shelves-nav` into the v1.7.x line once `agent/v170-pulse-fixes` is
+   finished, then device-check: sign out → sign in (no setup flash), a new account's empty
+   onboarding shelves (owner sees "Only you", a second account cannot find them), and the profile
+   lens dock on the RMX3771.
 1. Run the two-account Pulse
    matrix: four-photo original → plain repost → quote → Likes/Reposts/Quotes account lists; profile
    Surf/Pulse/Activity filters; Surf/Pulse replies and deep links; private/blocked/unavailable
