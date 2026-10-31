@@ -7,6 +7,7 @@ import 'core/offline/action_queue.dart';
 import 'core/settings/app_settings.dart';
 import 'core/supabase.dart';
 import 'design/theme.dart';
+import 'features/auth/auth_controller.dart';
 import 'features/chat/calls/call_availability.dart';
 import 'features/chat/widgets/incoming_call_overlay.dart';
 import 'router.dart';
@@ -51,6 +52,18 @@ class _KlectAppState extends ConsumerState<KlectApp>
       unawaited(ref.read(offlineQueueProvider).flush());
       // Re-reads only when the previous success is at least 5 minutes old.
       unawaited(ref.read(callAvailabilityProvider.notifier).refreshIfStale());
+      _retryFailedProfile();
+    }
+  }
+
+  /// The router decides between setup and the app from the account's own
+  /// profile. When that read failed (offline start, expired token), try again
+  /// as soon as the app comes back or the session changes, instead of waiting
+  /// for the next unrelated refresh.
+  void _retryFailedProfile() {
+    final profile = ref.read(myProfileProvider);
+    if (profile.hasError && !profile.isLoading) {
+      ref.invalidate(myProfileProvider);
     }
   }
 
@@ -83,6 +96,7 @@ class _KlectAppState extends ConsumerState<KlectApp>
     ref.listen(sessionProvider, (previous, next) {
       if (next != null) {
         unawaited(ref.read(offlineQueueProvider).flush());
+        _retryFailedProfile();
       }
     });
 

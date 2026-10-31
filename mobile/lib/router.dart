@@ -94,6 +94,44 @@ final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(
   debugLabel: 'root',
 );
 
+/// Where a signed-in account belongs, judged from its own profile.
+enum ProfileGate {
+  /// Nothing is known yet about this account's profile: stay on the splash.
+  wait,
+
+  /// The server says this account has not finished setup.
+  onboarding,
+
+  /// Set up, or the profile could not be read. Let the account into the app.
+  app,
+}
+
+/// Decides [ProfileGate] for [userId] from the current `myProfileProvider`
+/// state.
+///
+/// Only a profile row that belongs to [userId] can send an account to setup.
+/// Riverpod keeps a provider's previous value while it reloads, so straight
+/// after a sign-in the provider reports "loading" with the signed-out `null`
+/// still attached. The old guard read that `null` (and any failed read) as
+/// "not onboarded", which is how finished accounts landed on the setup page.
+///
+/// A failed read lets the account in rather than trapping it. If setup really
+/// is unfinished, the next successful read redirects to it, because the router
+/// re-runs whenever `myProfileProvider` changes.
+ProfileGate profileGate({
+  required String userId,
+  required AsyncValue<Profile?> profile,
+}) {
+  final known = profile.value;
+  if (known != null && known.id == userId) {
+    return known.isOnboarded ? ProfileGate.app : ProfileGate.onboarding;
+  }
+  if (profile.hasError) return ProfileGate.app;
+  if (profile.isLoading) return ProfileGate.wait;
+  // The read finished and found no profile row for this account.
+  return ProfileGate.onboarding;
+}
+
 /// The app router.
 ///
 /// Every route in the product is declared here, including the ones whose
@@ -112,23 +150,23 @@ final routerProvider = Provider<GoRouter>((ref) {
     refreshListenable: refresh,
     debugLogDiagnostics: false,
     redirect: (context, state) {
-      final signedIn = ref.read(currentUserIdProvider) != null;
+      final userId = ref.read(currentUserIdProvider);
       final path = state.matchedLocation;
 
-      if (!signedIn) {
+      if (userId == null) {
         return _publicPaths.contains(path) ? null : Routes.signIn;
       }
 
-      // Signed in: wait for the profile before deciding between onboarding
-      // and the app, otherwise a slow network flashes the wrong screen.
-      final profile = ref.read(myProfileProvider);
-      if (!profile.hasValue && !profile.hasError) {
-        return path == Routes.splash ? null : Routes.splash;
-      }
-
-      final onboarded = profile.value?.isOnboarded ?? false;
-      if (!onboarded) {
-        return path == Routes.onboarding ? null : Routes.onboarding;
+      // Signed in: wait for this account's profile before deciding between
+      // onboarding and the app, otherwise a slow network flashes the wrong
+      // screen. See [profileGate] for why a stale or failed read never counts.
+      switch (profileGate(userId: userId, profile: ref.read(myProfileProvider))) {
+        case ProfileGate.wait:
+          return path == Routes.splash ? null : Routes.splash;
+        case ProfileGate.onboarding:
+          return path == Routes.onboarding ? null : Routes.onboarding;
+        case ProfileGate.app:
+          break;
       }
 
       if (_publicPaths.contains(path) ||
