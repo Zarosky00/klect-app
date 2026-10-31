@@ -1241,6 +1241,9 @@ class _DiscussionCard extends ConsumerWidget {
         .watch(klectApiProvider)
         .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
     final replyingTo = activity.replyingTo;
+    final replyingToUsername = replyingTo?.username?.isNotEmpty == true
+        ? replyingTo!.username
+        : null;
     final isMine = comment.authorId == ref.watch(currentUserIdProvider);
 
     return KGestureRegion(
@@ -1339,14 +1342,32 @@ class _DiscussionCard extends ConsumerWidget {
                       _SourceBadge(surface: activity.surface),
                       const SizedBox(width: Space.s2),
                       Expanded(
-                        child: Text(
-                          replyingTo?.username != null
-                              ? 'Replying to @${replyingTo!.username}'
-                              : 'On ${activity.context.title ?? activity.context.body ?? 'a discussion'}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.kt.micro.copyWith(
-                            color: colors.textTertiary,
+                        // "Replying to @name" opens that person's profile;
+                        // the rest of the row still opens the discussion.
+                        child: KPressable(
+                          key: const ValueKey<String>(
+                            'profile-reply-replying-to',
+                          ),
+                          onTap: replyingToUsername == null
+                              ? null
+                              : () => context.push(
+                                  KlectLinks.profilePath(replyingToUsername),
+                                ),
+                          enforceMinTapTarget: false,
+                          semanticLabel: replyingToUsername == null
+                              ? null
+                              : 'Open @$replyingToUsername’s profile',
+                          child: Text(
+                            replyingToUsername != null
+                                ? 'Replying to @$replyingToUsername'
+                                : 'On ${activity.context.title ?? activity.context.body ?? 'a discussion'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.kt.micro.copyWith(
+                              color: replyingToUsername != null
+                                  ? colors.textSecondary
+                                  : colors.textTertiary,
+                            ),
                           ),
                         ),
                       ),

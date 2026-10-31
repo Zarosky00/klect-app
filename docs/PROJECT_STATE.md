@@ -736,8 +736,10 @@ work. Version is still `1.7.0+17`; no release, tag or APK was produced.
 - Verification: Flutter analysis 0 issues; **291/291** Flutter tests. Separate scratch widget tests
   (not committed) also passed: blank-space hold, text peek + Like/Save/Repost/Quote, comment
   avatar/name navigation and composer add → Edit → rotate → Done.
-- Not yet checked on a device. The profile Activity reply row still sends taps on its avatar to
-  the comment, because `profile_screen.dart` is being changed by the pull-to-refresh work.
+- Profile Activity reply rows: "Replying to @name" now opens that person's profile. The row's
+  avatar stays a part of the row tap (it opens the discussion), because it is always the owner of
+  the profile being viewed.
+- Not yet checked on a device.
 
 ---
 
