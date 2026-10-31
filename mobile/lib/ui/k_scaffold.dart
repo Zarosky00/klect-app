@@ -16,6 +16,8 @@ class KScaffold extends StatelessWidget {
     this.floatingActionButton,
     this.backgroundColor,
     this.onRefresh,
+    this.refreshNotificationPredicate = defaultScrollNotificationPredicate,
+    this.refreshEdgeOffset = 0,
     this.safeTop = true,
     this.safeBottom = true,
     this.extendBodyBehindAppBar = false,
@@ -41,6 +43,16 @@ class KScaffold extends StatelessWidget {
 
   /// Enables pull-to-refresh over [body].
   final Future<void> Function()? onRefresh;
+
+  /// Which scroll notifications may drive pull-to-refresh.
+  ///
+  /// The default only listens to the outermost scrollable. A body whose
+  /// scrolling list sits deeper (a `NestedScrollView` over a pager) must widen
+  /// this, or the pull never reaches the indicator.
+  final ScrollNotificationPredicate refreshNotificationPredicate;
+
+  /// Where the refresh indicator emerges from, measured from the body's top.
+  final double refreshEdgeOffset;
 
   /// Inset for the status bar.
   final bool safeTop;
@@ -68,6 +80,8 @@ class KScaffold extends StatelessWidget {
     if (onRefresh != null) {
       content = RefreshIndicator(
         onRefresh: onRefresh!,
+        notificationPredicate: refreshNotificationPredicate,
+        edgeOffset: refreshEdgeOffset,
         color: colors.accentDefault,
         backgroundColor: colors.surface2,
         displacement: Space.s10,
