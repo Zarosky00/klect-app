@@ -130,7 +130,6 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     });
 
     return KScaffold(
-      onRefresh: _refresh,
       appBar: KFixedAppBar(
         title: 'Pulse',
         actions: <Widget>[
@@ -169,21 +168,28 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
                 : const SizedBox(width: double.infinity),
           ),
           Expanded(
-            child: KTabPager(
-              tabs: <KTabPagerTab>[
-                for (final candidate in PulseMode.values)
-                  KTabPagerTab(id: candidate.wire, label: candidate.label),
-              ],
-              selectedIndex: mode.index,
-              onSelected: (index) => _selectMode(PulseMode.values[index]),
-              onPageProgress: (page) => _pageProgress.value = page,
-              showRail: false,
-              builder: (context, index) => _page(
-                context,
-                PulseMode.values[index],
-                feeds[PulseMode.values[index]]!,
-                filters,
-                tasteIds,
+            // Pinterest-style: the stream itself is pulled down and the dots
+            // grow out of the gap. The tabs and prompt stay put.
+            child: KPinRefresh(
+              label: 'Pulse',
+              onRefresh: _refresh,
+              busy: feeds[mode]!.refreshing,
+              child: KTabPager(
+                tabs: <KTabPagerTab>[
+                  for (final candidate in PulseMode.values)
+                    KTabPagerTab(id: candidate.wire, label: candidate.label),
+                ],
+                selectedIndex: mode.index,
+                onSelected: (index) => _selectMode(PulseMode.values[index]),
+                onPageProgress: (page) => _pageProgress.value = page,
+                showRail: false,
+                builder: (context, index) => _page(
+                  context,
+                  PulseMode.values[index],
+                  feeds[PulseMode.values[index]]!,
+                  filters,
+                  tasteIds,
+                ),
               ),
             ),
           ),
@@ -204,6 +210,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       child: CustomScrollView(
         key: PageStorageKey<String>('pulse-${mode.wire}'),
         controller: _scrolls[mode],
+        physics: KPinRefresh.physics,
         slivers: <Widget>[
           ..._body(feed, mode, filters, tasteIds),
           const SliverToBoxAdapter(child: SizedBox(height: Space.s16)),

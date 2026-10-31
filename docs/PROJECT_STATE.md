@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-08-01 · Session: v1.7.0 released; device QA and reliable-calling validation pending
+> Last updated: 2026-10-31 · Session: Profile pull fix + Pinterest-style Surf/Pulse pull on `agent/profile-pull-refresh`; v1.7.0 is the latest release
 
 ---
 
@@ -711,6 +711,25 @@ returns HTTP 200.
 - Vercel production deployment `dpl_JB9huV83RS46iUC9bLjDfRLucyxh` is READY at
   `https://klect-web.vercel.app` and points to the stable APK URL. Global calling remains disabled;
   TURN secrets and physical two-phone validation are still pending.
+
+### 2026-10-31 — Profile pull-to-refresh repair + Pinterest-style feed pull (branch `agent/profile-pull-refresh`)
+
+- This branch is `main` (v1.7.0) plus two fixes the user wanted on the phone without the
+  in-progress v1.8.0 work on `agent/mobile-premium-ux-v180`. Version stays `1.7.0+17`.
+- Profile: `KScaffold` gained `refreshNotificationPredicate` and `refreshEdgeOffset`. Profile
+  accepts pulls from its tab lists inside `NestedScrollView` → `KTabPager` only while the header is
+  fully expanded, and its `_refresh` awaits every live provider so the spinner lasts for the real
+  network wait.
+- Surf and Pulse: new `KPinRefresh` (`mobile/lib/ui/k_pin_refresh.dart`) wraps only the feed pager.
+  The feed is pulled down on a rubber band and three dots, after Pinterest's open-source Gestalt
+  spinner, grow into a triangle in the gap. Past `Space.s20` a release refreshes: the feed holds
+  at `Space.s16` while the dots spin, breathe and cycle colour, then they shrink and the feed glides
+  back. Lists use `KPinRefresh.physics`; the top-edge stretch is suppressed; the selection haptic
+  fires only if the user's haptics setting is on. Surf/Pulse no longer use the Material indicator.
+- Analyze 0 issues; `flutter test --exclude-tags golden` 289/289. Permanent-signed arm64 APK
+  (`1.7.0+17`, cert `460d934b…f11b334f`, SHA-256 `f5334ab4…2b3ad7`) is installed on the RMX3771
+  with `adb install -r`, data kept. On Surf a synthetic pull shows the dots and reloads the grid.
+  Pulse pull and a slow-network pull still need a hand check.
 
 ---
 

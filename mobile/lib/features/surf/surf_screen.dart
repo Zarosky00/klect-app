@@ -158,7 +158,6 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
     });
 
     return KScaffold(
-      onRefresh: _refresh,
       appBar: KFixedAppBar(
         title: 'Surf',
         actions: <Widget>[
@@ -203,21 +202,28 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
             ),
           ),
           Expanded(
-            child: KTabPager(
-              tabs: <KTabPagerTab>[
-                for (final candidate in SurfFilter.values)
-                  KTabPagerTab(id: candidate.name, label: candidate.label),
-              ],
-              selectedIndex: filter.index,
-              onSelected: (index) => _selectFilter(SurfFilter.values[index]),
-              onPageProgress: (page) => _pageProgress.value = page,
-              showRail: false,
-              builder: (context, index) => _page(
-                context,
-                SurfFilter.values[index],
-                feeds[SurfFilter.values[index]]!,
-                columns,
-                decodeWidth,
+            // Pinterest-style: the grid itself is pulled down and the dots
+            // grow out of the gap. The caption and chips stay put.
+            child: KPinRefresh(
+              label: 'Surf',
+              onRefresh: _refresh,
+              busy: feeds[filter]!.refreshing,
+              child: KTabPager(
+                tabs: <KTabPagerTab>[
+                  for (final candidate in SurfFilter.values)
+                    KTabPagerTab(id: candidate.name, label: candidate.label),
+                ],
+                selectedIndex: filter.index,
+                onSelected: (index) => _selectFilter(SurfFilter.values[index]),
+                onPageProgress: (page) => _pageProgress.value = page,
+                showRail: false,
+                builder: (context, index) => _page(
+                  context,
+                  SurfFilter.values[index],
+                  feeds[SurfFilter.values[index]]!,
+                  columns,
+                  decodeWidth,
+                ),
               ),
             ),
           ),
@@ -238,6 +244,7 @@ class _SurfScreenState extends ConsumerState<SurfScreen> {
       child: CustomScrollView(
         key: PageStorageKey<String>('surf-${filter.name}'),
         controller: _scrolls[filter],
+        physics: KPinRefresh.physics,
         scrollCacheExtent: const ScrollCacheExtent.viewport(_cacheViewports),
         slivers: <Widget>[
           ..._bodySlivers(context, feed, columns, decodeWidth),

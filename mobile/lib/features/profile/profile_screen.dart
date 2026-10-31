@@ -89,34 +89,71 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Future<void> _refresh(String userId) async {
-    _refreshProfile();
-    ref
-      ..invalidate(profileCollectionsProvider(userId))
-      ..invalidate(profileItemsProvider(userId))
-      ..invalidate(profileTasteTagsProvider(userId))
-      ..invalidate(profileLikesProvider(userId))
-      ..invalidate(profileSavesProvider(userId))
-      ..invalidate(myFollowingIdsProvider);
+  /// Refetches the profile row and completes once it has arrived.
+  Future<void> _reloadProfile() => _settled(
+    _isMe
+        ? ref.refresh(myProfileProvider.future)
+        : ref.refresh(profileByUsernameProvider(widget.username!).future),
+  );
+
+  /// Pull-to-refresh: refetches everything this profile shows and completes
+  /// only when the data is back, so the indicator spins for the real wait.
+  ///
+  /// Only providers that are alive are refetched. Each one keeps its current
+  /// value while the new one loads, so the screen never drops back to a
+  /// skeleton mid-refresh.
+  Future<void> _refresh(String userId) {
+    final pending = <Future<void>>[_reloadProfile()];
+
+    void refetch<T>(FutureProvider<T> provider) {
+      if (ref.exists(provider)) {
+        pending.add(_settled(ref.refresh(provider.future)));
+      }
+    }
+
+    refetch(profileCollectionsProvider(userId));
+    refetch(profileItemsProvider(userId));
+    refetch(profileTasteTagsProvider(userId));
+    refetch(profileLikesProvider(userId));
+    refetch(profileSavesProvider(userId));
+    refetch(myFollowingIdsProvider);
+
     for (final view in ProfilePulseView.values) {
-      ref.invalidate(userPostsProvider((userId: userId, view: view)));
+      final provider = userPostsProvider((userId: userId, view: view));
+      if (ref.exists(provider)) {
+        pending.add(_settled(ref.read(provider.notifier).refresh()));
+      }
     }
     for (final surface in ProfileSurface.values) {
-      ref.invalidate(
-        profileDiscussionProvider((userId: userId, surface: surface)),
-      );
+      final provider = profileDiscussionProvider((
+        userId: userId,
+        surface: surface,
+      ));
+      if (ref.exists(provider)) {
+        pending.add(_settled(ref.read(provider.notifier).refresh()));
+      }
     }
     for (final action in ProfileReactionAction.values) {
       for (final surface in <ProfileSurface>[
         ProfileSurface.surf,
         ProfileSurface.pulse,
       ]) {
-        ref.invalidate(
-          profileReactionProvider((action: action, surface: surface)),
-        );
+        final provider = profileReactionProvider((
+          action: action,
+          surface: surface,
+        ));
+        if (ref.exists(provider)) {
+          pending.add(_settled(ref.read(provider.notifier).refresh()));
+        }
       }
     }
+    return Future.wait(pending);
   }
+
+  /// Failures render in place (error states and retry rows), so the refresh
+  /// indicator only needs to know when the wait is over.
+  static Future<void> _settled(Future<Object?> work) =>
+      work.then<void>((_) {}, onError: (Object _) {});
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +166,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
       error: (error, _) => KScaffold(
         appBar: const KFixedAppBar(showBack: true),
+        onRefresh: _reloadProfile,
         body: FillViewport(
           child: KErrorState(error: error, onRetry: _refreshProfile),
         ),
@@ -136,6 +174,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       data: (person) => person == null
           ? KScaffold(
               appBar: const KFixedAppBar(showBack: true),
+              onRefresh: _reloadProfile,
               body: FillViewport(
                 child: KEmptyState(
                   title: 'No such collector',
@@ -212,6 +251,19 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
     super.dispose();
   }
 
+  /// Lets the tab lists inside the pager drive pull-to-refresh.
+  ///
+  /// Their scroll notifications arrive below the default depth 0 (through the
+  /// pager and the nested scroll view), so the stock predicate never sees the
+  /// pull. A tab list may only start a refresh while the header is fully
+  /// expanded. Otherwise the downward drag is still opening the header.
+  bool _drivesRefresh(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    if (notification.depth == 0 || !_outerScroll.hasClients) return true;
+    final outer = _outerScroll.position;
+    return outer.pixels <= outer.minScrollExtent;
+  }
+
   @override
   Widget build(BuildContext context) {
     final profile = widget.profile;
@@ -233,6 +285,11 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
     return KScaffold(
       safeTop: false,
       onRefresh: widget.onRefresh,
+      refreshNotificationPredicate: _drivesRefresh,
+      // Emerge under the status bar and the floating bar buttons, over the
+      // banner, instead of behind the system clock.
+      refreshEdgeOffset:
+          MediaQuery.paddingOf(context).top + Layout.topBarHeight,
       body: NestedScrollView(
         controller: _outerScroll,
         headerSliverBuilder: (context, innerBoxIsScrolled) => <Widget>[
