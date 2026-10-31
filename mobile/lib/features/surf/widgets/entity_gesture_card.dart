@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -26,7 +28,7 @@ import 'peek_menu.dart';
 /// window. A naive `GestureDetector(onTap:, onDoubleTap:)` would charge every
 /// single tap ~260ms for the privilege, and that is what makes an app feel
 /// cheap.
-class KEntityGestureCard extends StatelessWidget {
+class KEntityGestureCard extends StatefulWidget {
   /// Wraps [child] in the gesture contract for [entity].
   const KEntityGestureCard({
     required this.entity,
@@ -40,6 +42,7 @@ class KEntityGestureCard extends StatelessWidget {
     this.immersiveIndex = 0,
     this.enabled = true,
     this.pressFeedback = true,
+    this.peekGallery = false,
     this.onOpen,
     this.onImmersive,
     this.onSettled,
@@ -76,6 +79,11 @@ class KEntityGestureCard extends StatelessWidget {
   /// parent.
   final bool pressFeedback;
 
+  /// Turns the long-press preview into a swipeable deck of every photo in
+  /// the set. The holding finger can scrub it without lifting. Use it for
+  /// collections, subcollections and multi-photo items.
+  final bool peekGallery;
+
   /// Overrides "open the closeup" — e.g. a screen that shows the detail
   /// inline instead of pushing a route.
   final VoidCallback? onOpen;
@@ -87,17 +95,35 @@ class KEntityGestureCard extends StatelessWidget {
   /// single tap is now definitive.
   final VoidCallback? onSettled;
 
-  void _open(BuildContext context) {
-    final override = onOpen;
+  @override
+  State<KEntityGestureCard> createState() => _KEntityGestureCardState();
+}
+
+class _KEntityGestureCardState extends State<KEntityGestureCard> {
+  /// Pointers currently down on the card, in arrival order.
+  final List<int> _pointers = <int>[];
+
+  /// The peek being driven by a finger that has not lifted yet.
+  KPeekHold? _hold;
+  int? _holdPointer;
+
+  @override
+  void dispose() {
+    _endHold();
+    super.dispose();
+  }
+
+  void _open() {
+    final override = widget.onOpen;
     if (override != null) {
       override();
       return;
     }
-    context.push(KlectLinks.closeupPath(entity.type, entity.id));
+    context.push(KlectLinks.closeupPath(widget.entity.type, widget.entity.id));
   }
 
-  void _escalate(BuildContext context) {
-    final override = onImmersive;
+  void _escalate() {
+    final override = widget.onImmersive;
     if (override != null) {
       override();
       return;
@@ -106,29 +132,78 @@ class KEntityGestureCard extends StatelessWidget {
     // immersive viewer so `back` returns to the grid, not to a closeup the
     // user never asked for.
     context.pushReplacement(
-      '${KlectLinks.immersivePath(entity.type, entity.id)}?i=$immersiveIndex',
+      '${KlectLinks.immersivePath(widget.entity.type, widget.entity.id)}'
+      '?i=${widget.immersiveIndex}',
     );
+  }
+
+  void _peek() {
+    final w = widget;
+    if (_pointers.isEmpty) {
+      // Accessibility long-press: no finger to follow, open the route.
+      unawaited(
+        KPeekMenu.show(
+          context,
+          entity: w.entity,
+          title: w.title,
+          subtitle: w.subtitle,
+          imageUrl: w.imageUrl,
+          blurhash: w.blurhash,
+          aspectRatio: w.aspectRatio,
+          gallery: w.peekGallery,
+        ),
+      );
+      return;
+    }
+    _endHold();
+    _holdPointer = _pointers.last;
+    _hold = KPeekMenu.hold(
+      context,
+      entity: w.entity,
+      title: w.title,
+      subtitle: w.subtitle,
+      imageUrl: w.imageUrl,
+      blurhash: w.blurhash,
+      aspectRatio: w.aspectRatio,
+      gallery: w.peekGallery,
+    );
+  }
+
+  void _endHold() {
+    _hold?.release();
+    _hold = null;
+    _holdPointer = null;
+  }
+
+  void _pointerGone(PointerEvent event) {
+    _pointers.remove(event.pointer);
+    if (event.pointer == _holdPointer) _endHold();
   }
 
   @override
   Widget build(BuildContext context) {
-    final content = pressFeedback ? KPressFeedback(child: child) : child;
-    return KGestureRegion(
-      enabled: enabled,
-      semanticLabel: title,
-      onTap: () => _open(context),
-      onDoubleTap: () => _escalate(context),
-      onTapSettled: onSettled,
-      onLongPress: () => KPeekMenu.show(
-        context,
-        entity: entity,
-        title: title,
-        subtitle: subtitle,
-        imageUrl: imageUrl,
-        blurhash: blurhash,
-        aspectRatio: aspectRatio,
+    final child = widget.child;
+    final content = widget.pressFeedback
+        ? KPressFeedback(child: child)
+        : child;
+    // Raw pointer events, outside the gesture arena: once the long-press has
+    // won, the same finger keeps steering the peek until it lifts.
+    return Listener(
+      onPointerDown: (event) => _pointers.add(event.pointer),
+      onPointerMove: (event) {
+        if (event.pointer == _holdPointer) _hold?.move(event);
+      },
+      onPointerUp: _pointerGone,
+      onPointerCancel: _pointerGone,
+      child: KGestureRegion(
+        enabled: widget.enabled,
+        semanticLabel: widget.title,
+        onTap: _open,
+        onDoubleTap: _escalate,
+        onTapSettled: widget.onSettled,
+        onLongPress: _peek,
+        child: content,
       ),
-      child: content,
     );
   }
 }

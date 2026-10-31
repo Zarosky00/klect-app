@@ -83,6 +83,7 @@ class SurfTile extends ConsumerWidget {
         imageUrl: coverUrl,
         blurhash: card.coverBlurhash,
         aspectRatio: card.tileAspect,
+        peekGallery: _isStacked || card.childCount > 1,
         child: tile,
       ),
     );
