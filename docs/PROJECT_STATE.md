@@ -758,6 +758,8 @@ work. Version is still `1.7.0+17`; no release, tag or APK was produced.
 - Profile Activity reply rows: "Replying to @name" now opens that person's profile. The row's
   avatar stays a part of the row tap (it opens the discussion), because it is always the owner of
   the profile being viewed.
+- Peek Share and Report now open their sheets on top of the peek instead of closing it first,
+  like Repost; the peek is still there when the sheet closes.
 - Merged `agent/profile-pull-refresh` (`1c49bd8`) into this branch, so it now carries both
   sets of v1.7.0 fixes. The code merged without conflicts; only this log needed both entries kept.
 - Not yet checked on a device.

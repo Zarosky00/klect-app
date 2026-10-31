@@ -21,8 +21,9 @@ abstract final class KPeekMenu {
   /// Opens the peek over the whole app.
   ///
   /// Returns when the peek closes. Like and Save toggle in place and leave the
-  /// peek open so the new state is visible; Repost opens the same
-  /// Repost / Quote chooser as the action bar. Tap outside to dismiss.
+  /// peek open so the new state is visible; Repost, Share and Report open
+  /// their sheets on top of the peek, which is still there when they close.
+  /// Only Quote leaves the peek (for the composer). Tap outside to dismiss.
   ///
   /// When neither [imageUrl] nor [blurhash] is given the preview is a text
   /// card built from [title] / [subtitle] instead of an empty cover.
@@ -157,35 +158,27 @@ class _PeekBody extends ConsumerWidget {
   /// Fraction of the entrance each action's spring is offset by.
   static const double _stagger = 0.08;
 
-  void _share(BuildContext context) {
-    // Take the navigator's own context before popping: this route's context is
-    // about to deactivate, and the share chooser has to outlive the peek.
-    final navigator = Navigator.of(context);
-    navigator.pop();
-    unawaited(
-      KShareSheet.show(
-        navigator.context,
-        entityType: entity.type,
-        entityId: entity.id,
-        title: title,
-      ),
-    );
-  }
+  /// Opens the share chooser *over* the peek: the peek is pushed on the root
+  /// navigator, so a sheet opened from its context stacks above it and the
+  /// peek is still there when the sheet closes. Tap outside to dismiss.
+  void _share(BuildContext context) => unawaited(
+    KShareSheet.show(
+      context,
+      entityType: entity.type,
+      entityId: entity.id,
+      title: title,
+    ),
+  );
 
-  void _report(BuildContext context) {
-    // Take the navigator's own context before popping: this route's context is
-    // about to deactivate, and the report sheet has to outlive the peek.
-    final navigator = Navigator.of(context);
-    navigator.pop();
-    unawaited(
-      KReportSheet.showForEntity(
-        navigator.context,
-        type: entity.type,
-        entityId: entity.id,
-        subjectLabel: title,
-      ),
-    );
-  }
+  /// Opens the report sheet over the peek, like [_share].
+  void _report(BuildContext context) => unawaited(
+    KReportSheet.showForEntity(
+      context,
+      type: entity.type,
+      entityId: entity.id,
+      subjectLabel: title,
+    ),
+  );
 
   /// Opens the shared Repost / Quote chooser *over* the peek, so the peek is
   /// still there behind the sheet. A bare repost toggles in place and leaves
