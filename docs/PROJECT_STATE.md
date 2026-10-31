@@ -820,8 +820,8 @@ Kiro session in worktree `../klect-v17x-setup-shelves-nav`, branched from
   was installed on the RMX3771 with `adb install -r`. First-install time unchanged, account still
   signed in, cold start went straight to Surf with no setup page. A visitor profile showed the lens
   dock (Surf icon, Pulse lens, no Activity), the Posts/Replies/Media control and the All/Surf/Pulse
-  scope row; no Flutter errors in logcat. The phone was being used by hand during the check, so
-  the owner's empty-shelf tiles, tuck/return and sign-out → sign-in still need a hand check.
+  scope row; no Flutter errors in logcat. The user then checked the build by hand on the phone and
+  confirmed it works.
 
 ---
 
