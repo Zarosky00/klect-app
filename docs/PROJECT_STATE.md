@@ -793,11 +793,18 @@ Version is still `1.7.0+17`; no release, tag or APK was produced.
   `initState`, which Riverpod rejects when it happens during a list build. The engagement rows
   therefore use the cached follow state like `PersonRow`. The Closeup still passes
   `initiallyFollowing`, so its existing behaviour is unchanged.
-- Verification: Flutter analysis 0 issues; **291/291** Flutter tests. A scratch widget test (not
-  committed) opened the sheet, swiped Likes → Reposts → Quotes and tapped back, rendered and
-  filtered Alerts, and confirmed a password field sits above a 340pt keyboard with
-  `avoidKeyboard` (y ≤ 504) and under it without (y = 824).
-- Not yet checked on a device.
+- Verification: Flutter analysis 0 issues; **294/294** Flutter tests, including the new
+  `test/engagement_alerts_keyboard_test.dart`: it opens the sheet, swipes Likes → Reposts →
+  Quotes and taps back, renders and filters Alerts, and confirms a password field sits above a
+  340pt keyboard with `avoidKeyboard` (y ≤ 504). Without the fix the same field sits at y = 824,
+  under the keyboard.
+- Device (RMX3771, Android 15): permanent-key arm64 APK (`1.7.0+17`, cert `460d934b…f11b334f`,
+  SHA-256 `f0c0a54f…609924d4`) installed with `adb install -r`, data kept, signed-in session
+  intact. Checked: engagement sheet Likes rows (heart badge, `@handle · 3mo`, Follow), a swipe to
+  Reposts (empty state, green indicator), Quotes showing the full quote post with its embedded
+  post and photo (blue indicator), and the Alerts rail pill and filtered empty state. Not yet
+  checked on the device: Alerts rows (the test account had no notifications) and the Change
+  password sheet with the real keyboard.
 
 ---
 
