@@ -30,6 +30,7 @@ class ProfileEntityCard {
     this.commentCount = 0,
     this.viewCount = 0,
     this.childCount = 0,
+    this.isEmptyShelf = false,
   });
 
   /// Builds a card from an `items` row.
@@ -67,6 +68,7 @@ class ProfileEntityCard {
         commentCount: collection.commentCount,
         viewCount: collection.viewCount,
         childCount: collection.itemCount,
+        isEmptyShelf: collection.itemCount == 0,
       );
 
   /// Builds a card from a `search_all` collection hit.
@@ -112,6 +114,7 @@ class ProfileEntityCard {
         commentCount: sub.commentCount,
         viewCount: sub.viewCount,
         childCount: sub.itemCount,
+        isEmptyShelf: sub.itemCount == 0,
       );
 
   /// Builds a private Surf Activity tile from the canonical target envelope.
@@ -173,6 +176,14 @@ class ProfileEntityCard {
 
   /// Items inside, for a shelf; photos, for an item.
   final int childCount;
+
+  /// A shelf or group with nothing on it yet, read off a full table row.
+  ///
+  /// The server shows these only to their owner (migration
+  /// `hide_empty_shelves_from_visitors`), so a tile with this flag drops the
+  /// social gestures and invites the owner to fill it instead. Cards built from
+  /// search hits or activity targets leave it false.
+  final bool isEmptyShelf;
 
   /// The polymorphic key the interaction engine is keyed by.
   EntityRef get entity => EntityRef(entityType, id);

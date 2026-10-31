@@ -69,12 +69,33 @@ class _EntityTileState extends ConsumerState<EntityTile> {
     );
   }
 
+  /// An empty shelf has no closeup worth opening and nothing to view
+  /// fullscreen: a tap goes straight to the shelf, where the owner adds things.
+  void _openShelf() {
+    final card = widget.card;
+    context.push(KlectLinks.pathFor(card.entityType, card.id));
+  }
+
   @override
   Widget build(BuildContext context) {
     final card = widget.card;
     final colors = context.kc;
     final api = ref.watch(klectApiProvider);
     final isShelf = card.entityType != EntityType.item;
+    final empty = isShelf && card.isEmptyShelf;
+
+    if (empty) {
+      return KGestureRegion(
+        onTap: _openShelf,
+        onLongPress: () => EntityPeekSheet.show(context, card: card),
+        semanticLabel: '${card.title}, empty ${card.entityType.wire}, '
+            'only you can see it',
+        child: _StaggeredEntry(
+          index: widget.index,
+          child: _EmptyShelfFace(card: card),
+        ),
+      );
+    }
 
     return KGestureRegion(
       onTap: _openCloseup,
@@ -157,6 +178,105 @@ class _EntityTileState extends ConsumerState<EntityTile> {
   static String _shelfSubtitle(ProfileEntityCard card) =>
       '${formatCount(card.childCount)} '
       'item${card.childCount == 1 ? '' : 's'}';
+}
+
+/// The face of a shelf or group with nothing on it: an open slot inviting the
+/// owner to fill it, marked as private because visitors cannot see it yet.
+class _EmptyShelfFace extends StatelessWidget {
+  const _EmptyShelfFace({required this.card});
+
+  final ProfileEntityCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface1,
+        borderRadius: BorderRadius.circular(Radii.lg),
+        border: Border.all(color: colors.borderDefault, width: Strokes.thin),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          Center(
+            child: Container(
+              width: Space.s12,
+              height: Space.s12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.accentSubtle,
+                border: Border.all(
+                  color: colors.accentRing,
+                  width: Strokes.hairline,
+                ),
+              ),
+              child: Icon(
+                Icons.add_rounded,
+                size: Space.s6,
+                color: colors.accentHover,
+              ),
+            ),
+          ),
+          Positioned(
+            top: Space.s2,
+            right: Space.s2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Space.s15,
+                vertical: Space.s05,
+              ),
+              decoration: BoxDecoration(
+                color: colors.surfaceScrim,
+                borderRadius: BorderRadius.circular(Radii.full),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: Space.s3,
+                    color: colors.textSecondary,
+                  ),
+                  const SizedBox(width: Space.s1),
+                  Text(
+                    'Only you',
+                    style: context.kt.micro
+                        .copyWith(color: colors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: Space.s3,
+            right: Space.s3,
+            bottom: Space.s3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  card.title,
+                  style:
+                      context.kt.display3.copyWith(color: colors.textPrimary),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  'Empty · tap to add things',
+                  style: context.kt.caption
+                      .copyWith(color: colors.textTertiary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// A fade-and-rise entry, staggered by grid position and capped so the bottom
@@ -322,16 +442,35 @@ class _EntityPeekBody extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: Space.s5),
-        KActionBar(
-          entity: card.entity,
-          seed: card.interactionSeed,
-          shareTitle: card.title,
-          live: true,
-          showViews: true,
-        ),
+        if (card.isEmptyShelf) ...<Widget>[
+          // Nothing to like or discuss yet, and nobody else can see it.
+          Text(
+            'Only you can see this until you add something to it.',
+            style: context.kt.caption.copyWith(color: colors.textSecondary),
+          ),
+          if (card.entityType == EntityType.collection) ...<Widget>[
+            const SizedBox(height: Space.s4),
+            KButton(
+              label: 'Add an item',
+              expand: true,
+              icon: Icons.add_rounded,
+              onPressed: () {
+                Navigator.of(context).pop();
+                context.push('/create/item?collection=${card.id}');
+              },
+            ),
+          ],
+        ] else
+          KActionBar(
+            entity: card.entity,
+            seed: card.interactionSeed,
+            shareTitle: card.title,
+            live: true,
+            showViews: true,
+          ),
         const SizedBox(height: Space.s5),
         KButton(
-          label: 'Open',
+          label: card.isEmptyShelf ? 'Open shelf' : 'Open',
           expand: true,
           variant: KButtonVariant.secondary,
           trailingIcon: Icons.arrow_forward_rounded,

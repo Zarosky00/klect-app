@@ -420,8 +420,10 @@ class _InterestsStep extends ConsumerWidget {
           Text(
             remaining > 0
                 ? 'Pick at least $remaining more. Each one becomes a shelf you '
-                      'can fill straight away.'
-                : 'Nice. Add more any time.',
+                      'can fill straight away. Only you see a shelf until '
+                      'something is on it.'
+                : 'Nice. Only you see these shelves until something is on '
+                      'them. Add more any time.',
             style: context.kt.body.copyWith(color: colors.textSecondary),
           ),
           const SizedBox(height: Space.s6),

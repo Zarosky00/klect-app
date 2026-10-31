@@ -355,13 +355,21 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                   ),
                 ],
                 const SizedBox(height: Space.s4),
-                KActionBar(
-                  entity: detail.entity,
-                  seed: InteractionState.fromCloseup(detail.closeup),
-                  live: true,
-                  showViews: true,
-                  shareTitle: collection.name,
-                ),
+                // An empty shelf has nothing to like, save or discuss, and
+                // the server hides it from everybody but its owner until the
+                // first item lands, so the social bar waits for content.
+                if (detail.items.isEmpty)
+                  detail.isOwner
+                      ? const _PrivateUntilFilledNotice()
+                      : const SizedBox.shrink()
+                else
+                  KActionBar(
+                    entity: detail.entity,
+                    seed: InteractionState.fromCloseup(detail.closeup),
+                    live: true,
+                    showViews: true,
+                    shareTitle: collection.name,
+                  ),
               ],
             ),
           ),
@@ -378,28 +386,22 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
             child: detail.isOwner
                 ? KEmptyState(
                     title: 'Nothing on this shelf yet',
+                    // The item flow can make a group on the spot, so adding
+                    // a thing never has to wait for a group to exist.
                     message: detail.subcollections.isEmpty
-                        ? 'Shelves hold groups, and groups hold things. Make '
-                            'the first group, then start adding.'
+                        ? 'Add the first thing you keep here. You can sort '
+                            'it into a group as you add it.'
                         : 'You have somewhere to put things. Add the first one.',
                     icon: Icons.inventory_2_rounded,
-                    actionLabel: detail.subcollections.isEmpty
-                        ? 'New group'
-                        : 'Add an item',
+                    actionLabel: 'Add an item',
                     onAction: () => context.push(
-                      detail.subcollections.isEmpty
-                          ? '/create/subcollection?collection='
-                              '${widget.collectionId}'
-                          : '/create/item?collection=${widget.collectionId}',
+                      '/create/item?collection=${widget.collectionId}',
                     ),
-                    secondaryActionLabel:
-                        detail.subcollections.isEmpty ? null : 'New group',
-                    onSecondaryAction: detail.subcollections.isEmpty
-                        ? null
-                        : () => context.push(
-                              '/create/subcollection?collection='
-                              '${widget.collectionId}',
-                            ),
+                    secondaryActionLabel: 'New group',
+                    onSecondaryAction: () => context.push(
+                      '/create/subcollection?collection='
+                      '${widget.collectionId}',
+                    ),
                   )
                 : const KEmptyState(
                     title: 'Nothing here yet',
@@ -568,6 +570,43 @@ class _NewGroupTile extends StatelessWidget {
             Text('New group', style: context.kt.label),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Stands in for the like/save/comment bar while a shelf is empty.
+class _PrivateUntilFilledNotice extends StatelessWidget {
+  const _PrivateUntilFilledNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.s3,
+        vertical: Space.s25,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surface2,
+        borderRadius: BorderRadius.circular(Radii.md),
+        border: Border.all(color: colors.borderSubtle, width: Strokes.hairline),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.lock_outline_rounded,
+            size: Space.s4,
+            color: colors.textSecondary,
+          ),
+          const SizedBox(width: Space.s2),
+          Expanded(
+            child: Text(
+              'Only you can see this shelf until you add something to it.',
+              style: context.kt.caption.copyWith(color: colors.textSecondary),
+            ),
+          ),
+        ],
       ),
     );
   }
