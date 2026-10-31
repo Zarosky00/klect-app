@@ -866,18 +866,13 @@ Version is still `1.7.0+17`; no release, tag or APK was produced.
   post and photo (blue indicator), and the Alerts rail pill and filtered empty state. Not yet
   checked on the device: Alerts rows (the test account had no notifications) and the Change
   password sheet with the real keyboard.
-- **Mistake and fix:** that first APK was built from `09de0e9`, before the setup/shelves/nav
-  session committed its profile lens dock and merged peek fix (`62270a8`…`496f053`), so it
-  replaced the phone's 21:12 build (`FD5E41FE…`) with one missing that work. Merged
-  `agent/v17x-setup-shelves-nav` at `496f053` into this branch (only this log conflicted; both
-  entries kept), rebuilt and reinstalled. This branch now carries every v1.7.x change.
 
 ---
 
 ## Next actions
 
-0. `agent/v17x-engagement-notifications` now contains `agent/v17x-setup-shelves-nav`,
-   `agent/v170-pulse-fixes` and `agent/profile-pull-refresh`; use it as the v1.7.x line. Device-check: sign out → sign in (no setup flash), a new account's empty
+0. Merge `agent/v17x-setup-shelves-nav` into the v1.7.x line once `agent/v170-pulse-fixes` is
+   finished, then device-check: sign out → sign in (no setup flash), a new account's empty
    onboarding shelves (owner sees "Only you", a second account cannot find them), and the profile
    lens dock on the RMX3771.
 1. Run the two-account Pulse
