@@ -40,7 +40,13 @@ class KPinRefresh extends ConsumerStatefulWidget {
     required this.child,
     super.key,
     this.busy = false,
+    this.indicatorInset = 0,
   });
+
+  /// How far down the dots sit, for a feed that scrolls under floating
+  /// chrome (Pulse's glass header): the dots centre in the gap that opens
+  /// *below* the chrome instead of behind it.
+  final double indicatorInset;
 
   /// Reloads the feed. The dots stay until it completes.
   final Future<void> Function() onRefresh;
@@ -346,7 +352,7 @@ class _KPinRefreshState extends ConsumerState<KPinRefresh>
             builder: (context, child) {
               final gap = math.max(0.0, _offset.value);
               return Positioned(
-                top: (gap - _size) / 2,
+                top: widget.indicatorInset + (gap - _size) / 2,
                 left: 0,
                 right: 0,
                 height: _size,

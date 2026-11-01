@@ -867,6 +867,25 @@ Version is still `1.7.0+17`; no release, tag or APK was produced.
   checked on the device: Alerts rows (the test account had no notifications) and the Change
   password sheet with the real keyboard.
 
+### 2026-10-31 — Surf peek gallery (hold-to-scrub)
+- The long-press peek on Surf collections, subcollections and multi-photo items is now a
+  swipeable photo deck. Photo 0 is the tile's cover. The rest come from `closeupProvider`
+  (`immersiveMediaOf`), or from `postMediaProvider` for posts. Neighbouring photos sit tilted
+  behind the current one, the dots stretch with the finger, and sets over 8 photos show "n / m".
+- The finger that opened the peek can scrub left and right without lifting. Pushing a route
+  cancels the navigator's active pointers, so while the finger is down the peek is drawn in a root
+  overlay entry that `KEntityGestureCard` drives with raw pointer moves. On release it hands over
+  to the normal `_PeekRoute`, carrying the entrance progress, page position and release velocity,
+  so nothing jumps. After lifting, a normal swipe pages the deck; page settles use the
+  `Springs.snappy` spring.
+- Opt in with `KEntityGestureCard(peekGallery: true)`; only `SurfTile` sets it. Other callers keep
+  the single-image peek.
+- Verification: Flutter analysis reports 0 issues on the changed files. New
+  `test/peek_gallery_test.dart` covers held scrub, the handoff with momentum, swipe after lift and
+  barrier dismiss. The full suite passes **293/293** in a temp copy, because the working tree's
+  uncommitted `post_thread_screen.dart` (`peek:` parameter) does not compile yet.
+- Not done yet: tested only in widget tests, not on a physical device.
+
 ---
 
 ## Next actions

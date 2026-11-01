@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart' show kPressTimeout, kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,30 +9,35 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../core/api/api_error.dart';
 import '../../../core/api/klect_api.dart';
-import '../../../core/feedback/interaction_feedback.dart';
 import '../../../core/interactions/interactions.dart';
 import '../../../core/links.dart';
 import '../../../core/models/models.dart';
 import '../../../core/settings/app_settings.dart';
+import '../../../design/motion.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
-import '../../surf/surf.dart';
 import '../data/pulse_entry_view.dart';
+import '../thread/repost_thread_screen.dart';
 import 'entity_attachment_card.dart';
+import 'pulse_media_peek.dart';
 import 'pulse_target_card.dart';
 
 /// One row of the Pulse stream.
 ///
-/// Four shapes, one card: an original post (now with up to four of its own
+/// Four shapes, one card: an original post (with up to four of its own
 /// photos), a bare repost ("kenji reposted"), a quote with commentary, and
 /// any of those carrying the server-embedded target — a quoted-post card or
 /// an entity card, with a tombstone when the target is gone.
 ///
-/// **Pulse rows are not Surf tiles.** A plain tap opens the post's thread
-/// (`/post/:id`) — there is no double-tap immersive and no hero flight,
-/// because a stream row's destination is the discussion, not the photograph.
-/// The long-press peek stays: like/save/repost/share/report is one gesture
-/// away everywhere.
+/// **Gestures.**
+///  * A tap on the row opens its discussion: a post / quote / reply (or a
+///    bare repost of a post) opens the post thread; a bare repost of a
+///    collection, shelf or thing opens the repost page, which carries that
+///    entity's own Surf likes and comments.
+///  * A tap on an embedded collection / shelf / thing card opens its Surf
+///    closeup instead; a double tap there opens the immersive viewer.
+///  * Only **photos** peek on long press. Holding the text, byline or action
+///    bar does nothing special.
 ///
 /// The action bar underneath is the *same* bar the Closeup uses, wired to the
 /// same optimistic engine — a like here and a like there are the same like.
@@ -48,6 +54,12 @@ class PulseCard extends ConsumerWidget {
 
   /// Adds the management overflow used only on the signed-in owner's profile.
   final bool showOwnerActions;
+
+  /// Single-photo height ceiling in the stream for the media-forward layout.
+  static const double mediaMaxHeight = Space.s24 * 3;
+
+  /// Single-photo height ceiling for the balanced (text-first) layout.
+  static const double compactMediaMaxHeight = Space.s24 * 2;
 
   /// Whose name and avatar head the card.
   Profile? get _presenter => switch (item.kind) {
@@ -69,11 +81,25 @@ class PulseCard extends ConsumerWidget {
     return target;
   }
 
-  /// Where a plain tap lands.
+  /// True when the row is a collection / shelf / thing shared without a post
+  /// of its own — the sides open the repost page, the card opens Surf.
+  bool get _isEntityRepost {
+    final postId = item.postId;
+    if (postId != null && postId.isNotEmpty) return false;
+    if (_inlinePost != null) return false;
+    return switch (item.entity.type) {
+      EntityType.collection ||
+      EntityType.subcollection ||
+      EntityType.item => true,
+      _ => false,
+    };
+  }
+
+  /// Where a plain tap on the row lands.
   ///
   ///  * a post/quote row (or a bare repost **of a post**) → its thread;
   ///  * a repost of a comment → the discussion the comment lives under;
-  ///  * a repost of a collection/shelf/thing → that entity's closeup.
+  ///  * a repost of a collection/shelf/thing → its repost page.
   String? get _destination {
     final postId = item.postId;
     if (postId != null && postId.isNotEmpty) {
@@ -96,7 +122,35 @@ class PulseCard extends ConsumerWidget {
       }
       return null;
     }
+    if (entity.id.isEmpty) return null;
+    if (_isEntityRepost) {
+      return KlectLinks.repostThreadPath(entity.type, entity.id);
+    }
     return KlectLinks.closeupPath(entity.type, entity.id);
+  }
+
+  /// Opens [_destination], handing the repost page what the row already
+  /// knows so it paints instantly.
+  void _open(BuildContext context, {bool focusComposer = false}) {
+    final destination = _destination;
+    if (destination == null) return;
+    final target = item.target;
+    unawaited(
+      context.push(
+        destination,
+        extra: _isEntityRepost
+            ? RepostThreadArgs(
+                target: target != null && target.id == item.entity.id
+                    ? target
+                    : null,
+                reposter: item.reposter,
+                repostedAt: item.sortAt,
+                seed: item.seed,
+                focusComposer: focusComposer,
+              )
+            : null,
+      ),
+    );
   }
 
   Future<void> _ownerMenu(BuildContext context, WidgetRef ref) async {
@@ -134,7 +188,7 @@ class PulseCard extends ConsumerWidget {
     if (choice == null || !context.mounted) return;
     switch (choice) {
       case _OwnerPulseAction.open:
-        if (destination != null) unawaited(context.push(destination));
+        _open(context);
       case _OwnerPulseAction.copy:
         await Clipboard.setData(
           ClipboardData(
@@ -214,76 +268,247 @@ class PulseCard extends ConsumerWidget {
         ref.watch(appSettingsProvider).pulseLayout ==
         PulseLayoutPreference.mediaForward;
     final streamMediaHeight = mediaForward
-        ? PostMediaGrid.streamMaxHeight
-        : Space.s24 * 2.5;
+        ? mediaMaxHeight
+        : compactMediaMaxHeight;
+    // The row's own photos peek the row's entity; a quoted or attached
+    // target's photos peek that target (handled inside its card).
+    final peek = PulsePeekTarget(
+      entity: actionEntity,
+      title: body ?? presenter?.name,
+      subtitle: presenter?.handle,
+      quotePreview: quotePreview,
+      quoteMedia: quoteMedia,
+    );
 
-    // The peek previews the post's own photo — its first photo, or the
-    // inline reposted post's — and falls back to a text card when the post
-    // has none, never an empty cover.
-    final visibleInline = inlinePost != null && !inlinePost.unavailable
-        ? inlinePost
-        : null;
-    final peekMedia = item.kind != PulseKind.repost && item.media.isNotEmpty
-        ? item.media.first
-        : (visibleInline != null && visibleInline.media.isNotEmpty
-              ? visibleInline.media.first
-              : null);
-    final peekPath = peekMedia?.storagePath ?? visibleInline?.coverPath;
-    final peekBlurhash = peekMedia != null
-        ? peekMedia.blurhash
-        : visibleInline?.coverBlurhash;
-    final peekWidth = peekMedia?.width;
-    final peekHeight = peekMedia?.height;
-    final peekAspect = peekWidth != null && peekHeight != null && peekHeight > 0
-        ? peekWidth / peekHeight
-        : visibleInline?.coverAspect;
-    final peekUrl = peekPath == null
-        ? null
-        : ref.watch(klectApiProvider).publicUrl(peekPath);
-
-    void openPeek() {
-      triggerInteractionTapFeedback(context);
-      unawaited(
-        KPeekMenu.show(
-          context,
-          entity: item.entity,
-          title: body ?? presenter?.name,
-          subtitle: presenter?.handle,
-          imageUrl: peekUrl,
-          blurhash: peekUrl == null ? null : peekBlurhash,
-          aspectRatio: peekUrl == null
-              ? null
-              : (peekAspect ?? Aspect.cover)
-                    .clamp(Aspect.gridMin, Aspect.gridMax)
-                    .toDouble(),
-          quotePreview: quotePreview,
-          quoteMedia: quoteMedia,
-        ),
-      );
-    }
-
-    // Only a tap belongs to the whole row. The long-press peek is scoped to
-    // the post's actual content (text, photos, embedded card) below, so
-    // holding the padding or the blank space beside a short post does
-    // nothing instead of peeking an empty cover.
-    return KGestureRegion(
+    return _PulseRowSurface(
       semanticLabel: body ?? presenter?.name,
-      onTap: destination == null ? null : () => context.push(destination),
-      // A hold on blank space is claimed here and dropped, so releasing it
-      // does not count as a tap that opens the thread. Holds on the content
-      // reach the deeper peek detector first and win.
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        excludeFromSemantics: true,
-        onLongPress: () {},
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(
-            Space.s4,
-            Space.s4,
-            Space.s4,
-            Space.s3,
-          ),
+      onTap: destination == null ? null : () => _open(context),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          Space.s4,
+          Space.s3,
+          Space.s4,
+          Space.s1,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (reposter != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: Space.s15),
+                child: Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: _avatarSize,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Icon(
+                          Icons.repeat_rounded,
+                          size: Space.s4,
+                          color: colors.actionRepost,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: Space.s3),
+                    Flexible(
+                      child: Text(
+                        '${reposter.name} reposted',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.caption.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                KAvatar(
+                  imageUrl: avatarUrl,
+                  name: presenter?.name,
+                  size: _avatarSize,
+                  isVerified: presenter?.isVerified ?? false,
+                  onTap: presenter == null || presenter.username.isEmpty
+                      ? null
+                      : () => context.push(
+                          KlectLinks.profilePath(presenter.username),
+                        ),
+                ),
+                const SizedBox(width: Space.s3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      _Byline(
+                        presenter: presenter,
+                        at: item.sortAt,
+                        onMore: showOwnerActions
+                            ? () => unawaited(_ownerMenu(context, ref))
+                            : null,
+                      ),
+                      if (body != null && body.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: Space.s05),
+                        Text(body, style: text.body),
+                      ],
+                      if (item.kind != PulseKind.repost &&
+                          item.media.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: Space.s3),
+                        // Bounded in the stream: a tall photo previews inside
+                        // the row instead of taking over the screen.
+                        PostMediaGrid(
+                          media: item.media,
+                          maxHeight: streamMediaHeight,
+                          peek: peek,
+                        ),
+                      ],
+                      if (inlinePost != null) ...<Widget>[
+                        if (inlinePost.unavailable) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          PulseTargetCard(target: inlinePost),
+                        ] else if (inlinePost.media.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          PostMediaGrid(
+                            media: inlinePost.media,
+                            maxHeight: streamMediaHeight,
+                            peek: peek,
+                          ),
+                        ] else if (inlinePost.coverPath != null) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          _InlinePostCover(
+                            target: inlinePost,
+                            maxHeight: streamMediaHeight,
+                            peek: peek,
+                          ),
+                        ],
+                        if (inlinePost.attachedTarget
+                            case final attached?) ...<Widget>[
+                          const SizedBox(height: Space.s3),
+                          PulseTargetCard(target: attached),
+                        ],
+                      ],
+                      if (target != null) ...<Widget>[
+                        const SizedBox(height: Space.s3),
+                        PulseTargetCard(target: target),
+                      ] else if (inlinePost == null &&
+                          item.attachment != null) ...<Widget>[
+                        // Legacy fallback: an envelope without an embedded
+                        // target still gets a client-resolved entity card.
+                        const SizedBox(height: Space.s3),
+                        EntityAttachmentCard(entity: item.attachment!),
+                      ],
+                      const SizedBox(height: Space.s1),
+                      KActionBar(
+                        entity: actionEntity,
+                        seed: item.seed,
+                        compact: true,
+                        alignment: MainAxisAlignment.spaceBetween,
+                        shareTitle: body ?? presenter?.name,
+                        quotePreview: quotePreview,
+                        quoteMedia: quoteMedia,
+                        onComment: destination == null
+                            ? null
+                            : () => _open(context, focusComposer: true),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const double _avatarSize = Space.s10;
+}
+
+/// The row's tappable surface: a hairline divider underneath and a quiet
+/// highlight while a finger rests on it.
+///
+/// The highlight listens to raw pointer events, outside the gesture arena,
+/// and only appears after [kPressTimeout] — a scroll that starts on a row
+/// never flashes it.
+class _PulseRowSurface extends StatefulWidget {
+  const _PulseRowSurface({
+    required this.child,
+    required this.onTap,
+    this.semanticLabel,
+  });
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final String? semanticLabel;
+
+  @override
+  State<_PulseRowSurface> createState() => _PulseRowSurfaceState();
+}
+
+class _PulseRowSurfaceState extends State<_PulseRowSurface> {
+  Timer? _delay;
+  Offset? _origin;
+  bool _highlighted = false;
+
+  @override
+  void dispose() {
+    _delay?.cancel();
+    super.dispose();
+  }
+
+  void _down(PointerDownEvent event) {
+    if (widget.onTap == null) return;
+    _origin = event.position;
+    _delay?.cancel();
+    _delay = Timer(kPressTimeout, () => _set(true));
+  }
+
+  void _move(PointerMoveEvent event) {
+    final origin = _origin;
+    if (origin == null) return;
+    if ((event.position - origin).distance > kTouchSlop) _release();
+  }
+
+  void _release([PointerEvent? _]) {
+    _delay?.cancel();
+    _origin = null;
+    _set(false);
+  }
+
+  void _set(bool value) {
+    if (!mounted || _highlighted == value) return;
+    setState(() => _highlighted = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    return Listener(
+      onPointerDown: _down,
+      onPointerMove: _move,
+      onPointerUp: _release,
+      onPointerCancel: _release,
+      child: KGestureRegion(
+        semanticLabel: widget.semanticLabel,
+        onTap: widget.onTap,
+        // A hold on the text or blank space is claimed here and dropped, so
+        // it neither peeks nor counts as a tap when the finger lifts. Holds
+        // on a photo reach its deeper peek detector first and win.
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onLongPress: () => _release(),
+          child: AnimatedContainer(
+          duration: KMotion.duration(context, KDurations.fast),
+          curve: KCurves.standard,
           decoration: BoxDecoration(
+            color: _highlighted
+                ? colors.surface1
+                : colors.surface1.withValues(alpha: 0),
             border: Border(
               bottom: BorderSide(
                 color: colors.borderSubtle,
@@ -291,148 +516,7 @@ class PulseCard extends ConsumerWidget {
               ),
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              if (reposter != null) ...<Widget>[
-                Padding(
-                  padding: const EdgeInsets.only(
-                    left: Space.s12,
-                    bottom: Space.s2,
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Icon(
-                        Icons.repeat_rounded,
-                        size: Space.s4,
-                        color: colors.actionRepost,
-                      ),
-                      const SizedBox(width: Space.s15),
-                      Flexible(
-                        child: Text(
-                          '${reposter.name} reposted',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.micro.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  KAvatar(
-                    imageUrl: avatarUrl,
-                    name: presenter?.name,
-                    size: Space.s10,
-                    isVerified: presenter?.isVerified ?? false,
-                    onTap: presenter == null || presenter.username.isEmpty
-                        ? null
-                        : () => context.push(
-                            KlectLinks.profilePath(presenter.username),
-                          ),
-                  ),
-                  const SizedBox(width: Space.s3),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        _Byline(
-                          presenter: presenter,
-                          at: item.sortAt,
-                          onMore: showOwnerActions
-                              ? () => unawaited(_ownerMenu(context, ref))
-                              : null,
-                        ),
-                        // deferToChild: only pixels a child actually paints
-                        // (text glyph boxes, photos, cards) start the peek —
-                        // the gaps and the blank space beside a short line do
-                        // not. No onTap here, so a plain tap still reaches the
-                        // row and opens the thread.
-                        GestureDetector(
-                          behavior: HitTestBehavior.deferToChild,
-                          onLongPress: openPeek,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              if (body != null && body.isNotEmpty) ...<Widget>[
-                                const SizedBox(height: Space.s1),
-                                Text(body, style: text.body),
-                              ],
-                              if (item.kind != PulseKind.repost &&
-                                  item.media.isNotEmpty) ...<Widget>[
-                                const SizedBox(height: Space.s3),
-                                // Bounded in the stream: a tall photo previews
-                                // inside the row instead of masquerading as a
-                                // masonry tile.
-                                PostMediaGrid(
-                                  media: item.media,
-                                  maxHeight: streamMediaHeight,
-                                ),
-                              ],
-                              if (inlinePost != null) ...<Widget>[
-                                if (inlinePost.unavailable) ...<Widget>[
-                                  const SizedBox(height: Space.s3),
-                                  PulseTargetCard(target: inlinePost),
-                                ] else if (inlinePost
-                                    .media
-                                    .isNotEmpty) ...<Widget>[
-                                  const SizedBox(height: Space.s3),
-                                  PostMediaGrid(
-                                    media: inlinePost.media,
-                                    maxHeight: streamMediaHeight,
-                                  ),
-                                ] else if (inlinePost.coverPath !=
-                                    null) ...<Widget>[
-                                  const SizedBox(height: Space.s3),
-                                  _InlinePostCover(target: inlinePost),
-                                ],
-                                if (inlinePost.attachedTarget
-                                    case final attached?) ...<Widget>[
-                                  const SizedBox(height: Space.s3),
-                                  PulseTargetCard(target: attached),
-                                ],
-                              ],
-                              if (target != null) ...<Widget>[
-                                const SizedBox(height: Space.s3),
-                                PulseTargetCard(target: target),
-                              ] else if (inlinePost == null &&
-                                  item.attachment != null) ...<Widget>[
-                                // Legacy fallback: an envelope without an
-                                // embedded target still gets a client-resolved
-                                // entity card.
-                                const SizedBox(height: Space.s3),
-                                EntityAttachmentCard(entity: item.attachment!),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: Space.s2),
-                        KActionBar(
-                          entity: actionEntity,
-                          seed: item.seed,
-                          compact: true,
-                          alignment: MainAxisAlignment.start,
-                          shareTitle: body ?? presenter?.name,
-                          quotePreview: quotePreview,
-                          quoteMedia: quoteMedia,
-                          onComment: destination == null
-                              ? null
-                              : () => context.push(destination),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            child: widget.child,
           ),
         ),
       ),
@@ -443,24 +527,47 @@ class PulseCard extends ConsumerWidget {
 /// The photo of a bare-reposted post, rendered inline (unboxed) and bounded
 /// like every other stream photo.
 class _InlinePostCover extends ConsumerWidget {
-  const _InlinePostCover({required this.target});
+  const _InlinePostCover({
+    required this.target,
+    required this.maxHeight,
+    required this.peek,
+  });
 
   final PulseTarget target;
+  final double maxHeight;
+  final PulsePeekTarget peek;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.kc;
     final url = ref.watch(klectApiProvider).publicUrl(target.coverPath);
     return LayoutBuilder(
-      builder: (context, constraints) => KBlurhashImage(
-        url: url,
+      builder: (context, constraints) => PulsePeekableMedia(
+        peek: peek,
+        imageUrl: url,
         blurhash: target.coverBlurhash,
-        aspectRatio: PostMediaGrid.boundedAspect(
-          target.coverAspect ?? Aspect.cover,
-          constraints.maxWidth,
-          PostMediaGrid.streamMaxHeight,
+        aspectRatio: target.coverAspect,
+        child: DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Radii.lg),
+            border: Border.all(
+              color: colors.borderSubtle,
+              width: Strokes.hairline,
+            ),
+          ),
+          child: KBlurhashImage(
+            url: url,
+            blurhash: target.coverBlurhash,
+            aspectRatio: PostMediaGrid.boundedAspect(
+              target.coverAspect ?? Aspect.cover,
+              constraints.maxWidth,
+              maxHeight,
+            ),
+            borderRadius: BorderRadius.circular(Radii.lg),
+            semanticLabel: target.body ?? 'Post photo',
+          ),
         ),
-        borderRadius: BorderRadius.circular(Radii.lg),
-        semanticLabel: target.body ?? 'Post photo',
       ),
     );
   }
@@ -473,9 +580,17 @@ class _InlinePostCover extends ConsumerWidget {
 /// Pass [maxHeight] to bound a single photo's height — the Pulse stream does,
 /// so a portrait shot reads as an inline preview instead of a masonry tile.
 /// The thread screen leaves it null and shows the photo at its own ratio.
+///
+/// Pass [peek] to let a long press on a photo open the quick-action peek
+/// with that exact photo; the rest of the row stays inert to long presses.
 class PostMediaGrid extends ConsumerWidget {
   /// Creates the grid.
-  const PostMediaGrid({required this.media, super.key, this.maxHeight});
+  const PostMediaGrid({
+    required this.media,
+    super.key,
+    this.maxHeight,
+    this.peek,
+  });
 
   /// The post's photos, in position order (at most four render).
   final List<ItemMedia> media;
@@ -483,7 +598,10 @@ class PostMediaGrid extends ConsumerWidget {
   /// Height ceiling for the single-photo layout. Null = unbounded.
   final double? maxHeight;
 
-  /// The stream's single-photo ceiling — composed from the 4pt grid
+  /// What a long press on a photo acts on. Null = no peek.
+  final PulsePeekTarget? peek;
+
+  /// The thread page's single-photo ceiling — composed from the 4pt grid
   /// (`Space.s24 × 4`), matching web's bounded inline preview.
   static const double streamMaxHeight = Space.s24 * 4;
 
@@ -504,32 +622,56 @@ class PostMediaGrid extends ConsumerWidget {
     return clamped < floor ? floor : clamped;
   }
 
+  static double? _aspectOf(ItemMedia m) {
+    final width = m.width;
+    final height = m.height;
+    if (width == null || height == null || height <= 0) return null;
+    return width / height;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (media.isEmpty) return const SizedBox.shrink();
+    final colors = context.kc;
     final api = ref.watch(klectApiProvider);
     final shots = media.take(4).toList(growable: false);
+    final radius = BorderRadius.circular(Radii.lg);
 
-    Widget image(ItemMedia m, {double? aspectRatio}) => KBlurhashImage(
-      url: api.publicUrl(m.storagePath),
-      blurhash: m.blurhash,
-      aspectRatio: aspectRatio,
-      borderRadius: BorderRadius.zero,
-      semanticLabel: m.altText ?? 'Post photo',
+    Widget image(ItemMedia m, {double? aspectRatio}) {
+      final url = api.publicUrl(m.storagePath);
+      return PulsePeekableMedia(
+        peek: peek,
+        imageUrl: url,
+        blurhash: m.blurhash,
+        aspectRatio: _aspectOf(m),
+        child: KBlurhashImage(
+          url: url,
+          blurhash: m.blurhash,
+          aspectRatio: aspectRatio,
+          borderRadius: BorderRadius.zero,
+          semanticLabel: m.altText ?? 'Post photo',
+        ),
+      );
+    }
+
+    // A hairline keeps dark photos from bleeding into the dark canvas.
+    Widget framed(Widget child) => DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(color: colors.borderSubtle, width: Strokes.hairline),
+      ),
+      child: ClipRRect(borderRadius: radius, child: child),
     );
 
     if (shots.length == 1) {
       final m = shots.first;
-      final intrinsic = (m.width != null && m.height != null && m.height! > 0)
-          ? m.width! / m.height!
-          : Aspect.cover;
       return LayoutBuilder(
-        builder: (context, constraints) => ClipRRect(
-          borderRadius: BorderRadius.circular(Radii.lg),
-          child: image(
+        builder: (context, constraints) => framed(
+          image(
             m,
             aspectRatio: boundedAspect(
-              intrinsic,
+              _aspectOf(m) ?? Aspect.cover,
               constraints.maxWidth,
               maxHeight,
             ),
@@ -586,10 +728,7 @@ class PostMediaGrid extends ConsumerWidget {
       ),
     };
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(Radii.lg),
-      child: AspectRatio(aspectRatio: Aspect.gridMax, child: grid),
-    );
+    return framed(AspectRatio(aspectRatio: Aspect.gridMax, child: grid));
   }
 }
 
@@ -642,6 +781,7 @@ class _Byline extends StatelessWidget {
     final colors = context.kc;
     final text = context.kt;
     final when = at;
+    final presenter = this.presenter;
 
     return Row(
       children: <Widget>[
@@ -653,14 +793,14 @@ class _Byline extends StatelessWidget {
             style: text.bodyStrong,
           ),
         ),
-        if (presenter != null && presenter!.username.isNotEmpty) ...<Widget>[
+        if (presenter != null && presenter.username.isNotEmpty) ...<Widget>[
           const SizedBox(width: Space.s1),
           Flexible(
             child: Text(
-              presenter!.handle,
+              presenter.handle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: text.caption.copyWith(color: colors.textTertiary),
+              style: text.callout.copyWith(color: colors.textTertiary),
             ),
           ),
         ],
@@ -668,7 +808,7 @@ class _Byline extends StatelessWidget {
           const SizedBox(width: Space.s1),
           Text(
             '· ${timeago.format(when, locale: 'en_short')}',
-            style: text.caption.copyWith(color: colors.textTertiary),
+            style: text.callout.copyWith(color: colors.textTertiary),
           ),
         ],
         if (onMore != null) ...<Widget>[

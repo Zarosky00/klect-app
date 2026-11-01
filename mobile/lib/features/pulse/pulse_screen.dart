@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,12 +24,15 @@ import 'widgets/pulse_filter_drawer.dart';
 
 /// **Pulse** — the X half of Klect.
 ///
-/// Two streams under one segmented header: **For you** (ranked discovery,
+/// Two streams under one glass header: **For you** (ranked discovery,
 /// `pulse_feed(p_mode => 'foryou')`) and **Following** (chronological). Each
 /// tab keeps its own controller, cursor and scroll position, both paged on
-/// `min(sort_at)` so new arrivals never shuffle what you are reading. Every
-/// row carries the same action bar, the same optimistic engine and the same
-/// gesture contract as a Surf tile.
+/// `min(sort_at)` so new arrivals never shuffle what you are reading.
+///
+/// The header floats over the stream and tucks itself away while you read
+/// downwards, returning the moment you scroll back up — the stream gets the
+/// whole screen. Filters live in a bottom sheet, with the active ones shown
+/// as removable chips at the top of the stream.
 class PulseScreen extends ConsumerStatefulWidget {
   /// Creates the screen.
   const PulseScreen({super.key});
@@ -35,15 +41,23 @@ class PulseScreen extends ConsumerStatefulWidget {
   ConsumerState<PulseScreen> createState() => _PulseScreenState();
 }
 
-class _PulseScreenState extends ConsumerState<PulseScreen> {
+class _PulseScreenState extends ConsumerState<PulseScreen>
+    with SingleTickerProviderStateMixin {
   final Map<PulseMode, ScrollController> _scrolls =
       <PulseMode, ScrollController>{
         for (final mode in PulseMode.values) mode: ScrollController(),
       };
 
-  /// Whether the filter drawer is unfolded under the tabs.
-  bool _filtersOpen = false;
+  /// Row keys that already played their entrance, per stream — a row
+  /// animates in once, never again when it scrolls back into view.
+  final Map<PulseMode, Set<String>> _entered = <PulseMode, Set<String>>{
+    for (final mode in PulseMode.values) mode: <String>{},
+  };
+
   late final ValueNotifier<double> _pageProgress;
+
+  /// 0 = header fully shown, 1 = header tucked away above the stream.
+  late final AnimationController _chrome;
 
   @override
   void initState() {
@@ -51,6 +65,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     _pageProgress = ValueNotifier<double>(
       ref.read(pulseModeProvider).index.toDouble(),
     );
+    _chrome = AnimationController(vsync: this, value: 0);
   }
 
   PulseMode get _mode => ref.read(pulseModeProvider);
@@ -60,33 +75,95 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     for (final controller in _scrolls.values) {
       controller.dispose();
     }
+    _chrome.dispose();
     _pageProgress.dispose();
     super.dispose();
   }
 
+  // ───────────────────────────────────────────────────────── header motion ──
+
+  /// Follows the finger: every pixel scrolled down tucks the header by a
+  /// pixel, every pixel back up returns it. Near the top it can never hide
+  /// further than the content has moved, so nothing ever opens a gap.
+  void _driveChrome(ScrollUpdateNotification notification) {
+    if (KMotion.reduced(context)) return;
+    final delta = notification.scrollDelta ?? 0;
+    if (delta == 0) return;
+    final pixels = notification.metrics.pixels;
+    final ceiling = (pixels / _PulseHeader.height).clamp(0.0, 1.0);
+    final next = (_chrome.value + delta / _PulseHeader.height).clamp(
+      0.0,
+      ceiling,
+    );
+    if (next == _chrome.value) return;
+    if (_chrome.isAnimating) _chrome.stop();
+    _chrome.value = next;
+  }
+
+  /// When the scroll comes to rest, the header snaps fully in or fully out.
+  void _settleChrome(double pixels) {
+    final value = _chrome.value;
+    if (value == 0 || value == 1) return;
+    final target = value > 0.5 && pixels >= _PulseHeader.height ? 1.0 : 0.0;
+    unawaited(
+      _chrome.animateTo(
+        target,
+        duration: KMotion.duration(context, KDurations.base),
+        curve: KMotion.curve(context, KCurves.emphasized),
+      ),
+    );
+  }
+
+  void _showChrome() {
+    if (_chrome.value == 0) return;
+    unawaited(
+      _chrome.animateTo(
+        0,
+        duration: KMotion.duration(context, KDurations.medium),
+        curve: KMotion.curve(context, KCurves.emphasized),
+      ),
+    );
+  }
+
   bool _onScroll(ScrollNotification notification, PulseMode mode) {
-    if (notification is! ScrollUpdateNotification &&
-        notification is! ScrollEndNotification) {
-      return false;
-    }
+    // Depth 0 is this page's own list; anything deeper is a nested
+    // horizontal scroller (the filter chips) and is not ours to follow.
+    if (notification.depth != 0) return false;
     final metrics = notification.metrics;
-    if (metrics.hasContentDimensions &&
-        metrics.maxScrollExtent - metrics.pixels < metrics.viewportDimension) {
-      unawaited(ref.read(pulseFeedProvider(mode).notifier).loadMore());
+    if (metrics.axis != Axis.vertical) return false;
+
+    if (notification is ScrollUpdateNotification ||
+        notification is ScrollEndNotification) {
+      if (metrics.hasContentDimensions &&
+          metrics.maxScrollExtent - metrics.pixels <
+              metrics.viewportDimension) {
+        unawaited(ref.read(pulseFeedProvider(mode).notifier).loadMore());
+      }
+    }
+
+    if (mode != _mode) return false;
+    if (notification is ScrollUpdateNotification) {
+      _driveChrome(notification);
+    } else if (notification is ScrollEndNotification) {
+      _settleChrome(metrics.pixels);
     }
     return false;
   }
 
-  Future<void> _refresh([PulseMode? requestedMode]) async {
-    final mode = requestedMode ?? _mode;
+  // ─────────────────────────────────────────────────────────────── actions ──
+
+  Future<void> _refresh(PulseMode mode) async {
+    _entered[mode]!.clear();
     await ref.read(pulseFeedProvider(mode).notifier).refresh();
     if (!mounted) return;
     final scroll = _scrolls[mode]!;
     if (scroll.hasClients) scroll.jumpTo(0);
+    _showChrome();
   }
 
   void _selectMode(PulseMode mode) {
     _pageProgress.value = mode.index.toDouble();
+    _showChrome();
     if (mode == _mode) return;
     ref.read(pulseModeProvider.notifier).select(mode);
   }
@@ -96,6 +173,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     if (entry == null || !mounted) return;
     // The composer prepends into the Following stream — show it landing.
     ref.read(pulseModeProvider.notifier).select(PulseMode.following);
+    _showChrome();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final scroll = _scrolls[PulseMode.following]!;
@@ -103,8 +181,14 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     });
   }
 
+  void _openFilters() =>
+      unawaited(PulseFilterSheet.show(context, mode: _mode));
+
+  // ───────────────────────────────────────────────────────────────── build ──
+
   @override
   Widget build(BuildContext context) {
+    final colors = context.kc;
     final mode = ref.watch(pulseModeProvider);
     final feeds = <PulseMode, PulseFeedState>{
       for (final candidate in PulseMode.values)
@@ -118,6 +202,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
 
     ref.listen<RootTabReselectEvent?>(rootTabReselectProvider, (_, event) {
       if (event?.index != 1) return;
+      _showChrome();
       final scroll = _scrolls[mode]!;
       if (!scroll.hasClients) return;
       unawaited(
@@ -129,71 +214,64 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       );
     });
 
-    return KScaffold(
-      appBar: KFixedAppBar(
-        title: 'Pulse',
-        actions: <Widget>[
-          KIconButton(
-            icon: Icons.search_rounded,
-            semanticLabel: 'Search',
-            onPressed: () => context.push(Routes.search),
-          ),
-          const MessagesAction(),
-        ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        statusBarIconBrightness: colors.isDark
+            ? Brightness.light
+            : Brightness.dark,
+        statusBarBrightness: colors.isDark ? Brightness.dark : Brightness.light,
       ),
-      floatingActionButton: _ComposeButton(
-        onPressed: () => unawaited(_compose()),
-      ),
-      body: Column(
-        children: <Widget>[
-          ValueListenableBuilder<double>(
-            valueListenable: _pageProgress,
-            builder: (context, page, _) => _PulseTabs(
-              selected: mode,
-              pageProgress: page,
-              onSelect: _selectMode,
-              filtersOpen: _filtersOpen,
-              filtersActive: filters.isActive,
-              onToggleFilters: () =>
-                  setState(() => _filtersOpen = !_filtersOpen),
-            ),
-          ),
-          _PulsePrompt(onPressed: () => unawaited(_compose())),
-          AnimatedSize(
-            duration: KMotion.duration(context, KDurations.medium),
-            curve: KMotion.curve(context, KCurves.emphasized),
-            alignment: Alignment.topCenter,
-            child: _filtersOpen
-                ? const PulseFilterDrawer()
-                : const SizedBox(width: double.infinity),
-          ),
-          Expanded(
-            // Pinterest-style: the stream itself is pulled down and the dots
-            // grow out of the gap. The tabs and prompt stay put.
-            child: KPinRefresh(
-              label: 'Pulse',
-              onRefresh: _refresh,
-              busy: feeds[mode]!.refreshing,
-              child: KTabPager(
-                tabs: <KTabPagerTab>[
-                  for (final candidate in PulseMode.values)
-                    KTabPagerTab(id: candidate.wire, label: candidate.label),
-                ],
-                selectedIndex: mode.index,
-                onSelected: (index) => _selectMode(PulseMode.values[index]),
-                onPageProgress: (page) => _pageProgress.value = page,
-                showRail: false,
-                builder: (context, index) => _page(
-                  context,
-                  PulseMode.values[index],
-                  feeds[PulseMode.values[index]]!,
-                  filters,
-                  tasteIds,
+      child: KScaffold(
+        floatingActionButton: _ComposeButton(
+          onPressed: () => unawaited(_compose()),
+        ),
+        body: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              // Pinterest-style: the stream itself is pulled down and the
+              // dots grow out of the gap that opens under the header.
+              child: KPinRefresh(
+                label: 'Pulse',
+                onRefresh: () => _refresh(_mode),
+                busy: feeds[mode]!.refreshing,
+                indicatorInset: _PulseHeader.height,
+                child: KTabPager(
+                  tabs: <KTabPagerTab>[
+                    for (final candidate in PulseMode.values)
+                      KTabPagerTab(id: candidate.wire, label: candidate.label),
+                  ],
+                  selectedIndex: mode.index,
+                  onSelected: (index) => _selectMode(PulseMode.values[index]),
+                  onPageProgress: (page) => _pageProgress.value = page,
+                  showRail: false,
+                  builder: (context, index) => _page(
+                    context,
+                    PulseMode.values[index],
+                    feeds[PulseMode.values[index]]!,
+                    filters,
+                    tasteIds,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _PulseHeader(
+                hide: _chrome,
+                pageProgress: _pageProgress,
+                selected: mode,
+                onSelect: _selectMode,
+                activeFilters: filters.activeCount,
+                onFilters: _openFilters,
+                onSearch: () => unawaited(context.push(Routes.search)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -212,8 +290,17 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
         controller: _scrolls[mode],
         physics: KPinRefresh.physics,
         slivers: <Widget>[
+          // The glass header floats over this space.
+          const SliverToBoxAdapter(
+            child: SizedBox(height: _PulseHeader.height),
+          ),
+          SliverToBoxAdapter(
+            child: _PulsePrompt(onPressed: () => unawaited(_compose())),
+          ),
+          SliverToBoxAdapter(child: _ActiveFilterBar(filters: filters)),
           ..._body(feed, mode, filters, tasteIds),
-          const SliverToBoxAdapter(child: SizedBox(height: Space.s16)),
+          // Clears the compose button at the very end of the stream.
+          const SliverToBoxAdapter(child: SizedBox(height: Space.s24)),
         ],
       ),
     );
@@ -281,7 +368,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
           child: KEmptyState(
             title: 'Nothing matches those filters',
             message:
-                'Loosen the Type or Time filters — or keep scrolling: '
+                'Loosen the type or time filters — or keep scrolling: '
                 'older pages load underneath and may match.',
             icon: Icons.filter_alt_off_outlined,
             actionLabel: 'Clear filters',
@@ -291,17 +378,30 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
       ];
     }
 
+    final entered = _entered[mode]!;
     return <Widget>[
       SliverList.builder(
         itemCount: visible.length,
         itemBuilder: (context, index) {
           final item = visible[index];
-          final card = PulseCard(key: ValueKey<String>(item.key), item: item);
+          final card = PulseCard(item: item);
           if (item.key == feed.freshKey) {
             // The post the user just composed slides in from above.
-            return _ComposedEntrance(child: card);
+            entered.add(item.key);
+            return _ComposedEntrance(
+              key: ValueKey<String>(item.key),
+              child: card,
+            );
           }
-          return _Entrance(index: index, child: card);
+          // Only the first screenful of a fresh load staggers in; rows met
+          // later while scrolling appear instantly, as they should.
+          final fresh = entered.add(item.key);
+          return _Entrance(
+            key: ValueKey<String>(item.key),
+            index: index,
+            animate: fresh && index <= Stagger.max,
+            child: card,
+          );
         },
       ),
       SliverToBoxAdapter(child: _footer(feed, mode)),
@@ -326,11 +426,32 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
     if (!feed.hasMore) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: Space.s8),
-        child: Center(
-          child: Text(
-            'That is everything for now',
-            style: context.kt.caption.copyWith(color: context.kc.textTertiary),
-          ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            SizedBox(
+              width: Space.s6,
+              child: Divider(
+                height: Strokes.hairline,
+                color: context.kc.borderDefault,
+              ),
+            ),
+            const SizedBox(width: Space.s3),
+            Text(
+              'You are all caught up',
+              style: context.kt.caption.copyWith(
+                color: context.kc.textTertiary,
+              ),
+            ),
+            const SizedBox(width: Space.s3),
+            SizedBox(
+              width: Space.s6,
+              child: Divider(
+                height: Strokes.hairline,
+                color: context.kc.borderDefault,
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -338,164 +459,304 @@ class _PulseScreenState extends ConsumerState<PulseScreen> {
   }
 }
 
-/// The For-you ▸ Following segmented control, pinned under the serif title,
-/// with the filter-drawer toggle on the trailing edge.
-class _PulseTabs extends StatelessWidget implements PreferredSizeWidget {
-  const _PulseTabs({
-    required this.selected,
+extension on PulseFilters {
+  /// How many filter dimensions deviate from their defaults.
+  int get activeCount =>
+      (type != PulseTypeFilter.all ? 1 : 0) +
+      (time != PulseTimeFilter.all ? 1 : 0) +
+      (sharedTaste ? 1 : 0);
+}
+
+// ──────────────────────────────────────────────────────────────── header ──
+
+/// The floating glass header: serif title and actions over a segmented
+/// For you | Following switch whose thumb follows the pager's finger.
+class _PulseHeader extends StatelessWidget {
+  const _PulseHeader({
+    required this.hide,
     required this.pageProgress,
+    required this.selected,
     required this.onSelect,
-    required this.filtersOpen,
-    required this.filtersActive,
-    required this.onToggleFilters,
+    required this.activeFilters,
+    required this.onFilters,
+    required this.onSearch,
   });
 
+  /// 0 = shown, 1 = tucked away.
+  final Animation<double> hide;
+
+  /// The pager's live fractional page.
+  final ValueListenable<double> pageProgress;
+
   final PulseMode selected;
-  final double pageProgress;
-  final void Function(PulseMode) onSelect;
+  final ValueChanged<PulseMode> onSelect;
 
-  /// Whether the drawer is currently unfolded.
-  final bool filtersOpen;
+  /// Number of filter dimensions in use — the badge on the tune button.
+  final int activeFilters;
+  final VoidCallback onFilters;
+  final VoidCallback onSearch;
 
-  /// Whether any filter deviates from the defaults — shows the accent dot.
-  final bool filtersActive;
+  static const double _titleHeight = Layout.topBarHeight;
+  static const double _switchHeight = Space.s10;
 
-  /// Unfolds / folds the drawer.
-  final VoidCallback onToggleFilters;
-
-  @override
-  Size get preferredSize => const Size.fromHeight(Space.s12);
+  /// Total header height; the stream reserves exactly this much at its top.
+  static const double height = _titleHeight + _switchHeight + Space.s3;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.bgBase,
-        border: Border(
-          bottom: BorderSide(
-            color: colors.borderSubtle,
-            width: Strokes.hairline,
-          ),
-        ),
-      ),
-      child: SizedBox(
-        height: Space.s12,
-        child: Row(
-          children: <Widget>[
-            for (final mode in PulseMode.values)
-              Expanded(
-                child: _PulseTab(
-                  mode: mode,
-                  selected:
-                      mode == selected ||
-                      (1 - (pageProgress - mode.index).abs()) >= 0.5,
-                  selectionProgress: (1 - (pageProgress - mode.index).abs())
-                      .clamp(0.0, 1.0),
-                  onSelect: onSelect,
-                ),
+    final text = context.kt;
+    final fade = hide.drive(
+      Tween<double>(
+        begin: 1,
+        end: 0,
+      ).chain(CurveTween(curve: const Interval(0, 0.7))),
+    );
+
+    final glass = ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: Blurs.chrome, sigmaY: Blurs.chrome),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surfaceGlass,
+            border: Border(
+              bottom: BorderSide(
+                color: colors.borderSubtle,
+                width: Strokes.hairline,
               ),
-            SizedBox(
-              width: Space.s12,
-              child: Stack(
-                alignment: Alignment.center,
-                clipBehavior: Clip.none,
+            ),
+          ),
+          child: SizedBox(
+            height: height,
+            child: FadeTransition(
+              opacity: fade,
+              child: Column(
                 children: <Widget>[
-                  KIconButton(
-                    icon: filtersOpen
-                        ? Icons.tune_rounded
-                        : Icons.tune_outlined,
-                    semanticLabel: filtersOpen
-                        ? 'Hide filters'
-                        : 'Show filters',
-                    color: filtersOpen || filtersActive
-                        ? colors.accentDefault
-                        : colors.textSecondary,
-                    onPressed: onToggleFilters,
-                  ),
-                  if (filtersActive)
-                    Positioned(
-                      top: Space.s1,
-                      right: Space.s1,
-                      child: IgnorePointer(
-                        child: Container(
-                          width: Space.s2,
-                          height: Space.s2,
-                          decoration: BoxDecoration(
-                            color: colors.accentDefault,
-                            shape: BoxShape.circle,
-                          ),
+                  SizedBox(
+                    height: _titleHeight,
+                    child: Row(
+                      children: <Widget>[
+                        const SizedBox(width: Space.s4),
+                        Text('Pulse', style: text.display3),
+                        const Spacer(),
+                        KIconButton(
+                          icon: Icons.search_rounded,
+                          semanticLabel: 'Search',
+                          onPressed: onSearch,
                         ),
+                        _FilterButton(
+                          activeCount: activeFilters,
+                          onPressed: onFilters,
+                        ),
+                        const MessagesAction(),
+                        const SizedBox(width: Space.s2),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: Space.s4),
+                    child: ValueListenableBuilder<double>(
+                      valueListenable: pageProgress,
+                      builder: (context, page, _) => _ModeSwitch(
+                        page: page,
+                        selected: selected,
+                        onSelect: onSelect,
+                        height: _switchHeight,
                       ),
                     ),
+                  ),
                 ],
               ),
             ),
-          ],
+          ),
         ),
+      ),
+    );
+
+    return AnimatedBuilder(
+      animation: hide,
+      child: glass,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, -height * hide.value),
+        child: child,
       ),
     );
   }
 }
 
-class _PulseTab extends StatelessWidget {
-  const _PulseTab({
-    required this.mode,
+/// The tune button, with a count badge while any filter is in use.
+class _FilterButton extends StatelessWidget {
+  const _FilterButton({required this.activeCount, required this.onPressed});
+
+  final int activeCount;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final active = activeCount > 0;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        KIconButton(
+          icon: Icons.tune_rounded,
+          semanticLabel: active
+              ? 'Filters, $activeCount active'
+              : 'Filters',
+          color: active ? colors.accentHover : colors.textPrimary,
+          onPressed: onPressed,
+        ),
+        Positioned(
+          right: Space.s15,
+          top: Space.s2,
+          child: IgnorePointer(
+            child: ExcludeSemantics(
+              child: AnimatedScale(
+                scale: active ? 1 : 0,
+                duration: KMotion.duration(context, KDurations.medium),
+                curve: KMotion.curve(context, KCurves.overshoot),
+                child: Container(
+                  constraints: const BoxConstraints(
+                    minWidth: Space.s4,
+                    minHeight: Space.s4,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: Space.s1),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: colors.accentDefault,
+                    borderRadius: BorderRadius.circular(Radii.full),
+                  ),
+                  child: Text(
+                    '${active ? activeCount : 1}',
+                    style: context.kt.micro.copyWith(
+                      color: colors.textOnAccent,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// For you | Following as one pill. The thumb sits at the pager's live
+/// fractional page, so it glides under the finger during a swipe.
+class _ModeSwitch extends StatelessWidget {
+  const _ModeSwitch({
+    required this.page,
     required this.selected,
-    required this.selectionProgress,
     required this.onSelect,
+    required this.height,
+  });
+
+  final double page;
+  final PulseMode selected;
+  final ValueChanged<PulseMode> onSelect;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    const modes = PulseMode.values;
+    return Container(
+      height: height,
+      padding: const EdgeInsets.all(Space.s05),
+      decoration: BoxDecoration(
+        color: colors.surface2,
+        borderRadius: BorderRadius.circular(Radii.full),
+        border: Border.all(color: colors.borderSubtle, width: Strokes.hairline),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final slot = constraints.maxWidth / modes.length;
+          final position = page.clamp(0.0, (modes.length - 1).toDouble());
+          return Stack(
+            children: <Widget>[
+              Positioned(
+                left: slot * position,
+                top: 0,
+                bottom: 0,
+                width: slot,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.surface4,
+                    borderRadius: BorderRadius.circular(Radii.full),
+                    boxShadow: KlectTheme.shadow(Elevation.low),
+                  ),
+                ),
+              ),
+              Row(
+                children: <Widget>[
+                  for (final mode in modes)
+                    Expanded(
+                      child: _ModeLabel(
+                        mode: mode,
+                        progress: (1 - (position - mode.index).abs()).clamp(
+                          0.0,
+                          1.0,
+                        ),
+                        selected: mode == selected,
+                        onTap: () => onSelect(mode),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ModeLabel extends StatelessWidget {
+  const _ModeLabel({
+    required this.mode,
+    required this.progress,
+    required this.selected,
+    required this.onTap,
   });
 
   final PulseMode mode;
+  final double progress;
   final bool selected;
-  final double selectionProgress;
-  final void Function(PulseMode) onSelect;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.kc;
     final foreground = Color.lerp(
-      colors.textSecondary,
+      colors.textTertiary,
       colors.textPrimary,
-      selectionProgress,
+      progress,
     )!;
-    return KPressable(
-      onTap: () => onSelect(mode),
-      enforceMinTapTarget: false,
-      semanticLabel: selected ? '${mode.label}, selected' : mode.label,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: <Widget>[
-          Expanded(
-            child: Center(
-              child: Text(
-                mode.label,
-                style: context.kt.label.copyWith(color: foreground),
-              ),
-            ),
+    return Semantics(
+      selected: selected,
+      child: KPressable(
+        onTap: onTap,
+        enforceMinTapTarget: false,
+        semanticLabel: selected ? '${mode.label}, selected' : mode.label,
+        child: Center(
+          child: Text(
+            mode.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.kt.label.copyWith(color: foreground),
           ),
-          AnimatedContainer(
-            duration: KMotion.duration(context, KDurations.fast),
-            curve: KMotion.curve(context, KCurves.emphasized),
-            width: Space.s8 * selectionProgress,
-            height: Strokes.thick,
-            decoration: BoxDecoration(
-              color: Color.lerp(
-                Colors.transparent,
-                colors.accentDefault,
-                selectionProgress,
-              ),
-              borderRadius: BorderRadius.circular(Radii.full),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
+// ──────────────────────────────────────────────────────── stream chrome ──
+
 /// A visible entry into conversation so Pulse immediately reads as the place
-/// to post, quote and talk â€” not just another gallery.
+/// to post, quote and talk — not just another gallery. It scrolls away with
+/// the stream instead of pinning itself to the top.
 class _PulsePrompt extends ConsumerWidget {
   const _PulsePrompt({required this.onPressed});
 
@@ -509,23 +770,31 @@ class _PulsePrompt extends ConsumerWidget {
         .watch(klectApiProvider)
         .publicUrl(profile?.avatarPath, bucket: StorageBucket.avatars);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: colors.borderSubtle,
-            width: Strokes.hairline,
-          ),
-        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Space.s4,
+        Space.s3,
+        Space.s4,
+        Space.s3,
       ),
       child: KPressable(
         onTap: onPressed,
         enforceMinTapTarget: false,
         semanticLabel: 'Create a Pulse post',
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Space.s4,
-            vertical: Space.s3,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(
+            Space.s15,
+            Space.s15,
+            Space.s15,
+            Space.s15,
+          ),
+          decoration: BoxDecoration(
+            color: colors.surface1,
+            borderRadius: BorderRadius.circular(Radii.full),
+            border: Border.all(
+              color: colors.borderSubtle,
+              width: Strokes.hairline,
+            ),
           ),
           child: Row(
             children: <Widget>[
@@ -534,14 +803,26 @@ class _PulsePrompt extends ConsumerWidget {
               Expanded(
                 child: Text(
                   'What is happening on your shelves?',
-                  style: context.kt.body.copyWith(color: colors.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.kt.callout.copyWith(
+                    color: colors.textTertiary,
+                  ),
                 ),
               ),
               const SizedBox(width: Space.s2),
-              Icon(
-                Icons.image_outlined,
-                size: Space.s5,
-                color: colors.accentDefault,
+              Container(
+                width: Space.s8,
+                height: Space.s8,
+                decoration: BoxDecoration(
+                  color: colors.accentSubtle,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.add_photo_alternate_outlined,
+                  size: Space.s4,
+                  color: colors.accentHover,
+                ),
               ),
             ],
           ),
@@ -551,36 +832,162 @@ class _PulsePrompt extends ConsumerWidget {
   }
 }
 
-/// Staggered fade + rise for stream rows, capped by [KMotion.staggerDelay] so
-/// a long feed never feels slow further down. Same pattern as the inbox.
-class _Entrance extends StatelessWidget {
-  const _Entrance({required this.index, required this.child});
+/// The filters in use, as removable chips at the top of the stream.
+class _ActiveFilterBar extends ConsumerWidget {
+  const _ActiveFilterBar({required this.filters});
+
+  final PulseFilters filters;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.kc;
+    final controller = ref.read(pulseFiltersProvider.notifier);
+    final time = switch (filters.time) {
+      PulseTimeFilter.today => 'Today',
+      PulseTimeFilter.week => 'This week',
+      PulseTimeFilter.month => 'This month',
+      PulseTimeFilter.all => null,
+    };
+
+    final chips = <Widget>[
+      if (filters.type != PulseTypeFilter.all)
+        KChip(
+          label: filters.type.label,
+          selected: true,
+          dense: true,
+          onRemove: () => controller.setType(PulseTypeFilter.all),
+        ),
+      if (time != null)
+        KChip(
+          label: time,
+          icon: Icons.schedule_rounded,
+          selected: true,
+          dense: true,
+          onRemove: () => controller.setTime(PulseTimeFilter.all),
+        ),
+      if (filters.sharedTaste)
+        KChip(
+          label: 'Shared taste',
+          icon: Icons.auto_awesome_rounded,
+          selected: true,
+          dense: true,
+          onRemove: controller.toggleSharedTaste,
+        ),
+    ];
+
+    return AnimatedSize(
+      duration: KMotion.duration(context, KDurations.medium),
+      curve: KMotion.curve(context, KCurves.emphasized),
+      alignment: Alignment.topCenter,
+      child: chips.isEmpty
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: const EdgeInsets.only(bottom: Space.s3),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: Space.s4),
+                child: Row(
+                  children: <Widget>[
+                    for (final chip in chips) ...<Widget>[
+                      chip,
+                      const SizedBox(width: Space.s2),
+                    ],
+                    KPressable(
+                      onTap: controller.clear,
+                      enforceMinTapTarget: false,
+                      semanticLabel: 'Clear all filters',
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Space.s2,
+                          vertical: Space.s1,
+                        ),
+                        child: Text(
+                          'Clear all',
+                          style: context.kt.label.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// Staggered fade + rise for the first screenful of a stream, capped by
+/// [KMotion.staggerDelay] so the whole entrance stays inside the motion
+/// ceiling. Decides once, when the row is created, so a row scrolling back
+/// into view never replays it.
+class _Entrance extends StatefulWidget {
+  const _Entrance({
+    required this.index,
+    required this.animate,
+    required this.child,
+    super.key,
+  });
 
   final int index;
+  final bool animate;
   final Widget child;
 
   @override
+  State<_Entrance> createState() => _EntranceState();
+}
+
+class _EntranceState extends State<_Entrance>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+  Animation<double>? _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.animate) return;
+    final delay = KMotion.staggerDelay(widget.index, grid: false);
+    final total = KDurations.base + delay;
+    final controller = AnimationController(vsync: this, duration: total);
+    _controller = controller;
+    _progress = CurvedAnimation(
+      parent: controller,
+      curve: Interval(
+        delay.inMicroseconds / total.inMicroseconds,
+        1,
+        curve: KCurves.emphasized,
+      ),
+    );
+    unawaited(controller.forward());
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (KMotion.reduced(context)) return child;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: 1),
-      duration: KDurations.base + KMotion.staggerDelay(index, grid: false),
-      curve: Curves_.emphasized,
-      builder: (context, t, inner) => Opacity(
-        opacity: t,
-        child: Transform.translate(
-          offset: Offset(0, (1 - t) * Space.s3),
-          child: inner,
+    final progress = _progress;
+    if (progress == null || KMotion.reduced(context)) return widget.child;
+    return FadeTransition(
+      opacity: progress,
+      child: AnimatedBuilder(
+        animation: progress,
+        child: widget.child,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(0, (1 - progress.value) * Space.s4),
+          child: child,
         ),
       ),
-      child: child,
     );
   }
 }
 
 /// The just-composed post sliding down into the top of the stream.
 class _ComposedEntrance extends StatelessWidget {
-  const _ComposedEntrance({required this.child});
+  const _ComposedEntrance({required this.child, super.key});
 
   final Widget child;
 
@@ -616,12 +1023,16 @@ class _ComposeButton extends StatelessWidget {
       semanticLabel: 'Share something to Pulse',
       enforceMinTapTarget: false,
       child: SizedBox.square(
-        dimension: Space.s12,
+        dimension: Space.s14,
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: colors.accentDefault,
             shape: BoxShape.circle,
-            boxShadow: KlectTheme.shadow(Elevation.mid),
+            border: Border.all(color: colors.accentHover, width: Strokes.thin),
+            boxShadow: <BoxShadow>[
+              ...KlectTheme.shadow(Elevation.mid),
+              ...KlectTheme.shadow(Elevation.glow),
+            ],
           ),
           child: Icon(
             Icons.edit_rounded,

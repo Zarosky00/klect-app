@@ -6,22 +6,21 @@ import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../core/api/api_error.dart';
-import '../../../core/api/klect_api.dart';
 import '../../../core/interactions/interactions.dart';
-import '../../../core/links.dart';
 import '../../../core/models/models.dart';
 import '../../../core/supabase.dart';
 import '../../../design/motion.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
-import '../../profile/follow_button.dart';
 import '../data/pulse_entry_view.dart';
 import '../widgets/comment_action_bar.dart';
 import '../widgets/comment_author.dart';
 import '../widgets/entity_attachment_card.dart';
 import '../widgets/pulse_card.dart';
+import '../widgets/pulse_media_peek.dart';
 import '../widgets/pulse_target_card.dart';
 import 'post_thread_controller.dart';
+import 'thread_parts.dart';
 
 /// **The post thread** — the X-anatomy destination a Pulse row opens
 /// (`/post/:id`, 0021 `get_post_thread`).
@@ -301,7 +300,7 @@ class _PostBlock extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _AuthorHeader(
+          ThreadAuthorHeader(
             author: author,
             reposter: post.reposter,
             showFollow: author != null && author.id != meId,
@@ -313,10 +312,16 @@ class _PostBlock extends ConsumerWidget {
           if (post.media.isNotEmpty) ...<Widget>[
             const SizedBox(height: Space.s3),
             // Inline and bounded, like the stream — the immersive treatment
-            // belongs to Surf, not to a discussion page.
+            // belongs to Surf, not to a discussion page. Holding a photo
+            // peeks it; holding the text does not.
             PostMediaGrid(
               media: post.media,
               maxHeight: PostMediaGrid.streamMaxHeight,
+              peek: PulsePeekTarget(
+                entity: actionEntity,
+                title: body ?? author?.name,
+                subtitle: author?.handle,
+              ),
             ),
           ],
           if (target != null) ...<Widget>[
@@ -329,20 +334,24 @@ class _PostBlock extends ConsumerWidget {
           if (post.sortAt != null) ...<Widget>[
             const SizedBox(height: Space.s3),
             Text(
-              _fullTimestamp(post.sortAt!),
+              formatThreadTimestamp(post.sortAt!),
               style: text.caption.copyWith(color: colors.textTertiary),
             ),
           ],
           const SizedBox(height: Space.s3),
           Divider(height: Strokes.hairline, color: colors.borderSubtle),
-          _StatsRow(entity: post.entity),
+          ThreadStatsRow(entity: post.entity),
           Divider(height: Strokes.hairline, color: colors.borderSubtle),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: Space.s1),
+            // Compact split targets: the full-size bar is wider than a
+            // 390pt phone's content column.
             child: KActionBar(
               entity: actionEntity,
               seed: post.seed,
               live: true,
+              compact: true,
+              alignment: MainAxisAlignment.spaceBetween,
               shareTitle: body ?? author?.name,
               quotePreview: quotePreview,
               quoteMedia: actionEntity.type == EntityType.post
@@ -354,176 +363,6 @@ class _PostBlock extends ConsumerWidget {
           Divider(height: Strokes.hairline, color: colors.borderSubtle),
         ],
       ),
-    );
-  }
-
-  static const List<String> _months = <String>[
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
-  static String _fullTimestamp(DateTime at) {
-    final local = at.toLocal();
-    final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
-    final minute = local.minute.toString().padLeft(2, '0');
-    final meridiem = local.hour < 12 ? 'AM' : 'PM';
-    return '$hour12:$minute $meridiem · '
-        '${local.day} ${_months[local.month - 1]} ${local.year}';
-  }
-}
-
-class _AuthorHeader extends ConsumerWidget {
-  const _AuthorHeader({
-    required this.author,
-    required this.reposter,
-    required this.showFollow,
-  });
-
-  final Profile? author;
-  final Profile? reposter;
-  final bool showFollow;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.kc;
-    final text = context.kt;
-    final api = ref.watch(klectApiProvider);
-    final avatarUrl = api.publicUrl(
-      author?.avatarPath,
-      bucket: StorageBucket.avatars,
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        if (reposter != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: Space.s2),
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  Icons.repeat_rounded,
-                  size: Space.s4,
-                  color: colors.actionRepost,
-                ),
-                const SizedBox(width: Space.s15),
-                Flexible(
-                  child: Text(
-                    '${reposter!.name} reposted',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.micro.copyWith(color: colors.textSecondary),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        Row(
-          children: <Widget>[
-            KAvatar(
-              imageUrl: avatarUrl,
-              name: author?.name,
-              size: Space.s12,
-              isVerified: author?.isVerified ?? false,
-              onTap: author == null || author!.username.isEmpty
-                  ? null
-                  : () =>
-                        context.push(KlectLinks.profilePath(author!.username)),
-            ),
-            const SizedBox(width: Space.s3),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    author?.name ?? 'Someone',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.bodyStrong,
-                  ),
-                  if (author != null && author!.username.isNotEmpty)
-                    Text(
-                      author!.handle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: text.caption.copyWith(color: colors.textTertiary),
-                    ),
-                ],
-              ),
-            ),
-            if (showFollow && author != null) ...<Widget>[
-              const SizedBox(width: Space.s2),
-              FollowButton(
-                userId: author!.id,
-                displayName: author!.name,
-                avatarPath: author!.avatarPath,
-                followerCount: author!.followerCount,
-                size: KButtonSize.small,
-              ),
-            ],
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-/// The X stats line: bold counts, quiet labels, live off the optimistic
-/// engine — likes · reposts · saves · views.
-class _StatsRow extends ConsumerWidget {
-  const _StatsRow({required this.entity});
-
-  final EntityRef entity;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(interactionProvider(entity));
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Space.s3),
-      child: Wrap(
-        spacing: Space.s4,
-        runSpacing: Space.s1,
-        children: <Widget>[
-          _Stat(count: state.likeCount, label: 'Likes'),
-          _Stat(count: state.repostCount, label: 'Reposts'),
-          _Stat(count: state.saveCount, label: 'Saves'),
-          _Stat(count: state.viewCount, label: 'Views'),
-        ],
-      ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  const _Stat({required this.count, required this.label});
-
-  final int count;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.kc;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text(formatCount(count), style: context.kt.count),
-        const SizedBox(width: Space.s1),
-        Text(
-          label,
-          style: context.kt.caption.copyWith(color: colors.textTertiary),
-        ),
-      ],
     );
   }
 }
