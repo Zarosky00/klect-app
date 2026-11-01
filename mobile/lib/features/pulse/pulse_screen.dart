@@ -181,8 +181,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
     });
   }
 
-  void _openFilters() =>
-      unawaited(PulseFilterSheet.show(context, mode: _mode));
+  void _openFilters() => unawaited(PulseFilterSheet.show(context, mode: _mode));
 
   // ───────────────────────────────────────────────────────────────── build ──
 
@@ -246,6 +245,11 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
                   onSelected: (index) => _selectMode(PulseMode.values[index]),
                   onPageProgress: (page) => _pageProgress.value = page,
                   showRail: false,
+                  // Both streams are already loading (watched above), so
+                  // building the other one ahead of time means the first
+                  // swipe slides over a finished list, not a mid-gesture
+                  // build of every card and image on it.
+                  preloadNeighbors: true,
                   builder: (context, index) => _page(
                     context,
                     PulseMode.values[index],
@@ -600,9 +604,7 @@ class _FilterButton extends StatelessWidget {
       children: <Widget>[
         KIconButton(
           icon: Icons.tune_rounded,
-          semanticLabel: active
-              ? 'Filters, $activeCount active'
-              : 'Filters',
+          semanticLabel: active ? 'Filters, $activeCount active' : 'Filters',
           color: active ? colors.accentHover : colors.textPrimary,
           onPressed: onPressed,
         ),

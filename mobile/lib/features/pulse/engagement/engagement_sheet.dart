@@ -20,7 +20,6 @@ import '../../profile/follow_button.dart';
 import '../../profile/profile_queries.dart';
 import '../../profile/user_actions.dart';
 import '../data/pulse_entry_view.dart';
-import '../widgets/pulse_card.dart';
 
 typedef EngagementQuery = ({EntityRef entity, SocialEngagementTab tab});
 
@@ -145,10 +144,30 @@ final engagementProvider = NotifierProvider.autoDispose
       name: 'socialEngagement',
     );
 
-/// Stable identity of one engagement row: the account for likes and reposts,
-/// the quote post for quotes.
+/// The account behind one engagement row and when it acted.
+///
+/// Likes and reposts carry the account directly. A quote row carries the
+/// quote post instead, so its account is the post's quoter: the reposter on a
+/// repost-shaped envelope, otherwise the author.
+({Profile? profile, DateTime? actedAt}) engagementActor(
+  SocialEngagementItem item,
+) {
+  final profile = item.profile;
+  final entry = item.entry;
+  if (profile != null || entry == null) {
+    return (profile: profile, actedAt: item.actedAt);
+  }
+  final view = PulseItem.fromEntry(entry);
+  return (
+    profile: view.reposter ?? view.author,
+    actedAt: item.actedAt ?? view.sortAt,
+  );
+}
+
+/// Stable identity of one engagement row: the account, on every tab. Someone
+/// who quoted twice is listed once, like someone who liked once.
 String engagementItemKey(SocialEngagementItem item) =>
-    item.profile?.id ?? item.entry?.key ?? '${item.actedAt}';
+    engagementActor(item).profile?.id ?? item.entry?.key ?? '${item.actedAt}';
 
 /// The engagement page's three tabs, in rail order.
 const List<SocialEngagementTab> engagementTabs = SocialEngagementTab.values;
@@ -207,8 +226,9 @@ EngagementSummary resolveEngagementSummary({
 
 /// Public engagement viewer opened by tapping a non-zero action count.
 ///
-/// Likes and Reposts list the accounts behind the number; Quotes lists the
-/// quote posts in full. Swipe sideways or tap the rail to move between them.
+/// Every tab lists the accounts behind the number — who liked, who reposted,
+/// who quoted — never the quote posts themselves. Swipe sideways or tap the
+/// rail to move between them.
 abstract final class SocialEngagementSheet {
   static Future<void> show(
     BuildContext context, {
@@ -219,7 +239,7 @@ abstract final class SocialEngagementSheet {
     title: 'Engagement',
     maxHeightFraction: 0.92,
     // The rail and the rows run edge to edge; each row owns its own inset so
-    // avatars, quote cards and the indicator share one left edge.
+    // avatars and the indicator share one left edge.
     padding: EdgeInsets.zero,
     builder: (_) => _EngagementBody(entity: entity, initialTab: initialTab),
   );
@@ -483,7 +503,7 @@ class _RailTab extends StatelessWidget {
   }
 }
 
-/// One tab's list: accounts for likes and reposts, full posts for quotes.
+/// One tab's list of accounts.
 class _EngagementPage extends ConsumerStatefulWidget {
   const _EngagementPage({required this.entity, required this.tab});
 
@@ -501,8 +521,6 @@ class _EngagementPageState extends ConsumerState<_EngagementPage> {
 
   EngagementQuery get _query => (entity: widget.entity, tab: widget.tab);
 
-  bool get _isQuotes => widget.tab == SocialEngagementTab.quote;
-
   EngagementController get _notifier =>
       ref.read(engagementProvider(_query).notifier);
 
@@ -512,12 +530,12 @@ class _EngagementPageState extends ConsumerState<_EngagementPage> {
     final (String phase, Widget child) = switch (state) {
       EngagementState(loading: true, items: []) => (
         'loading',
-        Padding(
+        const Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: _isQuotes ? Space.s4 : Space.s5,
+            horizontal: Space.s5,
             vertical: Space.s3,
           ),
-          child: KSkeletonList(rows: _isQuotes ? 3 : 7, showMedia: _isQuotes),
+          child: KSkeletonList(rows: 7, showMedia: false),
         ),
       ),
       EngagementState(unavailable: true) => (
@@ -578,7 +596,7 @@ class _EngagementPageState extends ConsumerState<_EngagementPage> {
         SocialEngagementTab.repost =>
           'Accounts that repost this will appear here.',
         SocialEngagementTab.quote =>
-          'Posts that quote this with their own take will appear here.',
+          'Accounts that quote this will appear here.',
       },
       icon: style.icon,
       compact: true,
@@ -593,28 +611,22 @@ class _EngagementPageState extends ConsumerState<_EngagementPage> {
           'engagement:${widget.entity.key}:${widget.tab.wire}',
         ),
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.only(
-          top: _isQuotes ? Space.s0 : Space.s2,
-          bottom: Space.s6,
-        ),
+        padding: const EdgeInsets.only(top: Space.s2, bottom: Space.s6),
         itemCount: items.length + 1,
         itemBuilder: (context, index) {
           if (index == items.length) return _footer(state);
           final item = items[index];
           final key = engagementItemKey(item);
           final animate = _revealed.add(key);
-          final Widget row;
-          final entry = item.entry;
-          final profile = item.profile;
-          if (_isQuotes) {
-            row = entry == null
-                ? const SizedBox.shrink()
-                : PulseCard(item: PulseItem.fromEntry(entry));
-          } else {
-            row = profile == null
-                ? const SizedBox.shrink()
-                : _ActorRow(profile: profile, item: item, tab: widget.tab);
-          }
+          final actor = engagementActor(item);
+          final profile = actor.profile;
+          final row = profile == null
+              ? const SizedBox.shrink()
+              : _ActorRow(
+                  profile: profile,
+                  actedAt: actor.actedAt,
+                  tab: widget.tab,
+                );
           return KReveal(
             key: ValueKey<String>(key),
             animate: animate,
@@ -666,16 +678,12 @@ class _EngagementPageState extends ConsumerState<_EngagementPage> {
   }
 }
 
-/// One account behind a like or a repost.
+/// One account behind a like, a repost or a quote.
 class _ActorRow extends ConsumerWidget {
-  const _ActorRow({
-    required this.profile,
-    required this.item,
-    required this.tab,
-  });
+  const _ActorRow({required this.profile, required this.tab, this.actedAt});
 
   final Profile profile;
-  final SocialEngagementItem item;
+  final DateTime? actedAt;
   final SocialEngagementTab tab;
 
   @override
@@ -684,7 +692,7 @@ class _ActorRow extends ConsumerWidget {
     final api = ref.watch(klectApiProvider);
     final isSelf = ref.watch(currentUserIdProvider) == profile.id;
     final style = _tabStyle(colors, tab);
-    final actedAt = item.actedAt;
+    final actedAt = this.actedAt;
     final when = actedAt == null
         ? null
         : timeago.format(actedAt, locale: 'en_short');

@@ -216,8 +216,10 @@ void main() {
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
-    expect(find.text('My whole quote post'), findsOneWidget);
+    // Quotes lists the account behind the quote, never the quote post.
     expect(find.text('Mina Park'), findsOneWidget);
+    expect(find.textContaining('mina'), findsOneWidget);
+    expect(find.text('My whole quote post'), findsNothing);
 
     // Tap back to Likes from the rail.
     await tester.tap(find.text('Likes'));

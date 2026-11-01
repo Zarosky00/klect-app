@@ -69,8 +69,7 @@ class RepostThreadScreen extends ConsumerStatefulWidget {
   final RepostThreadArgs? args;
 
   @override
-  ConsumerState<RepostThreadScreen> createState() =>
-      _RepostThreadScreenState();
+  ConsumerState<RepostThreadScreen> createState() => _RepostThreadScreenState();
 }
 
 class _RepostThreadScreenState extends ConsumerState<RepostThreadScreen> {
@@ -128,9 +127,8 @@ class _RepostThreadScreenState extends ConsumerState<RepostThreadScreen> {
     await ref.read(commentsProvider(_entity).notifier).load();
   }
 
-  void _openInSurf() => unawaited(
-    context.push(KlectLinks.closeupPath(_entity.type, _entity.id)),
-  );
+  void _openInSurf() =>
+      unawaited(context.push(KlectLinks.closeupPath(_entity.type, _entity.id)));
 
   void _back() {
     if (context.canPop()) {
@@ -182,16 +180,21 @@ class _RepostThreadScreenState extends ConsumerState<RepostThreadScreen> {
         ],
       ),
       onRefresh: ready ? _refresh : null,
+      // Scaffold only shrinks the body for the keyboard and leaves its
+      // bottom bar under the IME, so the composer lifts itself instead.
+      resizeToAvoidBottomInset: false,
       bottomBar: !ready
           ? null
-          : ListenableBuilder(
-              listenable: _draft,
-              builder: (context, _) => CommentComposer(
-                controller: _draft.text,
-                focusNode: _composerFocus,
-                replyTo: _draft.replyTo,
-                onCancelReply: _draft.cancelReply,
-                onSend: () => unawaited(_send()),
+          : KKeyboardInset(
+              child: ListenableBuilder(
+                listenable: _draft,
+                builder: (context, _) => CommentComposer(
+                  controller: _draft.text,
+                  focusNode: _composerFocus,
+                  replyTo: _draft.replyTo,
+                  onCancelReply: _draft.cancelReply,
+                  onSend: () => unawaited(_send()),
+                ),
               ),
             ),
       body: !ready
@@ -231,11 +234,8 @@ class _RepostThreadScreenState extends ConsumerState<RepostThreadScreen> {
                     ),
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: MediaQuery.viewInsetsOf(context).bottom + Space.s8,
-                  ),
-                ),
+                // The body already ends above the lifted composer.
+                const SliverToBoxAdapter(child: SizedBox(height: Space.s8)),
               ],
             ),
     );

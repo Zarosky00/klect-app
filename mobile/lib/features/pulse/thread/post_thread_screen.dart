@@ -114,14 +114,21 @@ class _PostThreadScreenState extends ConsumerState<PostThreadScreen> {
     return KScaffold(
       appBar: const KFixedAppBar(title: 'Post', showBack: true),
       onRefresh: post == null ? null : _controller.refresh,
+      // Scaffold never lifts its bottom bar for the keyboard — it only
+      // shrinks the body — so the composer would sit under the IME. The
+      // composer applies the inset itself instead, exactly once, like the
+      // Surf closeup and the chat composer.
+      resizeToAvoidBottomInset: false,
       bottomBar: post == null
           ? null
-          : _Composer(
-              controller: _draft,
-              focusNode: _composerFocus,
-              replyTo: _replyTo,
-              onCancelReply: () => setState(() => _replyTo = null),
-              onSend: () => unawaited(_send()),
+          : KKeyboardInset(
+              child: _Composer(
+                controller: _draft,
+                focusNode: _composerFocus,
+                replyTo: _replyTo,
+                onCancelReply: () => setState(() => _replyTo = null),
+                onSend: () => unawaited(_send()),
+              ),
             ),
       body: post == null
           ? _fallback(state)
@@ -134,11 +141,8 @@ class _PostThreadScreenState extends ConsumerState<PostThreadScreen> {
                   ),
                 ),
                 ..._commentSlivers(state),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: MediaQuery.viewInsetsOf(context).bottom + Space.s8,
-                  ),
-                ),
+                // The body already ends above the lifted composer.
+                const SliverToBoxAdapter(child: SizedBox(height: Space.s8)),
               ],
             ),
     );
@@ -510,8 +514,7 @@ class _Composer extends StatelessWidget {
           top: BorderSide(color: colors.borderSubtle, width: Strokes.hairline),
         ),
       ),
-      // The Scaffold's resizeToAvoidBottomInset lifts the whole bottom bar
-      // above the keyboard, exactly like the chat composer.
+      // KKeyboardInset (in the screen) lifts the whole bar above the IME.
       padding: const EdgeInsets.fromLTRB(
         Space.s4,
         Space.s2,

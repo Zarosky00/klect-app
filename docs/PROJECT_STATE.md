@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-11-01 · Session: v1.7.1 released from `main` (Pulse redesign + peek gallery + v17x engagement work)
+> Last updated: 2026-11-01 · Session: v1.7.1 polish on `agent/v171-pulse-peek-polish` (peek captions, Pulse keyboard, Pulse swipe, quote accounts) — release path pending
 
 ---
 
@@ -926,10 +926,45 @@ Version is still `1.7.0+17`; no release, tag or APK was produced.
     history, so they can be removed once the user OKs it.
   - A stash on `main` holds an identical duplicate of the redesign files.
 
+### 2026-11-01 — v1.7.1 polish: peek captions, Pulse keyboard, Pulse swipe, quote accounts (branch `agent/v171-pulse-peek-polish`)
+
+- **Peek underline removed.** The long-press peek renders in a bare overlay entry (finger down)
+  and then a `PopupRoute`; neither has a `Material` ancestor, so every label fell back to
+  Flutter's yellow double-underline debug style. `_PeekBody` now sits in a transparent
+  `Material` with `TextDecoration.none`. The title and owner moved into `_PeekCaption`: centred,
+  title3 + caption, rising in a beat after the photo.
+- **Pulse comment composer above the keyboard.** `Scaffold` only shrinks its body for the IME and
+  leaves `bottomNavigationBar` under it, so the composer in `PostThreadScreen` and
+  `RepostThreadScreen` was hidden. Both now use `resizeToAvoidBottomInset: false` +
+  `KKeyboardInset`, the pattern the Surf closeup and chat already use; the extra viewInsets spacer
+  at the end of each list is gone.
+- **For you ↔ Following swipe.** `KTabPagerPhysics` settled every release on a fixed 280 ms
+  `emphasized` curve, which starts at about six times its average speed — a slow release lurched
+  and a fast one braked. A finger release now settles on `KTabPagerSpringSettle`, a critically
+  damped `Springs.snappy` spring seeded with the release velocity (capped so it cannot
+  overshoot). On a device-like tolerance it reaches 95% in ~230 ms and rests by ~450 ms, inside
+  the 480 ms ceiling. Reduced motion keeps the 90 ms fixed settle. `KTabPager.preloadNeighbors`
+  (on for Pulse only) builds the other stream ahead of time, so the first swipe does not build a
+  whole list mid-gesture.
+- **Engagement → Quotes lists accounts only.** Quote rows used to render the full quote
+  `PulseCard` with images. `engagementActor` now takes the quoter from the quote envelope and the
+  tab renders the same `_ActorRow` as Likes/Reposts (one row per account).
+- **Verification.** `flutter analyze` 0 issues; full `flutter test` **296/296** (the engagement
+  test now asserts the quote body is absent). Scratch widget checks (not committed) confirmed: no
+  peek label carries an underline; with a 340 px keyboard the thread composer's field ends at
+  y=496 on an 844 px screen (keyboard top 504); the spring never overshoots and starts at the
+  release velocity. Not yet checked on the RMX3771.
+- **Version.** Still `1.7.1+18`. Tag `v1.7.1` and its GitHub release already exist from
+  `fb77c7c`; how to ship this (move the tag vs. `v1.7.2`) is waiting on the user.
+
 ---
 
 ## Next actions
 
+00. Ship `agent/v171-pulse-peek-polish` once the user picks the release path, then device-check
+    on the RMX3771: hold a Surf card (no underlined text), comment on a Pulse post and on a
+    repost page with the keyboard up, swipe For you ↔ Following slowly and with a flick, and open
+    Engagement → Quotes (accounts only).
 0. Merge `agent/v17x-setup-shelves-nav` into the v1.7.x line once `agent/v170-pulse-fixes` is
    finished, then device-check: sign out → sign in (no setup flash), a new account's empty
    onboarding shelves (owner sees "Only you", a second account cannot find them), and the profile

@@ -456,7 +456,6 @@ class _PeekBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
-    final text = context.kt;
     final entity = config.entity;
     final title = config.title;
     final subtitle = config.subtitle;
@@ -519,87 +518,92 @@ class _PeekBody extends ConsumerWidget {
       reverseCurve: KCurves.accelerate,
     );
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        triggerInteractionTapFeedback(context);
-        close();
-      },
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: Blurs.sheet, sigmaY: Blurs.sheet),
-        child: SafeArea(
-          child: Center(
-            child: FadeTransition(
-              opacity: curved,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: Layout.readableMaxWidth,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    if (hasImage)
-                      _PeekPreview(
-                        animation: curved,
-                        reduced: reduced,
-                        child: _PeekGallery(
-                          key: galleryKey,
-                          config: config,
-                          held: held,
-                          handoff: handoff,
-                        ),
-                      )
-                    else if (title != null || subtitle != null)
-                      // No cover to show: preview the words instead of an
-                      // empty placeholder square.
-                      _PeekPreview(
-                        animation: curved,
-                        reduced: reduced,
-                        child: _PeekTextCard(title: title, subtitle: subtitle),
-                      ),
-                    if (hasImage && title != null) ...<Widget>[
-                      const SizedBox(height: Space.s4),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Space.s6,
-                        ),
-                        child: Text(
-                          title,
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.title3,
-                        ),
-                      ),
-                    ],
-                    if (hasImage && subtitle != null) ...<Widget>[
-                      const SizedBox(height: Space.s1),
-                      Text(
-                        subtitle,
-                        style: text.caption.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: Space.s8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: Space.s4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          for (var index = 0; index < actions.length; index++)
-                            _PeekActionButton(
-                              action: actions[index],
-                              animation: animation,
-                              reduced: reduced,
-                              arcOffset: _arcOffsetFor(index, actions.length),
-                              delay: index * _stagger,
-                            ),
-                        ],
-                      ),
+    // The peek lives in a bare overlay entry while the finger is down and in a
+    // PopupRoute after it lifts. Neither has a Material ancestor, so without
+    // this every label would fall back to Flutter's debug text style (the
+    // yellow double underline).
+    return Material(
+      type: MaterialType.transparency,
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(decoration: TextDecoration.none),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            triggerInteractionTapFeedback(context);
+            close();
+          },
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: Blurs.sheet, sigmaY: Blurs.sheet),
+            child: SafeArea(
+              child: Center(
+                child: FadeTransition(
+                  opacity: curved,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: Layout.readableMaxWidth,
                     ),
-                  ],
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        if (hasImage)
+                          _PeekPreview(
+                            animation: curved,
+                            reduced: reduced,
+                            child: _PeekGallery(
+                              key: galleryKey,
+                              config: config,
+                              held: held,
+                              handoff: handoff,
+                            ),
+                          )
+                        else if (title != null || subtitle != null)
+                          // No cover to show: preview the words instead of an
+                          // empty placeholder square.
+                          _PeekPreview(
+                            animation: curved,
+                            reduced: reduced,
+                            child: _PeekTextCard(
+                              title: title,
+                              subtitle: subtitle,
+                            ),
+                          ),
+                        if (hasImage && (title != null || subtitle != null))
+                          _PeekCaption(
+                            title: title,
+                            subtitle: subtitle,
+                            animation: animation,
+                            reduced: reduced,
+                          ),
+                        const SizedBox(height: Space.s6),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: Space.s4,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              for (
+                                var index = 0;
+                                index < actions.length;
+                                index++
+                              )
+                                _PeekActionButton(
+                                  action: actions[index],
+                                  animation: animation,
+                                  reduced: reduced,
+                                  arcOffset: _arcOffsetFor(
+                                    index,
+                                    actions.length,
+                                  ),
+                                  delay: index * _stagger,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -638,6 +642,80 @@ class _PeekPreview extends StatelessWidget {
         end: 1,
       ).animate(CurvedAnimation(parent: animation, curve: KCurves.overshoot)),
       child: child,
+    );
+  }
+}
+
+/// Title and owner under the preview: a quiet, centred caption that rises in
+/// a beat after the photo, so the picture lands first and the words follow.
+class _PeekCaption extends StatelessWidget {
+  const _PeekCaption({
+    required this.animation,
+    required this.reduced,
+    this.title,
+    this.subtitle,
+  });
+
+  final Animation<double> animation;
+  final bool reduced;
+  final String? title;
+  final String? subtitle;
+
+  /// The caption starts after the preview has begun to grow.
+  static const Interval _beat = Interval(0.2, 1, curve: KCurves.emphasized);
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.kc;
+    final text = context.kt;
+    final title = this.title;
+    final subtitle = this.subtitle;
+
+    final caption = Padding(
+      padding: const EdgeInsets.fromLTRB(Space.s8, Space.s5, Space.s8, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (title != null)
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: text.title3.copyWith(
+                color: colors.textPrimary,
+                decoration: TextDecoration.none,
+              ),
+            ),
+          if (title != null && subtitle != null)
+            const SizedBox(height: Space.s1),
+          if (subtitle != null)
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.caption.copyWith(
+                color: colors.textSecondary,
+                decoration: TextDecoration.none,
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (reduced) return FadeTransition(opacity: animation, child: caption);
+    final progress = animation.drive(CurveTween(curve: _beat));
+    return FadeTransition(
+      opacity: progress,
+      child: AnimatedBuilder(
+        animation: progress,
+        child: caption,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(0, (1 - progress.value) * Space.s3),
+          child: child,
+        ),
+      ),
     );
   }
 }
@@ -1002,10 +1080,8 @@ class _PeekGalleryState extends ConsumerState<_PeekGallery>
                 curve: KCurves.standard,
                 child: AnimatedBuilder(
                   animation: _position,
-                  builder: (context, _) => _Indicator(
-                    count: _count,
-                    position: _position.value,
-                  ),
+                  builder: (context, _) =>
+                      _Indicator(count: _count, position: _position.value),
                 ),
               ),
             ),

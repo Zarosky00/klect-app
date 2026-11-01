@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart' show SpringSimulation;
 
 import '../design/motion.dart';
 import '../design/theme.dart';
@@ -321,12 +322,82 @@ class KTabPagerSettleSimulation extends Simulation {
   bool isDone(double time) => time >= seconds;
 }
 
+/// The finger-driven settle: a critically damped spring that starts at the
+/// release velocity, so the page carries on at exactly the speed the finger
+/// let go and eases into place with no jump and no overshoot.
+///
+/// The fixed-duration [KTabPagerSettleSimulation] is kept for reduced motion,
+/// where the stated 90 ms matters more than continuity. With motion on, a
+/// fixed curve cannot match the finger: `KCurves.emphasized` leaves its start
+/// at roughly six times the average speed, so a slow release lurched forward
+/// and a fast fling braked — the "choppy" Pulse swipe (`DESIGN_SYSTEM.md` §3:
+/// the finger drives a spring, never a curve).
+class KTabPagerSpringSettle extends Simulation {
+  /// Creates a settle from [start] to [end] seeded with [velocity] (pixels
+  /// per second, in scroll-axis terms).
+  factory KTabPagerSpringSettle({
+    required double start,
+    required double end,
+    required double velocity,
+    SpringSpec spec = Springs.snappy,
+    Tolerance tolerance = Tolerance.defaultTolerance,
+  }) {
+    final omega = math.sqrt(spec.stiffness / spec.mass);
+    // A critically damped spring overshoots only when it is thrown towards
+    // the target faster than omega × distance; cap the throw there. Motion
+    // away from the target (a release that does not commit) is kept, so a
+    // settle-back curls round instead of reversing on the spot.
+    final distance = end - start;
+    final limit = omega * distance.abs();
+    final towards = distance == 0 ? 0.0 : velocity * distance.sign;
+    final seeded = towards > limit ? limit * distance.sign : velocity;
+    return KTabPagerSpringSettle._(
+      end: end,
+      spring: SpringSimulation(
+        SpringDescription(
+          mass: spec.mass,
+          stiffness: spec.stiffness,
+          damping: 2 * math.sqrt(spec.stiffness * spec.mass),
+        ),
+        start,
+        end,
+        seeded,
+        tolerance: tolerance,
+      ),
+      tolerance: tolerance,
+    );
+  }
+
+  KTabPagerSpringSettle._({
+    required this.end,
+    required this._spring,
+    required super.tolerance,
+  });
+
+  /// Scroll offset the settle lands on.
+  final double end;
+
+  final SpringSimulation _spring;
+
+  // Lands exactly on the page once at rest, so the page reads as a whole
+  // number afterwards instead of a sub-pixel fraction.
+  @override
+  double x(double time) => isDone(time) ? end : _spring.x(time);
+
+  @override
+  double dx(double time) => isDone(time) ? 0 : _spring.dx(time);
+
+  @override
+  bool isDone(double time) => _spring.isDone(time);
+}
+
 /// The pager's physics.
 ///
 /// Three jobs, none of which `PageScrollPhysics` does: commit on a quarter of
 /// the viewport rather than a half (14.2), clamp travel past the first and the
-/// last member to [Drags.overscrollMax] without wrapping (14.12), and settle in
-/// a stated duration (14.11, 14.10).
+/// last member to [Drags.overscrollMax] without wrapping (14.12), and settle
+/// from the finger's release velocity on a spring — or, under reduced motion,
+/// in the stated 90 ms (14.11, 14.10).
 class KTabPagerPhysics extends ScrollPhysics {
   /// Creates the physics.
   ///
@@ -401,6 +472,14 @@ class KTabPagerPhysics extends ScrollPhysics {
         velocity.abs() < tolerance.velocity) {
       return null;
     }
+    if (!reducedMotion()) {
+      return KTabPagerSpringSettle(
+        start: position.pixels,
+        end: targetPixels,
+        velocity: velocity,
+        tolerance: tolerance,
+      );
+    }
     return KTabPagerSettleSimulation(
       start: position.pixels,
       end: targetPixels,
@@ -436,7 +515,15 @@ class KTabPager extends StatefulWidget {
     this.routeParam,
     this.showRail = true,
     this.onPageProgress,
+    this.preloadNeighbors = false,
   });
+
+  /// Whether the members either side of the current one are built and laid
+  /// out ahead of time (one viewport of cache each way).
+  ///
+  /// Heavy feeds turn this on so the first swipe slides over a page that is
+  /// already there instead of building a whole list mid-gesture.
+  final bool preloadNeighbors;
 
   /// The visible members, in order. Two to six.
   final List<KTabPagerTab> tabs;
@@ -765,6 +852,7 @@ class _KTabPagerState extends State<KTabPager> with WidgetsBindingObserver {
                   child: PageView.builder(
                     controller: _controller,
                     pageSnapping: false,
+                    allowImplicitScrolling: widget.preloadNeighbors,
                     clipBehavior: Clip.hardEdge,
                     physics: _length < 2 || _claims.isHeld
                         ? const NeverScrollableScrollPhysics()
