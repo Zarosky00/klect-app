@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-11-01 · Session: Pulse redesign + peek gallery merged with the v17x engagement work; local `main` (`0bc6082`) is now the working baseline; v1.7.0 is the latest published release
+> Last updated: 2026-11-01 · Session: v1.7.1 released from `main` (Pulse redesign + peek gallery + v17x engagement work)
 
 ---
 
@@ -12,7 +12,7 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 38 tables, 93 RLS policies, 14 realtime tables, 4 storage buckets and 38 applied migrations. `android_reliable_calling_v170` is live with transactional call notifications, a private QA allowlist, 15-second ringing expiry and signal cleanup. Global calling remains disabled. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | Call creation now atomically creates one `notifications.call_id` row; `push-fanout` v5 sends a versioned high-priority data-only call envelope. QA accounts can be allowed without global enablement. Cloudflare TURN secrets are still absent. |
-| 4 | Flutter mobile app (`mobile/`) | 🟡 **v1.7.0 RELEASED / DEVICE QA PENDING** | Live pager feedback, compact notices, keyboard-safe comments, peer-first DM identity, directional call history and Android Core-Telecom/CallStyle are shipped in `1.7.0+17`. Physical device evidence remains pending. |
+| 4 | Flutter mobile app (`mobile/`) | 🟡 **v1.7.1 RELEASED / CALL QA PENDING** | `1.7.1+18` adds the Pulse redesign (glass header, filter sheet, photo-only peek, repost page), the Surf peek gallery, the engagement sheet / Alerts redesign, setup-race fix, private empty shelves, profile lens dock and Pinterest-style pull-to-refresh on top of `1.7.0+17`. Two-phone call QA remains pending. |
 | 5 | Next.js web + admin (`web/`) | ✅ **v1.7.0 DEPLOYED** | Production deployment `dpl_JB9huV83RS46iUC9bLjDfRLucyxh` is READY at `https://klect-web.vercel.app`. The home page returns HTTP 200 and its Android button uses the stable latest-release `klect.apk` URL. |
 | 6 | Test / build / bug sweep | 🟡 **automated green / device QA pending** | Flutter analysis/tests, Android native checks, Edge Function checks, and web typecheck/tests/build are green. No ADB device is currently attached and TURN secrets are absent, so the mandatory two-phone matrix remains pending. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **KIRO REQUIRED WORK COMPLETE** | All 49 required implementation tasks in `chat-calls-notifications-overhaul/tasks.md` ship in v1.6.4. The 73 remaining `*` entries are explicitly optional property/widget/SQL proof tasks. Group reporting, send-scope lockout, tombstones/delete-for-me, call pill/system actions and sibling-tab paging are released. |
@@ -915,6 +915,11 @@ Version is still `1.7.0+17`; no release, tag or APK was produced.
   - `flutter analyze`: 0 issues. `flutter test --exclude-tags golden`: **294/294**.
   - Signed release `1.7.0+17` (permanent key `460d934b…`, APK SHA-256 `9c192e15…21b7`) was
     installed on the RMX3771, and the user confirmed it works.
+- **Released as v1.7.1.** The user approved it after testing on the phone. Version moved to
+  `1.7.1+18` in `pubspec.yaml` and `kAppVersion`, and tag `v1.7.1` was pushed. The
+  `release-android.yml` workflow publishes the permanent-signed `klect.apk`, and the
+  `releases/latest/download/klect.apk` URL used by the in-app updater and the website now
+  serves it. Web had no changes since v1.7.0, so it was not redeployed.
 - **Housekeeping.**
   - Worktree `../klect-v17x-combined` and branches `agent/v17x-combined` and
     `agent/v17x-pulse-redesign-snapshot` still exist. Both branches point into `main`'s
