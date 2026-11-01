@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-10-31 · Session: setup-page race fix, private empty shelves (live migration) and profile lens dock on `agent/v17x-setup-shelves-nav`; v1.7.0 is the latest release
+> Last updated: 2026-11-01 · Session: Pulse redesign + peek gallery merged with the v17x engagement work; local `main` (`0bc6082`) is now the working baseline; v1.7.0 is the latest published release
 
 ---
 
@@ -885,6 +885,41 @@ Version is still `1.7.0+17`; no release, tag or APK was produced.
   barrier dismiss. The full suite passes **293/293** in a temp copy, because the working tree's
   uncommitted `post_thread_screen.dart` (`peek:` parameter) does not compile yet.
 - Not done yet: tested only in widget tests, not on a physical device.
+
+### 2026-11-01 — Pulse redesign, merged baseline on local `main`
+
+- **Local `main` is the baseline now.** It was fast-forwarded to `0bc6082`, which merges three
+  lines of work: `agent/v17x-engagement-notifications` (`5fe904e`, which already contained
+  setup/shelves/nav, pull-to-refresh and the v1.7.0 Pulse fixes), the Surf peek gallery
+  (`098edfa`), and the Pulse redesign (`d9192c6`). Start new work from `main`. Nothing is pushed.
+- **Pulse layout.** A floating glass header holds the serif title, Search, Filters (with a
+  count badge) and Messages above a For you | Following pill. The pill's thumb follows the pager
+  drag. The header hides as you scroll down and comes back on scroll up. The composer prompt
+  and the active-filter chips scroll with the stream. Stream photos are capped at 288px
+  (192px in the balanced layout); embedded cards at 240px.
+- **Filters** moved from the inline drawer to a bottom sheet (`PulseFilterSheet` in
+  `pulse_filter_drawer.dart`). It holds a type tile grid, a sliding time segment, a shared-taste
+  toggle card, post search, and a live "Show N posts" button.
+- **Long press peeks photos only** (`PulsePeekableMedia` in `pulse_media_peek.dart`). Holding
+  text, a byline or blank space does nothing, and releasing it does not open the thread.
+- **Reposts of a collection, shelf or thing:** tapping the sides of the row opens the new
+  repost page `/repost/:type/:id` (`RepostThreadScreen`). It reads like a quote's thread and
+  uses the entity's own Surf likes, stats and comments (`closeupProvider`, `commentsProvider`).
+  Tapping the embedded card or its photo opens the Surf closeup; a double tap opens immersive.
+- **Merge resolutions.**
+  - `peek_menu.dart` keeps the gallery and hold-to-scrub. It also keeps the branch's
+    behaviour: Like and Save stay open; Repost, Share and Report open over the peek; the quote
+    pre-fill works; a text card shows when there is no image.
+  - `KPinRefresh` gained `indicatorInset`, so the dots appear below Pulse's floating header.
+- **Verification.**
+  - `flutter analyze`: 0 issues. `flutter test --exclude-tags golden`: **294/294**.
+  - Signed release `1.7.0+17` (permanent key `460d934b…`, APK SHA-256 `9c192e15…21b7`) was
+    installed on the RMX3771, and the user confirmed it works.
+- **Housekeeping.**
+  - Worktree `../klect-v17x-combined` and branches `agent/v17x-combined` and
+    `agent/v17x-pulse-redesign-snapshot` still exist. Both branches point into `main`'s
+    history, so they can be removed once the user OKs it.
+  - A stash on `main` holds an identical duplicate of the redesign files.
 
 ---
 
