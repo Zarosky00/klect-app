@@ -1,7 +1,7 @@
 # KLECT — PROJECT STATE
 
 > **This file is the status board. Read it first. Update it last.**
-> Last updated: 2026-11-01 · Session: v1.7.1 polish on `agent/v171-pulse-peek-polish` (peek captions, Pulse keyboard, Pulse swipe, quote accounts) — release path pending
+> Last updated: 2026-11-01 · Session: v1.7.1 re-released with the polish (peek captions, Pulse keyboard, Pulse swipe, quote accounts)
 
 ---
 
@@ -12,7 +12,7 @@
 | 1 | Supabase schema (`new_klect`) | ✅ **DONE & VERIFIED** | 38 tables, 93 RLS policies, 14 realtime tables, 4 storage buckets and 38 applied migrations. `android_reliable_calling_v170` is live with transactional call notifications, a private QA allowlist, 15-second ringing expiry and signal cleanup. Global calling remains disabled. |
 | 2 | Design tokens (`packages/tokens`) | ✅ **DONE** | `tokens.json` → Dart + CSS + TS. `node packages/tokens/build.mjs`. |
 | 3 | Backend API contract | ✅ **DONE** | Call creation now atomically creates one `notifications.call_id` row; `push-fanout` v5 sends a versioned high-priority data-only call envelope. QA accounts can be allowed without global enablement. Cloudflare TURN secrets are still absent. |
-| 4 | Flutter mobile app (`mobile/`) | 🟡 **v1.7.1 RELEASED / CALL QA PENDING** | `1.7.1+18` adds the Pulse redesign (glass header, filter sheet, photo-only peek, repost page), the Surf peek gallery, the engagement sheet / Alerts redesign, setup-race fix, private empty shelves, profile lens dock and Pinterest-style pull-to-refresh on top of `1.7.0+17`. Two-phone call QA remains pending. |
+| 4 | Flutter mobile app (`mobile/`) | 🟡 **v1.7.1 RELEASED / CALL QA PENDING** | `1.7.1+18` adds the Pulse redesign (glass header, filter sheet, photo-only peek, repost page), the Surf peek gallery, the engagement sheet / Alerts redesign, setup-race fix, private empty shelves, profile lens dock and Pinterest-style pull-to-refresh on top of `1.7.0+17`. Re-released (tag moved) with underline-free peek captions, a keyboard-safe Pulse comment composer, a velocity-matched spring for the For you ↔ Following swipe and an accounts-only Quotes tab. Two-phone call QA remains pending. |
 | 5 | Next.js web + admin (`web/`) | ✅ **v1.7.0 DEPLOYED** | Production deployment `dpl_JB9huV83RS46iUC9bLjDfRLucyxh` is READY at `https://klect-web.vercel.app`. The home page returns HTTP 200 and its Android button uses the stable latest-release `klect.apk` URL. |
 | 6 | Test / build / bug sweep | 🟡 **automated green / device QA pending** | Flutter analysis/tests, Android native checks, Edge Function checks, and web typecheck/tests/build are green. No ADB device is currently attached and TURN secrets are absent, so the mandatory two-phone matrix remains pending. |
 | 7 | Chat upgrade (`CHAT_PLAN.md`) | ✅ **KIRO REQUIRED WORK COMPLETE** | All 49 required implementation tasks in `chat-calls-notifications-overhaul/tasks.md` ship in v1.6.4. The 73 remaining `*` entries are explicitly optional property/widget/SQL proof tasks. Group reporting, send-scope lockout, tombstones/delete-for-me, call pill/system actions and sibling-tab paging are released. |
@@ -954,17 +954,22 @@ Version is still `1.7.0+17`; no release, tag or APK was produced.
   peek label carries an underline; with a 340 px keyboard the thread composer's field ends at
   y=496 on an 844 px screen (keyboard top 504); the spring never overshoots and starts at the
   release velocity. Not yet checked on the RMX3771.
-- **Version.** Still `1.7.1+18`. Tag `v1.7.1` and its GitHub release already exist from
-  `fb77c7c`; how to ship this (move the tag vs. `v1.7.2`) is waiting on the user.
+- **Device install.** A stable-signed local build (cert `460d934b…`, `1.7.1+18`) was installed
+  in place on the RMX3771 for the user's check.
+- **Released as v1.7.1 (tag moved, user's choice).** Version stays `1.7.1+18`. The branch was
+  fast-forwarded into `main`, and tag `v1.7.1` was force-moved from `fb77c7c` to the new `main`
+  head so `release-android.yml` rebuilt and replaced `klect.apk` on the existing release.
+  Phones already on the first v1.7.1 build are **not** offered this by the in-app updater (same
+  version); they need a manual reinstall over the top. Rollback point: `fb77c7c`.
 
 ---
 
 ## Next actions
 
-00. Ship `agent/v171-pulse-peek-polish` once the user picks the release path, then device-check
-    on the RMX3771: hold a Surf card (no underlined text), comment on a Pulse post and on a
-    repost page with the keyboard up, swipe For you ↔ Following slowly and with a flick, and open
-    Engagement → Quotes (accounts only).
+00. Record the user's RMX3771 check of the re-released v1.7.1: Surf hold (no underlined text),
+    Pulse post + repost comments with the keyboard up, For you ↔ Following slow swipe and flick,
+    Engagement → Quotes (accounts only). The next release must be `1.7.2+19` or higher so the
+    in-app updater reaches every v1.7.1 install.
 0. Merge `agent/v17x-setup-shelves-nav` into the v1.7.x line once `agent/v170-pulse-fixes` is
    finished, then device-check: sign out → sign in (no setup flash), a new account's empty
    onboarding shelves (owner sees "Only you", a second account cannot find them), and the profile
