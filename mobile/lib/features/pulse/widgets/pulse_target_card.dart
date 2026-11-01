@@ -9,7 +9,8 @@ import '../../../core/links.dart';
 import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
-import '../../surf/surf.dart';
+import 'pulse_card.dart' show PostMediaGrid;
+import 'pulse_media_peek.dart';
 
 /// Renders the 0018 envelope's server-embedded `target` block: the quoted
 /// post, or the shared collection / shelf / thing, or the tombstone when the
@@ -18,6 +19,13 @@ import '../../surf/surf.dart';
 /// The same widget serves three surfaces — the Pulse stream (embedded
 /// payload), the post closeup and the composer preview (payload built
 /// client-side by [pulseTargetProvider]).
+///
+/// Gestures, when [interactive]:
+///  * a quoted post opens its thread; a reposted comment opens its parent
+///    discussion — plain tap only;
+///  * a collection / shelf / thing opens its **Surf closeup** on tap and the
+///    immersive viewer on double tap;
+///  * only the photos peek on long press — holding the text does nothing.
 class PulseTargetCard extends ConsumerWidget {
   /// Creates a target card.
   const PulseTargetCard({
@@ -30,8 +38,8 @@ class PulseTargetCard extends ConsumerWidget {
   /// The embedded payload.
   final PulseTarget target;
 
-  /// Whether the card carries the full gesture contract. Turn off inside the
-  /// composer, where a tap must not navigate away from a draft.
+  /// Whether the card carries its gestures. Turn off inside the composer,
+  /// where a tap must not navigate away from a draft.
   final bool interactive;
 
   /// Complete original post media when a caller has it.
@@ -39,6 +47,10 @@ class PulseTargetCard extends ConsumerWidget {
 
   /// Height of the entity cover thumbnail.
   static const double thumb = Space.s20;
+
+  /// Height ceiling for a single embedded photo, so an attachment previews
+  /// inside its row instead of taking over the screen.
+  static const double mediaMaxHeight = Space.s24 * 2.5;
 
   /// A comment target deep-links to the discussion it lives under —
   /// `parent_type`/`parent_id` arrived with the 0021 comment branch.
@@ -59,25 +71,27 @@ class PulseTargetCard extends ConsumerWidget {
     }
 
     final resolvedMedia = media.isEmpty ? target.media : media;
-    final card = switch (target.type!) {
-      EntityType.post => _QuotedPostBody(target: target, media: resolvedMedia),
+    final type = target.type!;
+    final card = switch (type) {
+      EntityType.post => _QuotedPostBody(
+        target: target,
+        media: resolvedMedia,
+        peekable: interactive,
+      ),
       EntityType.comment => _CommentBody(target: target),
-      _ => _EntityBody(target: target),
+      _ => _EntityBody(target: target, peekable: interactive),
     };
 
     if (!interactive) return card;
 
-    // A quoted post opens its thread; a reposted comment opens the parent
-    // discussion. Neither is a Surf tile, so neither gets the double-tap
-    // immersive — plain tap only, no delay.
-    if (target.type == EntityType.post) {
+    if (type == EntityType.post) {
       return KGestureRegion(
         semanticLabel: target.body ?? target.author?.name,
         onTap: () => context.push(KlectLinks.postThreadPath(target.id)),
         child: card,
       );
     }
-    if (target.type == EntityType.comment) {
+    if (type == EntityType.comment) {
       final destination = _commentDestination;
       return KGestureRegion(
         semanticLabel: target.body ?? target.author?.name,
@@ -86,17 +100,9 @@ class PulseTargetCard extends ConsumerWidget {
       );
     }
 
-    final entity = EntityRef(target.type!, target.id);
-    return KEntityGestureCard(
-      entity: entity,
-      title: target.title ?? target.body ?? target.author?.name,
-      subtitle: target.author?.handle,
-      imageUrl: target.coverPath == null
-          ? null
-          : ref.watch(klectApiProvider).publicUrl(target.coverPath),
-      blurhash: target.coverBlurhash,
-      aspectRatio: target.coverAspect,
-      pressFeedback: false,
+    return PulseSurfCard(
+      entity: EntityRef(type, target.id),
+      semanticLabel: target.title ?? target.body ?? target.author?.name,
       child: card,
     );
   }
@@ -113,9 +119,9 @@ class _TargetShell extends StatelessWidget {
     final colors = context.kc;
     return Container(
       decoration: BoxDecoration(
-        color: colors.surface2,
+        color: colors.surface1,
         borderRadius: BorderRadius.circular(Radii.lg),
-        border: Border.all(color: colors.borderSubtle, width: Strokes.hairline),
+        border: Border.all(color: colors.borderDefault, width: Strokes.hairline),
       ),
       clipBehavior: Clip.antiAlias,
       child: child,
@@ -155,28 +161,133 @@ class _TargetTombstone extends StatelessWidget {
   }
 }
 
-/// A quoted post: author byline, body, first photo — X's quote card.
-class _QuotedPostBody extends ConsumerWidget {
-  const _QuotedPostBody({required this.target, required this.media});
+/// A compact author line: small avatar · name · @handle · time.
+class _MiniByline extends ConsumerWidget {
+  const _MiniByline({required this.author, this.at});
 
-  final PulseTarget target;
-  final List<ItemMedia> media;
+  final Profile? author;
+  final DateTime? at;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.kc;
     final text = context.kt;
-    final author = target.author;
+    final author = this.author;
+    final when = at;
     final avatarUrl = author?.avatarPath == null
         ? null
         : ref
               .watch(klectApiProvider)
               .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
-    final coverUrl = target.coverPath == null
-        ? null
-        : ref.watch(klectApiProvider).publicUrl(target.coverPath);
-    final when = target.createdAt;
+    return Row(
+      children: <Widget>[
+        KAvatar(
+          imageUrl: avatarUrl,
+          name: author?.name,
+          size: Space.s5,
+          isVerified: author?.isVerified ?? false,
+        ),
+        const SizedBox(width: Space.s2),
+        Flexible(
+          child: Text(
+            author?.name ?? 'Someone',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: text.label,
+          ),
+        ),
+        if (author != null && author.username.isNotEmpty) ...<Widget>[
+          const SizedBox(width: Space.s1),
+          Flexible(
+            child: Text(
+              author.handle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: text.caption.copyWith(color: colors.textTertiary),
+            ),
+          ),
+        ],
+        if (when != null) ...<Widget>[
+          const SizedBox(width: Space.s1),
+          Text(
+            '· ${timeago.format(when, locale: 'en_short')}',
+            style: text.caption.copyWith(color: colors.textTertiary),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A single cover photo bounded to [maxHeight], with the long-press peek.
+class _BoundedCover extends ConsumerWidget {
+  const _BoundedCover({
+    required this.path,
+    required this.maxHeight,
+    required this.radius,
+    this.blurhash,
+    this.aspect,
+    this.semanticLabel,
+    this.peek,
+  });
+
+  final String path;
+  final String? blurhash;
+  final double? aspect;
+  final double maxHeight;
+  final BorderRadius radius;
+  final String? semanticLabel;
+  final PulsePeekTarget? peek;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url = ref.watch(klectApiProvider).publicUrl(path);
+    return LayoutBuilder(
+      builder: (context, constraints) => PulsePeekableMedia(
+        peek: peek,
+        imageUrl: url,
+        blurhash: blurhash,
+        aspectRatio: aspect,
+        child: KBlurhashImage(
+          url: url,
+          blurhash: blurhash,
+          aspectRatio: PostMediaGrid.boundedAspect(
+            aspect ?? Aspect.cover,
+            constraints.maxWidth,
+            maxHeight,
+          ),
+          borderRadius: radius,
+          semanticLabel: semanticLabel,
+        ),
+      ),
+    );
+  }
+}
+
+/// A quoted post: author byline, body, photos — X's quote card.
+class _QuotedPostBody extends StatelessWidget {
+  const _QuotedPostBody({
+    required this.target,
+    required this.media,
+    required this.peekable,
+  });
+
+  final PulseTarget target;
+  final List<ItemMedia> media;
+  final bool peekable;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = context.kt;
     final body = target.body;
+    final coverPath = target.coverPath;
+    final peek = peekable
+        ? PulsePeekTarget(
+            entity: EntityRef.post(target.id),
+            title: body ?? target.author?.name,
+            subtitle: target.author?.handle,
+          )
+        : null;
 
     return _TargetShell(
       child: Padding(
@@ -185,66 +296,33 @@ class _QuotedPostBody extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                KAvatar(
-                  imageUrl: avatarUrl,
-                  name: author?.name,
-                  size: Space.s6,
-                  isVerified: author?.isVerified ?? false,
-                ),
-                const SizedBox(width: Space.s2),
-                Flexible(
-                  child: Text(
-                    author?.name ?? 'Someone',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.label,
-                  ),
-                ),
-                if (author != null && author.username.isNotEmpty) ...<Widget>[
-                  const SizedBox(width: Space.s1),
-                  Flexible(
-                    child: Text(
-                      author.handle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: text.micro.copyWith(color: colors.textTertiary),
-                    ),
-                  ),
-                ],
-                if (when != null) ...<Widget>[
-                  const SizedBox(width: Space.s1),
-                  Text(
-                    '· ${timeago.format(when, locale: 'en_short')}',
-                    style: text.micro.copyWith(color: colors.textTertiary),
-                  ),
-                ],
-              ],
-            ),
+            _MiniByline(author: target.author, at: target.createdAt),
             if (body != null && body.isNotEmpty) ...<Widget>[
               const SizedBox(height: Space.s2),
               Text(
                 body,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
-                style: text.body,
+                style: text.callout,
               ),
             ],
             if (media.isNotEmpty) ...<Widget>[
               const SizedBox(height: Space.s3),
-              _QuotedMediaGrid(media: media),
-            ] else if (target.coverPath != null) ...<Widget>[
+              _QuotedMediaGrid(
+                media: media,
+                peek: peek,
+                radius: BorderRadius.circular(Radii.md),
+              ),
+            ] else if (coverPath != null) ...<Widget>[
               const SizedBox(height: Space.s3),
-              KBlurhashImage(
-                url: coverUrl,
+              _BoundedCover(
+                path: coverPath,
                 blurhash: target.coverBlurhash,
-                aspectRatio: (target.coverAspect ?? Aspect.cover).clamp(
-                  Aspect.gridMin,
-                  Aspect.gridMax,
-                ),
-                borderRadius: BorderRadius.circular(Radii.md),
+                aspect: target.coverAspect,
+                maxHeight: PulseTargetCard.mediaMaxHeight,
+                radius: BorderRadius.circular(Radii.md),
                 semanticLabel: body ?? 'Post photo',
+                peek: peek,
               ),
             ],
             if (target.attachedTarget case final attached?) ...<Widget>[
@@ -259,46 +337,54 @@ class _QuotedPostBody extends ConsumerWidget {
 }
 
 class _QuotedMediaGrid extends ConsumerWidget {
-  const _QuotedMediaGrid({required this.media});
+  const _QuotedMediaGrid({
+    required this.media,
+    required this.radius,
+    this.peek,
+  });
 
   final List<ItemMedia> media;
+  final BorderRadius radius;
+  final PulsePeekTarget? peek;
 
   static const double _gap = Space.s05;
-  static const double _maxSingleHeight = Space.s24 * 3;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final api = ref.watch(klectApiProvider);
     final shots = media.take(4).toList(growable: false);
 
-    Widget image(ItemMedia item, {double? aspectRatio}) => KBlurhashImage(
-      url: api.publicUrl(item.storagePath),
-      blurhash: item.blurhash,
-      aspectRatio: aspectRatio,
-      borderRadius: BorderRadius.zero,
-      semanticLabel: item.altText ?? 'Quoted post photo',
-    );
+    Widget image(ItemMedia item, {double? aspectRatio}) {
+      final url = api.publicUrl(item.storagePath);
+      return PulsePeekableMedia(
+        peek: peek,
+        imageUrl: url,
+        blurhash: item.blurhash,
+        aspectRatio: _aspectOf(item),
+        child: KBlurhashImage(
+          url: url,
+          blurhash: item.blurhash,
+          aspectRatio: aspectRatio,
+          borderRadius: BorderRadius.zero,
+          semanticLabel: item.altText ?? 'Photo',
+        ),
+      );
+    }
 
     if (shots.length == 1) {
       final item = shots.first;
-      final intrinsic =
-          item.width != null && item.height != null && item.height! > 0
-          ? item.width! / item.height!
-          : Aspect.cover;
       return LayoutBuilder(
-        builder: (context, constraints) {
-          final clamped = intrinsic
-              .clamp(Aspect.gridMin, Aspect.gridMax)
-              .toDouble();
-          final heightBound = constraints.maxWidth / _maxSingleHeight;
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(Radii.md),
-            child: image(
-              item,
-              aspectRatio: clamped < heightBound ? heightBound : clamped,
+        builder: (context, constraints) => ClipRRect(
+          borderRadius: radius,
+          child: image(
+            item,
+            aspectRatio: PostMediaGrid.boundedAspect(
+              _aspectOf(item) ?? Aspect.cover,
+              constraints.maxWidth,
+              PulseTargetCard.mediaMaxHeight,
             ),
-          );
-        },
+          ),
+        ),
       );
     }
 
@@ -351,29 +437,31 @@ class _QuotedMediaGrid extends ConsumerWidget {
     };
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(Radii.md),
+      borderRadius: radius,
       child: AspectRatio(aspectRatio: Aspect.gridMax, child: grid),
     );
+  }
+
+  static double? _aspectOf(ItemMedia item) {
+    final width = item.width;
+    final height = item.height;
+    if (width == null || height == null || height <= 0) return null;
+    return width / height;
   }
 }
 
 /// A reposted comment: author byline, the comment's own words, and a hint at
 /// the discussion it came from. Before 0021 this fell through to the entity
 /// card and rendered an empty title — now the body *is* the card.
-class _CommentBody extends ConsumerWidget {
+class _CommentBody extends StatelessWidget {
   const _CommentBody({required this.target});
 
   final PulseTarget target;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = context.kc;
     final text = context.kt;
-    final author = target.author;
-    final avatarUrl = ref
-        .watch(klectApiProvider)
-        .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
-    final when = target.createdAt;
     final body = target.body;
 
     return _TargetShell(
@@ -386,7 +474,7 @@ class _CommentBody extends ConsumerWidget {
             Row(
               children: <Widget>[
                 Icon(
-                  Icons.mode_comment_rounded,
+                  Icons.mode_comment_outlined,
                   size: Space.s3,
                   color: colors.textTertiary,
                 ),
@@ -398,50 +486,14 @@ class _CommentBody extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: Space.s2),
-            Row(
-              children: <Widget>[
-                KAvatar(
-                  imageUrl: avatarUrl,
-                  name: author?.name,
-                  size: Space.s6,
-                  isVerified: author?.isVerified ?? false,
-                ),
-                const SizedBox(width: Space.s2),
-                Flexible(
-                  child: Text(
-                    author?.name ?? 'Someone',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.label,
-                  ),
-                ),
-                if (author != null && author.username.isNotEmpty) ...<Widget>[
-                  const SizedBox(width: Space.s1),
-                  Flexible(
-                    child: Text(
-                      author.handle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: text.micro.copyWith(color: colors.textTertiary),
-                    ),
-                  ),
-                ],
-                if (when != null) ...<Widget>[
-                  const SizedBox(width: Space.s1),
-                  Text(
-                    '· ${timeago.format(when, locale: 'en_short')}',
-                    style: text.micro.copyWith(color: colors.textTertiary),
-                  ),
-                ],
-              ],
-            ),
+            _MiniByline(author: target.author, at: target.createdAt),
             if (body != null && body.isNotEmpty) ...<Widget>[
               const SizedBox(height: Space.s2),
               Text(
                 body,
                 maxLines: 4,
                 overflow: TextOverflow.ellipsis,
-                style: text.body,
+                style: text.callout,
               ),
             ],
             if (target.parentId != null) ...<Widget>[
@@ -458,21 +510,20 @@ class _CommentBody extends ConsumerWidget {
   }
 }
 
-/// A shared collection / shelf / thing rendered as a real Pulse attachment.
-///
-/// The old compact thumbnail row hid most of the original object. Reposts and
-/// quotes now keep the owner's byline, title/description and the complete
-/// preview media together, matching the quoted-post shape above it.
-class _EntityBody extends ConsumerWidget {
-  const _EntityBody({required this.target});
+/// A shared collection / shelf / thing — photos edge to edge on top, then
+/// the type, title, description and owner. The whole card is the way into
+/// the entity's Surf closeup.
+class _EntityBody extends StatelessWidget {
+  const _EntityBody({required this.target, required this.peekable});
 
   final PulseTarget target;
+  final bool peekable;
 
   IconData get _icon => switch (target.type) {
-    EntityType.collection => Icons.collections_bookmark_rounded,
-    EntityType.subcollection => Icons.layers_rounded,
-    EntityType.item => Icons.photo_library_rounded,
-    _ => Icons.mode_comment_rounded,
+    EntityType.collection => Icons.collections_bookmark_outlined,
+    EntityType.subcollection => Icons.layers_outlined,
+    EntityType.item => Icons.photo_library_outlined,
+    _ => Icons.mode_comment_outlined,
   };
 
   String get _typeLabel => switch (target.type) {
@@ -488,114 +539,105 @@ class _EntityBody extends ConsumerWidget {
   };
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = context.kc;
     final text = context.kt;
     final author = target.author;
-    final coverUrl = target.coverPath == null
-        ? null
-        : ref.watch(klectApiProvider).publicUrl(target.coverPath);
-    final avatarUrl = author?.avatarPath == null
-        ? null
-        : ref
-              .watch(klectApiProvider)
-              .publicUrl(author?.avatarPath, bucket: StorageBucket.avatars);
+    final coverPath = target.coverPath;
+    final subtitle = target.subtitle;
+    final peek = peekable && target.type != null
+        ? PulsePeekTarget(
+            entity: EntityRef(target.type!, target.id),
+            title: target.title ?? _typeLabel,
+            subtitle: author?.handle,
+          )
+        : null;
 
     return _TargetShell(
-      child: Padding(
-        padding: const EdgeInsets.all(Space.s3),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (target.media.isNotEmpty)
+            KeyedSubtree(
+              key: const ValueKey<String>('pulse-target-media-grid'),
+              child: _QuotedMediaGrid(
+                media: target.media,
+                peek: peek,
+                radius: BorderRadius.zero,
+              ),
+            )
+          else if (coverPath != null)
+            _BoundedCover(
+              path: coverPath,
+              blurhash: target.coverBlurhash,
+              aspect: target.coverAspect,
+              maxHeight: PulseTargetCard.mediaMaxHeight,
+              radius: BorderRadius.zero,
+              semanticLabel: target.title ?? _typeLabel,
+              peek: peek,
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Space.s3,
+              Space.s3,
+              Space.s3,
+              Space.s3,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                if (author != null) ...<Widget>[
-                  KAvatar(
-                    imageUrl: avatarUrl,
-                    name: author.name,
-                    size: Space.s6,
-                    isVerified: author.isVerified,
-                  ),
-                  const SizedBox(width: Space.s2),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          author.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.label,
-                        ),
-                        if (author.username.isNotEmpty)
-                          Text(
-                            author.handle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: text.micro.copyWith(
-                              color: colors.textTertiary,
-                            ),
-                          ),
-                      ],
+                Row(
+                  children: <Widget>[
+                    Icon(_icon, size: Space.s3, color: colors.textTertiary),
+                    const SizedBox(width: Space.s1),
+                    Text(
+                      _typeLabel.toUpperCase(),
+                      style: text.micro.copyWith(color: colors.textTertiary),
                     ),
-                  ),
-                ] else
-                  Expanded(child: Text(_typeLabel, style: text.label)),
-                const SizedBox(width: Space.s2),
-                Icon(_icon, size: Space.s4, color: colors.textTertiary),
-                const SizedBox(width: Space.s1),
-                Text(
-                  _typeLabel.toUpperCase(),
-                  style: text.micro.copyWith(color: colors.textTertiary),
+                    if (target.childCount > 0) ...<Widget>[
+                      Text(
+                        '  ·  ',
+                        style: text.micro.copyWith(color: colors.textTertiary),
+                      ),
+                      Text(
+                        '${formatCount(target.childCount)} $_childLabel',
+                        style: text.micro.copyWith(color: colors.textTertiary),
+                      ),
+                    ],
+                    const Spacer(),
+                    Icon(
+                      Icons.north_east_rounded,
+                      size: Space.s4,
+                      color: colors.textTertiary,
+                    ),
+                  ],
                 ),
+                const SizedBox(height: Space.s15),
+                Text(
+                  target.title ?? _typeLabel,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.bodyStrong,
+                ),
+                if (subtitle != null && subtitle.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: Space.s05),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.caption.copyWith(color: colors.textSecondary),
+                  ),
+                ],
+                if (author != null) ...<Widget>[
+                  const SizedBox(height: Space.s25),
+                  _MiniByline(author: author),
+                ],
               ],
             ),
-            const SizedBox(height: Space.s2),
-            Text(
-              target.title ?? _typeLabel,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: text.bodyStrong,
-            ),
-            if (target.subtitle != null &&
-                target.subtitle!.isNotEmpty) ...<Widget>[
-              const SizedBox(height: Space.s1),
-              Text(
-                target.subtitle!,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: text.caption.copyWith(color: colors.textSecondary),
-              ),
-            ],
-            if (target.media.isNotEmpty) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              KeyedSubtree(
-                key: const ValueKey<String>('pulse-target-media-grid'),
-                child: _QuotedMediaGrid(media: target.media),
-              ),
-            ] else if (target.coverPath != null) ...<Widget>[
-              const SizedBox(height: Space.s3),
-              KBlurhashImage(
-                url: coverUrl,
-                blurhash: target.coverBlurhash,
-                aspectRatio: (target.coverAspect ?? Aspect.cover)
-                    .clamp(Aspect.gridMin, Aspect.gridMax)
-                    .toDouble(),
-                borderRadius: BorderRadius.circular(Radii.md),
-                semanticLabel: target.title ?? _typeLabel,
-              ),
-            ],
-            if (target.childCount > 0) ...<Widget>[
-              const SizedBox(height: Space.s2),
-              Text(
-                '${formatCount(target.childCount)} $_childLabel',
-                style: text.micro.copyWith(color: colors.textTertiary),
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

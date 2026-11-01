@@ -6,14 +6,14 @@ import '../../../core/interactions/interactions.dart';
 import '../../../core/models/models.dart';
 import '../../../design/theme.dart';
 import '../../../ui/ui.dart';
-import '../../surf/surf.dart';
 import '../data/entity_preview_provider.dart';
+import 'pulse_media_peek.dart';
 
 /// A collection, shelf or thing rendered inline inside a Pulse card.
 ///
-/// It carries the full gesture contract, so a shared collection in the stream
-/// behaves exactly like a tile in the Surf grid: tap for the closeup, double
-/// tap for fullscreen, long press for the peek.
+/// A tap opens its Surf closeup and a double tap the immersive viewer, like a
+/// Surf tile. In Pulse only the photo peeks on long press — holding the text
+/// does nothing special.
 class EntityAttachmentCard extends ConsumerWidget {
   /// Creates an attachment card.
   const EntityAttachmentCard({required this.entity, super.key});
@@ -54,19 +54,15 @@ class EntityAttachmentCard extends ConsumerWidget {
 
     final url = ref.watch(klectApiProvider).publicUrl(preview.coverPath);
 
-    return KEntityGestureCard(
+    return PulseSurfCard(
       entity: entity,
-      title: preview.title,
-      subtitle: _typeLabel,
-      imageUrl: url,
-      blurhash: preview.blurhash,
-      aspectRatio: Aspect.cover,
+      semanticLabel: preview.title,
       child: Container(
         decoration: BoxDecoration(
-          color: colors.surface2,
+          color: colors.surface1,
           borderRadius: BorderRadius.circular(Radii.lg),
           border: Border.all(
-            color: colors.borderSubtle,
+            color: colors.borderDefault,
             width: Strokes.hairline,
           ),
         ),
@@ -77,14 +73,23 @@ class EntityAttachmentCard extends ConsumerWidget {
             SizedBox(
               width: thumb,
               height: thumb,
-              child: KBlurhashImage(
-                url: url,
+              child: PulsePeekableMedia(
+                peek: PulsePeekTarget(
+                  entity: entity,
+                  title: preview.title,
+                  subtitle: _typeLabel,
+                ),
+                imageUrl: url,
                 blurhash: preview.blurhash,
-                semanticLabel: preview.title,
-                borderRadius: BorderRadius.zero,
-                memCacheWidth: (thumb *
-                        MediaQuery.devicePixelRatioOf(context))
-                    .round(),
+                aspectRatio: Aspect.cover,
+                child: KBlurhashImage(
+                  url: url,
+                  blurhash: preview.blurhash,
+                  semanticLabel: preview.title,
+                  borderRadius: BorderRadius.zero,
+                  memCacheWidth:
+                      (thumb * MediaQuery.devicePixelRatioOf(context)).round(),
+                ),
               ),
             ),
             Expanded(

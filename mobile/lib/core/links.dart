@@ -51,6 +51,12 @@ abstract final class KlectLinks {
   /// The post thread route — the single-tap destination for a Pulse row.
   static String postThreadPath(String postId) => '/post/$postId';
 
+  /// The repost page for a reposted collection, shelf or thing — the
+  /// single-tap destination for the *sides* of a Pulse repost row. The
+  /// embedded card itself still opens the Surf closeup.
+  static String repostThreadPath(EntityType type, String id) =>
+      '/repost/${type.wire}/$id';
+
   /// The immersive route for an entity — the double-tap destination.
   static String immersivePath(EntityType type, String id) =>
       '/immersive/${type.wire}/$id';

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/interactions/interactions.dart';
 import 'core/models/models.dart';
 import 'core/supabase.dart';
 import 'features/auth/auth_controller.dart';
@@ -27,6 +28,7 @@ import 'features/notifications/notifications_screen.dart';
 import 'features/profile/profile_screen.dart';
 import 'features/pulse/pulse_screen.dart';
 import 'features/pulse/thread/post_thread_screen.dart';
+import 'features/pulse/thread/repost_thread_screen.dart';
 import 'features/search/search_screen.dart';
 import 'features/settings/appearance_settings_screen.dart';
 import 'features/settings/blocked_users_screen.dart';
@@ -268,6 +270,21 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         redirect: (context, state) =>
             '/post/${state.pathParameters['id'] ?? ''}',
+      ),
+
+      // ── the repost page — the sides of a Pulse repost row ────────────
+      GoRoute(
+        path: '/repost/:type/:id',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => RepostThreadScreen(
+          entity: EntityRef(
+            EntityType.parse(state.pathParameters['type']),
+            state.pathParameters['id'] ?? '',
+          ),
+          args: state.extra is RepostThreadArgs
+              ? state.extra! as RepostThreadArgs
+              : null,
+        ),
       ),
 
       // ── the gesture contract's two destinations ──────────────────────
